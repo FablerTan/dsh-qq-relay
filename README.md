@@ -27,7 +27,7 @@ DSH 与 QQ 之间的**双向桥**：
 
 ## 目录结构
 
-`@
+```
 dsh-qq-relay/
 ├── package.json          # name + dsh.bundle.patch + dsh.client（link 加载的必要元数据）
 ├── cordis.patch.yml      # bundle patch：把插件行插入 profile roster
@@ -41,7 +41,7 @@ dsh-qq-relay/
 ├── scripts/              # wrap-client（产物包装）· check-syntax · check-docs
 ├── README.md             # 本文件
 └── AGENTS.md             # 本插件开发纪律（文档在哪 + pnpm check 闸门）
-`@
+```
 
 ## 文档索引
 
@@ -54,10 +54,10 @@ dsh-qq-relay/
 
 ## 激活方式（当前**未链接**任何 profile）
 
-`@bash
+```bash
 dsh plugin --profile <profile> add link:/path/to/dsh-qq-relay
 # 装完需重启该 profile 的 GUI 才生效（bundle 组合发生在启动时）
-`@
+```
 
 - 回滚：`dsh plugin --profile <profile> remove dsh-qq-relay`（不影响本仓库）。
 - 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的「已加载（v0.1.0 空骨架…）」一行。
@@ -65,12 +65,12 @@ dsh plugin --profile <profile> add link:/path/to/dsh-qq-relay
 
 ## 开发循环
 
-`@bash
+```bash
 pnpm install     # devDependencies：vite / react / typescript（插件**运行时零外部依赖**）
 pnpm build       # src/client.tsx -> dist/client.cjs -> lib/client.js（wrap-client 包装）
 pnpm watch       # watch 模式：改 src 自动 rebuild + wrap，浏览器刷新可见
 pnpm check       # 验收闸门：语法 + 元数据 + tsc --noEmit + 文档↔源码配对
-`@
+```
 
 - `lib/index.js` 是**手写** host 源码（不经构建）；`lib/client.js` 是 client 半身构建产物，
   已入库——clone 后不装依赖也能被宿主加载。只有改了 `src/` 才需要 `pnpm build` / `pnpm watch`。
