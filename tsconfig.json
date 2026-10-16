@@ -1,0 +1,23 @@
+{
+  // dsh-qq-relay — client 半身类型检查闸门（pnpm check 的第二环）。
+  // 范围：include 只含 src（client 半身）。lib/ 是 host 半身（纯 JS），
+  // 由 scripts/check-syntax.mjs 的 node --check 覆盖，不纳入 tsc。
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    // 与宿主接触面全部走运行时服务查找，不 import 任何 @deepseek-ai/* 值，
+    // 因此不需要加载额外 @types（按需再加）。
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": true
+  },
+  "include": ["src"]
+}

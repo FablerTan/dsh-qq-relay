@@ -1,0 +1,9 @@
+# pnpm 11 起，构建设置不再读 package.json 的 "pnpm" 字段，统一落在本文件。
+# vite 依赖 esbuild，其 postinstall 需要放行；否则 pnpm install 会以
+# ERR_PNPM_IGNORED_BUILDS 失败，连带 build / check 跑不起来。
+allowBuilds:
+  esbuild: true
+
+# 本插件 client 半身只依赖 react（构建时 external），devDependencies 里没有需要
+# 自动补装 peer 的包；关掉自动 peer 安装，避免解析到不存在的预发布版本。
+autoInstallPeers: false

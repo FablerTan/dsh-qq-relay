@@ -1,0 +1,18 @@
+# dsh-qq-relay bundle patch: inserts the plugin row into the profile
+# roster. Applied as a profile bundle layer (the `dsh.bundle.patch` manifest
+# field); activate with
+# `dsh plugin --profile <name> add link:<path-to-this-package>` — the target
+# profile's GUI has to be restarted before the row takes effect.
+#
+# One bare plugin row for both halves:
+#  - host (`lib/index.js`, exports "."): the relay itself — planned: connect a
+#    QQ bot protocol endpoint and bridge QQ messages <-> DSH sessions;
+#  - client (exports "./client" -> `lib/client.js`, served at
+#    /plugins/dsh-qq-relay/client.js): planned status / config panel; the
+#    browser half's module graph order is declared by `dsh.client.inject` in
+#    package.json.
+#
+# v0.1.0 is an EMPTY SKELETON: neither half registers anything yet.
+- insert:
+    - id: dsh-qq-relay
+      name: dsh-qq-relay
