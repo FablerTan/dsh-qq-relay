@@ -11,7 +11,7 @@
 ## 0. 布局（快速地图）
 
 - `src/` — client 半身源码（React + TS），组合根 `src/client.tsx`，构建产物 `lib/client.js`；
-  新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，见 §2.4）
+  新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
 - `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（当前空骨架），
   规划分层 = `lib/controller/`（协议端接入、消息编解码、注册与路由）+ `lib/model/`
   （会话映射、配置、纯逻辑）
