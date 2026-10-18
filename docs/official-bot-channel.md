@@ -1,7 +1,8 @@
 # 官方 QQ 机器人通道（WebSocket）
 
-> 状态：**定案（2026-10-18）**。本文件是平台接口事实与限制的单一来源；上层架构见
-> [architecture.md](./architecture.md)，群聊闸门见 [gate.md](./gate.md)。
+> 状态：**备选（2026-10-18 起不采用）**。当前选型为真实 QQ 号 + OneBot 11，见
+> [onebot-channel.md](./onebot-channel.md)；本文保留作对比与回退参考。
+> 本文件是官方平台接口事实与限制的单一来源。
 > 官方文档：<https://bot.q.qq.com/wiki/develop/api-v2/>
 
 ## 1. 选型结论
@@ -57,7 +58,7 @@ Content-Type: application/json
 
 | Intent | 位 | 覆盖事件 | 本项目 |
 |---|---|---|---|
-| GROUP_AND_C2C_EVENT | 1 << 25 = 33554432 | 单聊 / 群 @ / 加群 / 主动消息开关等 | P1 起使用 |
+| GROUP_AND_C2C_EVENT | 1 << 25 = 33554432 | 单聊 / 群 @ / 加群 / 主动消息开关等 | 若启用官方方案时 |
 | INTERACTION | 1 << 26 = 67108864 | 按钮互动 INTERACTION_CREATE | P3 审批用 |
 
 两者都开时 intents = 33554432 + 67108864 = 100663296。
@@ -132,8 +133,8 @@ GROUP_AND_C2C_EVENT 下的关键事件：
 
 - 用户 / 群管理员可以在机器人资料卡**关闭主动消息**，之后主动发送失败；对应
   GROUP_MSG_REJECT（关闭）/ GROUP_MSG_RECEIVE（开启）事件。
-- 本项目策略：被动优先；**被动窗口过期就不回**（onPassiveExpired: drop）；2 小时慢路的
-  发言属于主动消息，失败时降级为「只保留 @ 直通 + 被动回复」。
+- 若将来回退到官方通道：被动优先；窗口过期建议改发主动消息（onPassiveExpired: active），
+  主动消息失败再降级为等待用户下一条消息。当前选型（真实 QQ 号）不受此限制。
 
 ## 8. 身份
 

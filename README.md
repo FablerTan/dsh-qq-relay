@@ -3,8 +3,8 @@
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
 当前 **v0.1.0 = 空骨架**：目录、bundle 元数据、构建链路、自检闸门与纪律件齐备，两个半身的
 `apply` 都不注册任何东西。**方案已定案（2026-10-18），功能实现尚未开始**——设计见
-[docs/architecture.md](./docs/architecture.md)，接口事实见
-[docs/official-bot-channel.md](./docs/official-bot-channel.md)。
+[docs/architecture.md](./docs/architecture.md)，协议端选型见
+[docs/onebot-channel.md](./docs/onebot-channel.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
 > **本项目不使用 openspec**（用户 2026-10-16 决定）——没有 `openspec/`，也没有
@@ -21,10 +21,11 @@ DSH 与 QQ 之间的**双向桥**：
 
 **已定案（2026-10-18）**：
 
-- 协议端：**官方 QQ 机器人开放平台**——WebSocket 收事件 + HTTPS 发消息；不走 OneBot / NapCat / LLBot 等第三方协议端（需登录真实 QQ 号、有封号风险）。
-- 首批场景：**群聊优先**（群 @ 直通 + 群内普通消息经闸门过滤）；单聊放 P3。
-- 消息闸门：**10 分钟快路 + 2 小时慢路 + jev 分类器**，@ 直通、被动窗口过期不回、最小发言间隔（见 [docs/gate.md](./docs/gate.md)）。
+- 协议端：**真实 QQ 号 + NapCat + OneBot 11 正向 WebSocket**——DSH 单轮可能超过 5 分钟，官方机器人的群聊被动回复窗口（5 分钟）会让长任务结果只能改走主动消息（受配额、可被关闭）；真实 QQ 号可随时发送。官方通道方案保留为备选（[docs/official-bot-channel.md](./docs/official-bot-channel.md)）。
+- 账号：一个 **QQ 小号**登录 NapCat 作 bot，主号操作；**群聊优先**（群 @ 直通 + 群内普通消息经闸门过滤）；单聊放 P3。
+- 消息闸门：**10 分钟快路 + 2 小时慢路 + jev 分类器**，@ 直通、最小发言间隔（见 [docs/gate.md](./docs/gate.md)）。
 - 运行形态：host 半身单进程插件；client 半身 v1 不做；插件不管理 profile。
+- 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
 
 **仍未定案**：会话映射细节、群审批（按钮）、主动推送工具、媒体收发、client 状态面板——先落 `docs/` 再实现。
 
@@ -56,7 +57,8 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
-| [docs/official-bot-channel.md](./docs/official-bot-channel.md) | 官方 QQ 机器人通道事实：凭证、WebSocket、事件、发消息、被动 / 主动消息限制 | 接协议端、排查平台问题时 |
+| [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
+| [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
 | [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 仓库级纪律、渲染树选座速查 | 跨插件协作、装 profile、选 slot |
@@ -87,6 +89,12 @@ pnpm check       # 验收闸门：语法 + 元数据 + tsc --noEmit + 文档↔�
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### 选型调整（2026-10-18，文档）
+
+- 协议端由「官方 QQ 机器人」调整为「真实 QQ 号 + NapCat + OneBot 11 正向 WebSocket」：官方通道群聊被动回复窗口仅 5 分钟，DSH 长任务结果只能改走主动消息（受配额、可被关闭）；真实 QQ 号可随时发送。
+- 新增 `docs/onebot-channel.md`；`docs/official-bot-channel.md` 降为备选；architecture / gate / roadmap / README / AGENTS 同步调整。
+- 风险：非官方协议端有封号风险、需常开 QQ 客户端；功能实现仍未开始。
 
 ### 设计定案（2026-10-18，文档）
 

@@ -15,7 +15,7 @@
 - `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（当前空骨架），
   规划分层 = `lib/controller/`（协议端接入、消息编解码、注册与路由）+ `lib/model/`
   （会话映射、配置、纯逻辑）
-- `docs/` — 本插件的长期文档（一文档一主题）；**尚未建立**，按需新建并在 README「文档索引」登记
+- `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 
 > **本项目不使用 openspec**（用户 2026-10-16 决定）：没有 `openspec/`，也没有
@@ -27,7 +27,7 @@
 | 用途 | 位置 | 何时看 |
 |---|---|---|
 | 本插件总览 / 用途 / 用法 / 版本历史 | [README.md](./README.md) | 任何任务第一步 |
-| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；**尚未建立**，建后回 README「文档索引」登记） | 动功能前对齐方向 |
+| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / roadmap） | 动功能前对齐方向 |
 | 某行为是哪个版本引入 / 为何如此 | README「版本历史」 | 追历史与动机 |
 | 仓库纪律 / 渲染树选座 / 工程基线 | 上级 [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 跨插件协作、装入 profile、选 slot |
 

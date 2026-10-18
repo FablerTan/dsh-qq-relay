@@ -2,12 +2,12 @@
 
 > 状态：P0 已完成（2026-10-18）；P1 起需要先解除上级 AGENTS.md §0 的
 > 「只做文档 / 空骨架」约束。设计见 [architecture.md](./architecture.md)、
-> [official-bot-channel.md](./official-bot-channel.md)、[gate.md](./gate.md)。
+> [onebot-channel.md](./onebot-channel.md)、[gate.md](./gate.md)。
 
 ## P0 文档（已完成）
 
-- 落地方案文档：架构、官方通道事实、消息闸门、路线图。
-- README 同步：用途、目录结构、文档索引、版本历史。
+- 落地方案文档：架构、OneBot 通道、消息闸门、路线图。
+- README / AGENTS 同步：用途、目录结构、文档索引、版本历史。
 - 不写任何功能代码。
 
 ## P1 最小闭环：@ 直通
@@ -16,24 +16,25 @@
 
 ### 范围
 
-- 凭证：AppID / AppSecret → access_token，提前刷新，失败重试。
-- WebSocket：获取网关、连接、Identify、READY、心跳、Resume、重连退避。
-- 事件：GROUP_AT_MESSAGE_CREATE（含 @ 直通），去重、忽略 author.bot、白名单校验。
+- **部署前提**：QQ NT + NapCat 运行，bot 小号已登录；NapCat 开启 OneBot 11 正向 WS。
+- 连接层：WS 客户端（鉴权、重连退避、心跳、echo、self_id 校验、单实例锁）。
+- 事件：group message、忽略 message_sent、message_id 去重、群白名单。
+- 直通判定：message 段含 at self_id / 引用回复 / 命令前缀。
 - 会话映射：一群一会话，自动创建（workspace + 标题）；映射持久化。
 - 投递：sessionController.prompt（或 agents.followup），关联 messageId → turn。
-- 出向：turn/end 收集本轮文本，被动回复（5 分钟窗口内，msg_seq 递增）。
-- 窗口过期：按 onPassiveExpired: drop 不回。
-- 运行保障：单实例锁、日志、配置校验；服务缺失时静默不崩溃。
+- 出向：turn/end 收集本轮文本，send_group_msg 回复；长文本切分；发送失败重试。
 - 闸门：本阶段不做 jev，@ 消息全部直通。
+- 运行保障：日志、配置校验；服务缺失时静默不崩溃。
 
 ### 验收
 
-- 测试群 @ 机器人「你好」→ 5 分钟内收到 DSH 回复。
-- 同一条 @ 消息重复推送 → 只回复一次。
+- 测试群 @ 机器人「你好」→ 收到 DSH 回复。
+- **DSH 单轮超过 5 分钟 → 结果仍能发出**（真实 QQ 号无回复窗口）。
+- 同一条消息重复事件 → 只回复一次。
 - 重启 GUI 后映射与会话仍在，不重复建会话。
-- access_token 到期自动刷新，WS 断线自动重连并 Resume。
-- 非白名单群 / 机器人自己的消息被忽略。
-- 长回复按长度切分，不超平台上限。
+- WS 断线自动重连，断线期间不崩溃；重连后不重复回复。
+- 非白名单群 / 机器人自己的 message_sent 被忽略。
+- 长回复按长度切分，不超 QQ 实际限制。
 
 ## P2 消息闸门
 
@@ -41,29 +42,28 @@
 
 ### 范围
 
-- 开启全量消息（GROUP_MESSAGE_CREATE）；确认 @ 事件与全量事件的关系（待实测）。
 - 聊天日志 JSONL：落盘、保留 7 天、给 jev 与 DSH 提供上下文。
 - jev 分类器：契约、超时、fail closed、决策日志。
 - 快路：10 分钟窗口 + 5 秒去抖 + 45 秒最小发言间隔。
 - 慢路：2 小时定时器 + 最近 2 小时批量评估。
-- 状态持久化：lastBotSpeakAt / cooldownUntil / pending / seenMsgIds；重启恢复。
-- 主动消息：配额、429 退避、GROUP_MSG_REJECT/RECEIVE 降级。
-- 被动窗口过期策略与测试。
+- 状态持久化：lastBotSpeakAt / cooldownUntil / pending / seenMessageIds；重启恢复。
+- 发送队列与 retcode 退避；断线期间排队。
+- 群成员昵称 / 角色（get_group_member_info）用于 prompt 前缀。
 
 ### 验收
 
 - 快路连续三条消息只产生一次 jev 调用与一次回复。
 - 慢路 2 小时到点只评估最近 2 小时消息；无消息 no-op。
 - 冷却期内 @ 直通仍然生效。
-- 主动消息被关闭 / 429 时降级且不刷错误日志。
 - 重启后冷却状态恢复，不立即发言。
-- 网关重连补发事件不重复回复。
+- 发送频率被 QQ 风控时退避且不刷错误日志。
+- WS 断线重连后不重复回复、队列不丢。
 
 ## P3 扩展
 
-- 审批：内嵌键盘按钮 + INTERACTION_CREATE，回复带 event_id；超时按拒绝。
-- 单聊（C2C）：60 分钟 / 4 次被动窗口，身份 user_openid。
-- 媒体：入向附件下载并进 DSH；出向富媒体上传。
+- 审批：文本命令（同意 / 拒绝），超时按拒绝。
+- 私聊（private）：与群共享映射体系还是独立会话，待定。
+- 媒体：入向图片 / 文件转 DSH 附件；出向图片 / 文件上传发送。
 - DSH → QQ 主动推送工具（例如 qq_send），供 agent 在任意会话调用。
 - client 半身：状态面板 / 配置面板（连接状态、映射表、最近消息、错误）。
 - 多群资源控制：并发上限、队列、每群配额。
@@ -72,19 +72,19 @@
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| 全量消息权限拿不到 | 闸门拿不到群消息，慢路失效 | 退化为只做 @ 直通；或调整闸门设计 |
-| 主动消息被管理员关闭 | 慢路无法发言 | 监听事件并降级为直通 + 被动回复 |
-| 群聊被动窗口仅 5 分钟 | 长任务最终结果发不出 | 过期丢弃（已定）；可选「处理中」回执 |
-| 网关断线 / 心跳失败 | 漏事件、发送失败 | Resume + msg_id 去重 + 发送队列 |
-| 凭证泄露 | 机器人被滥用 | 环境变量 / profile 配置，不写日志 |
-| 内容审核不通过 | 消息被拦截 | 日志记录 MESSAGE_AUDIT_REJECT，提示用户 |
+| 账号被封 | bot 小号失效 | 只用小号；控制频率；明示风险由用户承担 |
+| 非官方协议端合规 | 违反 QQ 协议 | 自用范围；不发布、不商用 |
+| QQ 更新破坏 NapCat | 连接失败 | 固定 QQ 版本或跟进 NapCat 升级 |
+| 断线期间事件丢失 | 漏消息 / 漏回复 | 本地状态兜底；重连后不重放；重要场景可 get_group_msg_history 补上下文 |
+| QQ 风控 / 频率限制 | 发送失败 | retcode 分类退避；最小发言间隔 |
 | GUI 不常驻 | relay 离线 | 文档写明「relay 在线 = GUI 在线」 |
-| 多进程重复连接 | 重复回复、互踢 | 单实例文件锁 |
+| 多进程重复连接 | 重复回复、账号互踢 | 单实例文件锁 |
+| 提示注入 | agent 执行危险操作 | 群白名单、受限权限预设、审批（P3）、审计日志 |
 
 ## 用户前置动作
 
-1. QQ 开放平台注册机器人，完成个人 / 企业认证，获取 AppID / AppSecret。
-2. 创建测试群并拉入机器人；申请「接收所有消息」（P2 需要）。
-3. 决定凭证存放方式（建议环境变量，如 DSH_QQ_BOT_APPID / DSH_QQ_BOT_SECRET）。
-4. 选定目标 profile，安装插件并重启 GUI。
+1. 准备一个 **QQ 小号**作为 bot。
+2. 在 macOS 安装 NapCat，用小号登录 QQ，开启 OneBot 11 正向 WS（回环 + token）。
+3. 建测试群，把 bot 小号拉进群；主号在群里 @ 它。
+4. 选定目标 profile，安装插件并填配置（WS 地址、token、群白名单）。
 5. P0 文档 review 通过后，明确解除仓库 §0 约束，开始 P1。
