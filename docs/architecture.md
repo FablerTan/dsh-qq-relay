@@ -76,6 +76,9 @@ host 半身只依赖 lib/model/；client 半身（src/）保持空骨架。
 P1 只实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；`gate.js`、`jev.js` 自 P2 起。
 
+`test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖 model 层：配置校验、
+映射 / 状态持久化、单实例锁、聊天日志读写清理、回复切分与退避。
+
 ## 4. 事件流
 
 ### 4.1 入向（QQ → DSH）

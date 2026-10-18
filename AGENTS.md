@@ -47,7 +47,8 @@
    `dsh.client` 元数据 + patch 行齐备）
    && `tsc --noEmit`（client 半身类型检查，**需先 `pnpm install`**）
    && `node scripts/check-docs.mjs`（**文档↔源码配对**：改了源码 / 装配面却没同步
-   `README.md` / `AGENTS.md` / `docs/` → 直接失败）。任一环红即视为未完成，修到全绿再提交；
+   `README.md` / `AGENTS.md` / `docs/` → 直接失败）。host 纯逻辑另有 `pnpm test`
+   （node:test，零依赖）——改 `lib/model/` 时先跑它。任一环红即视为未完成，修到全绿再提交；
    确属纯代码微调要跳过配对校验，须显式 `--allow` / `SKIP_PNPM_CHECK=1` 并在 commit message
    写明理由。`lib/client.js` 是构建产物，不触发配对要求（重新构建即可）。
 3. **零外部依赖 + 永不 crash boot**：`lib/` 是自包含运行时（运行时只用 node: 内置模块）；

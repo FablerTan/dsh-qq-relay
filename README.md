@@ -41,8 +41,10 @@ dsh-qq-relay/
 ├── tsconfig.json         # client 半身类型检查（include 只有 src）
 ├── pnpm-workspace.yaml   # pnpm 11 构建设置（放行 esbuild、关自动 peer 安装）
 ├── lib/
-│   ├── index.js          # host 半身**手写**源码（空骨架：name + 空 apply + 一行加载日志）
+│   ├── index.js          # host 半身**手写**源码（P1 组合根；当前空骨架）
+│   ├── model/            # P1：配置 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分（纯逻辑）
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
+├── test/                 # model 层单测（node:test，零依赖）
 ├── src/client.tsx        # client 半身源码 / 组合根（空骨架，MVVM 三层按需展开）
 ├── scripts/              # wrap-client（产物包装）· check-syntax · check-docs
 ├── docs/                 # 设计文档（官方通道 / 消息闸门 / 架构 / 路线）
@@ -81,6 +83,7 @@ pnpm install     # devDependencies：vite / react / typescript（插件**运行�
 pnpm build       # src/client.tsx -> dist/client.cjs -> lib/client.js（wrap-client 包装）
 pnpm watch       # watch 模式：改 src 自动 rebuild + wrap，浏览器刷新可见
 pnpm check       # 验收闸门：语法 + 元数据 + tsc --noEmit + 文档↔源码配对
+pnpm test        # host 纯逻辑单测（node:test，零依赖）
 ```
 
 - `lib/index.js` 是**手写** host 源码（不经构建）；`lib/client.js` 是 client 半身构建产物，

@@ -1,7 +1,7 @@
 {
   "name": "dsh-qq-relay",
-  "version": "0.1.0",
-  "description": "把 DeepSeek Harness（DSH）接入 QQ 机器人的桥插件：host 半身规划连接 QQ 机器人协议端、在 QQ 与 DSH 会话之间双向转发消息，client 半身预留状态 / 配置面板。当前 v0.1.0 空骨架，功能待实现。",
+  "version": "0.2.0",
+  "description": "把 DeepSeek Harness（DSH）接入 QQ 机器人的桥插件（host + client 双半身）。当前 v0.2.0 开发中：P1「@ 直通」实现中（OneBot 11 正向 WS，群聊优先），client 半身仍为空骨架。",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -36,7 +36,8 @@
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit",
     "check": "node scripts/check-syntax.mjs && tsc --noEmit && node scripts/check-docs.mjs",
-    "check:docs": "node scripts/check-docs.mjs"
+    "check:docs": "node scripts/check-docs.mjs",
+    "test": "node --test test/"
   },
   "peerDependencies": {
     "react": "^18.2.0"
