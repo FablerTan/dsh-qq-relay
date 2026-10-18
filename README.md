@@ -1,8 +1,8 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.2.0 开发中**：P1「@ 直通」实现进行中（2026-10-19 起），协议端已在 Docker 里实测
-通过；两个半身的 `apply` 目前仍为空骨架。设计见 [docs/architecture.md](./docs/architecture.md)，
+当前 **v0.2.0**：P1「@ 直通」已实现并完成真机验收（2026-10-19）——群里 @ 小号即可触发
+DSH 会话并回复；client 半身仍为空骨架。设计见 [docs/architecture.md](./docs/architecture.md)，
 协议端选型与部署见 [docs/onebot-channel.md](./docs/onebot-channel.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -101,7 +101,7 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 - 群里 @ 小号 → DSH 回复（约 4 秒往返）；`mapping.json` 自动建会话「QQ群：示例群」。
 - NapCat 重启导致 WS 断开后，插件按退避自动重连；重连后新消息正常、复用原会话不重建，`state.seen` / 聊天日志正确。
 - 已知代价：容器重启可能需重新扫码；断线窗口内的事件不补发（P1 接受，P2 再补）。
-- 待验证：DSH 单轮 > 5 分钟、重启 dwdev GUI 后的映射恢复。
+- 长轮次 6 分 04 秒仍能发出；重启 dwdev GUI 后锁被新进程接管、映射复用原会话，重启后首条消息正常回复。
 
 ### P1 实现（2026-10-19，代码）
 
