@@ -41,8 +41,11 @@ dsh-qq-relay/
 ├── tsconfig.json         # client 半身类型检查（include 只有 src）
 ├── pnpm-workspace.yaml   # pnpm 11 构建设置（放行 esbuild、关自动 peer 安装）
 ├── lib/
-│   ├── index.js          # host 半身**手写**源码（P1 组合根；当前空骨架）
-│   ├── model/            # P1：配置 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分（纯逻辑）
+│   ├── index.js          # host 半身**手写**组合根（读配置、单实例锁、装配）
+│   ├── controller/
+│   │   ├── onebot/       # codec（事件编解码）· client（WS）· api（action 封装）
+│   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发
+│   ├── model/            # 配置 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分（纯逻辑）
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # model 层单测（node:test，零依赖）
 ├── src/client.tsx        # client 半身源码 / 组合根（空骨架，MVVM 三层按需展开）
@@ -92,6 +95,13 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### P1 实现（2026-10-19，代码）
+
+- host 半身实现「@ / 引用 / 命令前缀直通」：OneBot 11 正向 WS 客户端（token、echo 超时、心跳看门狗、退避重连、`self_id` 校验）、事件编解码、白名单 / `message_id` 去重 / 聊天日志、群 → DSH 会话自动创建与映射、`sessionController.prompt` 投递、`agent/inbox/claimed` 关联 turn、`turn/end` 回发 `send_group_msg`（长文本切分，只回 QQ 触发的轮次）。
+- model 层：配置校验（fail closed）、映射 / 状态持久化、单实例文件锁、聊天日志 JSONL、回复切分与退避。
+- 单测 38 个（`node:test`，零依赖）；`pnpm check` 全绿。
+- 待办：重启 dwdev GUI 后做真机验收（见 roadmap P1 验收表）。
 
 ### P1 开工（2026-10-19，文档 + 环境）
 

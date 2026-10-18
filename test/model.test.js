@@ -164,6 +164,16 @@ test('chat-log：追加、读取与清理', (t) => {
   assert.equal(log.prune(now, 7), 1)
 })
 
+test('chat-log：跨日读取能覆盖前一天的文件', (t) => {
+  const dir = tempDir(t)
+  const log = createChatLog({ dir })
+  const now = Date.now()
+  log.append(1, { time: now, messageId: 'x', userId: 'u', nickname: 'n', role: 'member', text: 'today' })
+  const records = log.readRecent(1, now - 25 * 60 * 60 * 1000)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].text, 'today')
+})
+
 test('chat-log：localDateKey 为本地日期', () => {
   const key = localDateKey(new Date(2026, 0, 2, 23, 59).getTime())
   assert.equal(key, '2026-01-02')
