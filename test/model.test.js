@@ -36,6 +36,7 @@ test('config：合法配置被规范化', () => {
   assert.equal(result.config.workspace, join(homedir(), 'dsh/qq-relay-ws'))
   assert.equal(result.config.reconnect.minMs, 1000)
   assert.equal(result.config.replyChunkSize, 500)
+  assert.deepEqual(result.config.commandPrefixes, ['/dsh'])
 })
 
 test('config：缺必填项时 fail closed', () => {
@@ -44,6 +45,15 @@ test('config：缺必填项时 fail closed', () => {
   assert.ok(result.problems.some((p) => p.includes('wsUrl')))
   assert.ok(result.problems.some((p) => p.includes('accessToken')))
   assert.ok(result.problems.some((p) => p.includes('selfId')))
+})
+
+test('config：commandPrefixes 可覆盖且拒绝非法值', () => {
+  const custom = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1, commandPrefixes: ['!', ' /dsh '] })
+  assert.deepEqual(custom.config.commandPrefixes, ['!', '/dsh'])
+
+  const invalid = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1, commandPrefixes: [''] })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('commandPrefixes')))
 })
 
 test('config：非法 wsUrl / groups / chunkSize 被拒绝', () => {

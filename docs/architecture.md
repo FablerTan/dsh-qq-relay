@@ -42,6 +42,7 @@
 | `workspace` | string | `~/dsh/qq-relay-ws` | relay 会话的工作目录；P1 先固定配置，后续做成插件设置 |
 | `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
+| `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
 
 - 会话映射 / 闸门状态 / 聊天日志落在 `~/.dsh/storages/dsh-qq-relay/`。
 - **配置传递**：写在目标 profile 的 `~/.dsh/profiles/<name>/cordis.patch.yml`，用
@@ -75,6 +76,8 @@ host 半身只依赖 lib/model/；client 半身（src/）保持空骨架。
 
 P1 只实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；`gate.js`、`jev.js` 自 P2 起。
+当前进度：`model/` 全部与 `controller/onebot/{codec,client,api}.js` 已落地（含单测），
+`controller/relay.js` 与组合根 `index.js` 进行中。
 
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖 model 层：配置校验、
 映射 / 状态持久化、单实例锁、聊天日志读写清理、回复切分与退避。
