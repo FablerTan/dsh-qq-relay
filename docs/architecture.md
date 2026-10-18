@@ -47,7 +47,7 @@
 - 会话映射 / 闸门状态 / 聊天日志落在 `~/.dsh/storages/dsh-qq-relay/`。
 - **配置传递**：写在目标 profile 的 `~/.dsh/profiles/<name>/cordis.patch.yml`，用
   `- id: dsh-qq-relay` + `config:` 整块替换；token 放 `~/.dsh/.env` 的 `DSH_QQ_RELAY_TOKEN`，
-  patch 里用 `!!js 'process.env.DSH_QQ_RELAY_TOKEN'` 引用。改配置后需重启该 profile 的 GUI。
+  patch 里用 `!!js 'process.env.QQ_RELAY_TOKEN'` 引用（注意：`DSH_` 前缀是 DSH 启动环境的保留名，不能写进 `.env`）。改配置后需重启该 profile 的 GUI。
 - 临时停用整行：`- id: dsh-qq-relay` + `disabled: true`。
 - P1 不做 client 设置面板；`workspace` 等后续迁到插件设置。
 
