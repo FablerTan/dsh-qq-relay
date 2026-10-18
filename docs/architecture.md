@@ -1,7 +1,7 @@
 # 架构
 
-> 状态：**方案定案（2026-10-18），实现未开始**。协议端事实见
-> [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
+> 状态：**方案定案（2026-10-18）；协议端实测通过、P1 实现中（2026-10-19）**。
+> 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
 
@@ -9,8 +9,8 @@
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
 - **client 半身 v1 不做**；配置走 profile patch，运行状态先打日志（面板见 P3）。
-- 不引入外部协议端进程（NapCat 是用户侧独立程序）；插件运行期**零外部依赖**
-  （只用 node: 内置模块与 Node 24 的全局 WebSocket）。
+- 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
+  插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
 - 单实例：同一 bot 只允许一个进程连接（文件锁），避免重复事件与账号互踢。
 
@@ -27,6 +27,24 @@
 | 最小发言间隔 | 默认 45 秒，期间的消息并入下一批 |
 | 会话映射 | 默认一个 QQ 群对应一个自动创建的 DSH 会话（草案，见第 5 节） |
 | 审批 / 主动推送 / 媒体 / 面板 | 未定，放 P3 |
+
+### 2.1 配置（P1）
+
+配置由用户在目标 profile 的插件配置里提供（`apply(ctx, config)` 读取）；**token、QQ 号、
+群号都不进仓库**，只写在 profile 配置里：
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `wsUrl` | string | 必填 | NapCat 正向 WS，如 `ws://127.0.0.1:3001` |
+| `accessToken` | string | 必填 | OneBot token |
+| `selfId` | number | 必填 | bot 小号 QQ 号，连接后用 `get_login_info` 校验 |
+| `groups` | number[] | 必填 | 群白名单，未列出的群直接丢弃 |
+| `workspace` | string | `~/dsh/qq-relay-ws` | relay 会话的工作目录；P1 先固定配置，后续做成插件设置 |
+| `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
+| `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
+
+- 会话映射 / 闸门状态 / 聊天日志落在 `~/.dsh/storages/dsh-qq-relay/`。
+- P1 不做 client 设置面板；`workspace` 等后续迁到插件设置。
 
 ## 3. 模块分层
 
@@ -50,6 +68,9 @@ lib/
 ~~~
 
 host 半身只依赖 lib/model/；client 半身（src/）保持空骨架。
+
+P1 只实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
+`model/{config,mapping,state,chat-log,reply}.js`；`gate.js`、`jev.js` 自 P2 起。
 
 ## 4. 事件流
 
@@ -96,6 +117,7 @@ ctx.on('agent/error', ...)          # 失败提示
 {"sessionId": "qq-group-<id>", "workspacePath": "/abs/path", "title": "QQ群：xxx", "createdAt": 1780000000000}
 ~~~
 
+- 映射持久化在 `~/.dsh/storages/dsh-qq-relay/mapping.json`；工作目录默认 `~/dsh/qq-relay-ws`。
 - 默认**自动创建**：首次需要接话时 ctx.agents.create({sessionId, meta:{cwd}, agentOptions})
   + workspaceRegistry.attachSession + sessionTitle.rename；映射持久化。
 - 也支持配置直接绑定已有 sessionId（「遥控现有会话」），绑定后同样受闸门控制。
@@ -115,9 +137,10 @@ ctx.on('agent/error', ...)          # 失败提示
 
 ## 7. 运行前提
 
-1. 本机 QQ NT + NapCat 运行，bot 小号已登录。
-2. NapCat 开启 OneBot 11 正向 WS（回环地址 + token）。
-3. 目标 profile 安装本插件并填配置（WS 地址、token、白名单群号）。
+1. NapCat 跑在 Docker（macOS 用 Colima）里，bot 小号已扫码登录；macOS 原生 Shell 不可用
+   （原因见 [onebot-channel.md §3.1](./onebot-channel.md)）。
+2. NapCat 开启 OneBot 11 正向 WS（`127.0.0.1:3001` + token），只监听回环。
+3. 目标 profile 装入本插件并填配置；当前约定用 `dwdev`（该 profile 已清空为只装本插件）。
 4. 重启该 profile 的 GUI（bundle 组合在启动时发生）。
 5. DSH GUI 需常驻；GUI 关闭则 relay 离线。
 

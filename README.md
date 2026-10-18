@@ -1,10 +1,9 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.1.0 = 空骨架**：目录、bundle 元数据、构建链路、自检闸门与纪律件齐备，两个半身的
-`apply` 都不注册任何东西。**方案已定案（2026-10-18），功能实现尚未开始**——设计见
-[docs/architecture.md](./docs/architecture.md)，协议端选型见
-[docs/onebot-channel.md](./docs/onebot-channel.md)。
+当前 **v0.2.0 开发中**：P1「@ 直通」实现进行中（2026-10-19 起），协议端已在 Docker 里实测
+通过；两个半身的 `apply` 目前仍为空骨架。设计见 [docs/architecture.md](./docs/architecture.md)，
+协议端选型与部署见 [docs/onebot-channel.md](./docs/onebot-channel.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
 > **本项目不使用 openspec**（用户 2026-10-16 决定）——没有 `openspec/`，也没有
@@ -26,6 +25,7 @@ DSH 与 QQ 之间的**双向桥**：
 - 消息闸门：**10 分钟快路 + 2 小时慢路 + jev 分类器**，@ 直通、最小发言间隔（见 [docs/gate.md](./docs/gate.md)）。
 - 运行形态：host 半身单进程插件；client 半身 v1 不做；插件不管理 profile。
 - 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
+- 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
 **仍未定案**：会话映射细节、群审批（按钮）、主动推送工具、媒体收发、client 状态面板——先落 `docs/` 再实现。
 
@@ -63,7 +63,7 @@ dsh-qq-relay/
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
 | [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 仓库级纪律、渲染树选座速查 | 跨插件协作、装 profile、选 slot |
 
-## 激活方式（当前**未链接**任何 profile）
+## 激活方式（已链接 `dwdev`，该 profile 已清空为只装本插件）
 
 ```bash
 dsh plugin --profile <profile> add link:/path/to/dsh-qq-relay
@@ -71,7 +71,7 @@ dsh plugin --profile <profile> add link:/path/to/dsh-qq-relay
 ```
 
 - 回滚：`dsh plugin --profile <profile> remove dsh-qq-relay`（不影响本仓库）。
-- 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的「已加载（v0.1.0 空骨架…）」一行。
+- 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的加载日志。
 - 链接现状记录在上级 [PROFILES.md](../../PROFILES.md)。
 
 ## 开发循环
@@ -89,6 +89,13 @@ pnpm check       # 验收闸门：语法 + 元数据 + tsc --noEmit + 文档↔�
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### P1 开工（2026-10-19，文档 + 环境）
+
+- 上级 `AGENTS.md` §0 按用户要求**仅对 `dsh-qq-relay` 解除**（允许 P1 实现；其余插件仍只做文档 / 空骨架）。
+- 协议端实测通过：macOS 26 原生 Shell 因 native hook 被代码签名强杀，改用 **Docker（Colima + linux/arm64）** 跑 NapCat；OneBot 11 正向 WS、@ / 引用 / 普通消息、`send_group_msg`、历史查询均验证通过（记录见 [docs/onebot-channel.md §9](./docs/onebot-channel.md)）。
+- 目标 profile 定为 `dwdev`，并按用户要求把该 profile 清空为只装本插件（见上级 `PROFILES.md`）。
+- 文档更新：`onebot-channel.md` 补 Docker 部署与实测契约；`architecture.md` 补配置项；`roadmap.md` 更新前提与验收。
 
 ### 选型调整（2026-10-18，文档）
 

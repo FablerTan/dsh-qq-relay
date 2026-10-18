@@ -6,15 +6,17 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身规划连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身预留状态 / 配置面板。当前 **v0.1.0 空骨架**，功能待实现。
+> 会话之间双向转发消息，client 半身预留状态 / 配置面板。当前 **v0.2.0 开发中**
+> （P1 @ 直通，2026-10-19 起；上级 §0 已仅对本插件解除）。
 
 ## 0. 布局（快速地图）
 
 - `src/` — client 半身源码（React + TS），组合根 `src/client.tsx`，构建产物 `lib/client.js`；
   新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
-- `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（当前空骨架），
-  规划分层 = `lib/controller/`（协议端接入、消息编解码、注册与路由）+ `lib/model/`
-  （会话映射、配置、纯逻辑）
+- `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（P1 实现中），
+  分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发）+ `lib/model/`
+  （配置、会话映射、状态、聊天日志、回复）；P1 实现 `controller/onebot/{client,api,codec}.js`、
+  `controller/relay.js`、`model/{config,mapping,state,chat-log,reply}.js`，`gate.js` / `jev.js` 自 P2 起
 - `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 

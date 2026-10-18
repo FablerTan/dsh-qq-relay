@@ -1,14 +1,18 @@
 # 路线图
 
-> 状态：P0 已完成（2026-10-18）；P1 起需要先解除上级 AGENTS.md §0 的
-> 「只做文档 / 空骨架」约束。设计见 [architecture.md](./architecture.md)、
-> [onebot-channel.md](./onebot-channel.md)、[gate.md](./gate.md)。
+> 状态：P0 已完成（2026-10-18）；协议端已实测通过、P1 实现中（2026-10-19 起）。
+> 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
+> 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
+> [gate.md](./gate.md)。
 
 ## P0 文档（已完成）
 
 - 落地方案文档：架构、OneBot 通道、消息闸门、路线图。
 - README / AGENTS 同步：用途、目录结构、文档索引、版本历史。
 - 不写任何功能代码。
+- 协议端实测（2026-10-19）：NapCat 跑在 Docker（Colima，linux/arm64），OneBot 11 正向 WS
+  连通；@ / 普通消息 / 引用回复 / `send_group_msg` / 历史查询均验证通过。记录见
+  [onebot-channel.md §9](./onebot-channel.md)。
 
 ## P1 最小闭环：@ 直通
 
@@ -16,7 +20,11 @@
 
 ### 范围
 
-- **部署前提**：QQ NT + NapCat 运行，bot 小号已登录；NapCat 开启 OneBot 11 正向 WS。
+- **部署前提**：NapCat 跑在 Docker（Colima）里，bot 小号已登录；OneBot 11 正向 WS
+  `ws://127.0.0.1:3001` + token（详见 [onebot-channel.md §3](./onebot-channel.md)）。
+- **目标 profile**：`dwdev`（已清空为只装本插件；装完需重启该 profile 的 GUI）。
+- **工作目录**：默认 `~/dsh/qq-relay-ws`；P1 先固定配置，后续做成插件设置。
+- **配置项**：见 [architecture.md §2.1](./architecture.md)。
 - 连接层：WS 客户端（鉴权、重连退避、心跳、echo、self_id 校验、单实例锁）。
 - 事件：group message、忽略 message_sent、message_id 去重、群白名单。
 - 直通判定：message 段含 at self_id / 引用回复 / 命令前缀。
@@ -35,6 +43,7 @@
 - WS 断线自动重连，断线期间不崩溃；重连后不重复回复。
 - 非白名单群 / 机器人自己的 message_sent 被忽略。
 - 长回复按长度切分，不超 QQ 实际限制。
+- `pnpm check` 全绿（语法 + 类型 + 文档配对）。
 
 ## P2 消息闸门
 
@@ -79,12 +88,13 @@
 | QQ 风控 / 频率限制 | 发送失败 | retcode 分类退避；最小发言间隔 |
 | GUI 不常驻 | relay 离线 | 文档写明「relay 在线 = GUI 在线」 |
 | 多进程重复连接 | 重复回复、账号互踢 | 单实例文件锁 |
+| macOS 原生 Shell 不可用 | NapCat 起不来 / 崩溃循环 | 用 Docker（Colima）跑 linux/arm64；见 onebot-channel §3.1 |
 | 提示注入 | agent 执行危险操作 | 群白名单、受限权限预设、审批（P3）、审计日志 |
 
 ## 用户前置动作
 
-1. 准备一个 **QQ 小号**作为 bot。
-2. 在 macOS 安装 NapCat，用小号登录 QQ，开启 OneBot 11 正向 WS（回环 + token）。
-3. 建测试群，把 bot 小号拉进群；主号在群里 @ 它。
-4. 选定目标 profile，安装插件并填配置（WS 地址、token、群白名单）。
-5. P0 文档 review 通过后，明确解除仓库 §0 约束，开始 P1。
+1. ✅ QQ 小号 + NapCat（Docker，macOS 用 Colima）已就绪并登录。
+2. ✅ 测试群已建、bot 小号已入群，主号可 @ 它。
+3. ✅ 目标 profile 定为 `dwdev`，已清空为只装本插件（重启该 profile 的 GUI 生效）。
+4. 待办：在 dwdev 里填插件配置（WS 地址、token、selfId、群白名单），重启 GUI 验收。
+5. ✅ 上级 AGENTS.md §0 已于 2026-10-19 仅对 `dsh-qq-relay` 解除。
