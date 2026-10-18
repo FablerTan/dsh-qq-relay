@@ -13,7 +13,7 @@
 
 - `src/` — client 半身源码（React + TS），组合根 `src/client.tsx`，构建产物 `lib/client.js`；
   新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
-- `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（P1 实现中），
+- `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（P1 已验收），
   分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发）+ `lib/model/`
   （配置、会话映射、状态、聊天日志、回复）；P1 实现 `controller/onebot/{client,api,codec}.js`、
   `controller/relay.js`、`model/{config,mapping,state,chat-log,reply}.js`，`gate.js` / `jev.js` 自 P2 起
