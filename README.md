@@ -96,6 +96,13 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### P1 真机验收（2026-10-19）
+
+- 群里 @ 小号 → DSH 回复（约 4 秒往返）；`mapping.json` 自动建会话「QQ群：示例群」。
+- NapCat 重启导致 WS 断开后，插件按退避自动重连；重连后新消息正常、复用原会话不重建，`state.seen` / 聊天日志正确。
+- 已知代价：容器重启可能需重新扫码；断线窗口内的事件不补发（P1 接受，P2 再补）。
+- 待验证：DSH 单轮 > 5 分钟、重启 dwdev GUI 后的映射恢复。
+
 ### P1 实现（2026-10-19，代码）
 
 - host 半身实现「@ / 引用 / 命令前缀直通」：OneBot 11 正向 WS 客户端（token、echo 超时、心跳看门狗、退避重连、`self_id` 校验）、事件编解码、白名单 / `message_id` 去重 / 聊天日志、群 → DSH 会话自动创建与映射、`sessionController.prompt` 投递、`agent/inbox/claimed` 关联 turn、`turn/end` 回发 `send_group_msg`（长文本切分，只回 QQ 触发的轮次）。
