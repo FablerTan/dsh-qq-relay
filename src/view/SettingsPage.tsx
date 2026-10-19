@@ -1,5 +1,5 @@
 /**
- * 配置页外壳（client View 层）：状态行 + 二级页面导航（连接 / 项目 / 行为 / 记录）。
+ * 配置页外壳（client View 层）：状态行 + 二级页面导航（连接 / 项目 / 行为 / 预设 / 记录）。
  *
  * 注册落点是插件面板里 dsh-qq-relay 组合包自己的页面（`plugins.bundle.config`，
  * key = 包名），页面标题 / 描述 / 启动开关由插件页负责，这里只画表单内容。
@@ -13,6 +13,7 @@ import { useRelayStyles } from './theme.js'
 import { SETTINGS_TABS, useRelaySettings } from '../viewmodel/settings.js'
 import { BehaviorPanel } from './panels/BehaviorPanel.js'
 import { ConnectionPanel } from './panels/ConnectionPanel.js'
+import { PresetsPanel } from './panels/PresetsPanel.js'
 import { ProjectPanel } from './panels/ProjectPanel.js'
 import { RecordsPanel } from './panels/RecordsPanel.js'
 
@@ -27,7 +28,9 @@ export function RelaySettingsPage(): ReactElement {
       ? <ProjectPanel model={model} />
       : model.tab === 'behavior'
         ? <BehaviorPanel model={model} />
-        : <RecordsPanel model={model} />
+        : model.tab === 'presets'
+          ? <PresetsPanel model={model} />
+          : <RecordsPanel model={model} />
 
   return (
     <div className="qqr-root" data-plugin="dsh-qq-relay">
@@ -78,7 +81,8 @@ export function RelaySettingsPage(): ReactElement {
 
       <p className="qqr-footer">
         配置来源：profile 的 <code>cordis.patch.yml</code>，本页保存的覆盖写入
-        <code> ~/.dsh/storages/dsh-qq-relay/settings.json</code>。token 只写不读，页面永远看不到明文。
+        <code> ~/.dsh/storages/dsh-qq-relay/settings.json</code>；预设写入同目录的
+        <code>presets.json</code> 并在启动时动态注册。token 只写不读，页面永远看不到明文。
       </p>
     </div>
   )

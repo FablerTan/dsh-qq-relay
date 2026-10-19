@@ -134,6 +134,27 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
   为 true，relay 会退回默认 preset 并记 warn。
 - 平台约定行「直接输出最终回复即可，relay 会自动回发到本群；不要用 `qq_send` 往本群发」始终追加。
 
+### 2.11 插件预设（v0.20.0，非 config 字段）
+
+预设不在 `normalizeConfig` 里，而是独立的 `~/.dsh/storages/dsh-qq-relay/presets.json`
+（页面「预设」tab 增删改；首次启动种子「QQ 群聊」）。每个条目：
+
+| 字段 | 默认 | 取值 | 作用 |
+|---|---|---|---|
+| `id` | — | 小写字母 / 数字 / 连字符，≤41 | preset id；创建后不可改 |
+| `name` / `description` | — / `''` | 字符串 | 显示名 / 说明 |
+| `persona` | — | ≤4000 字符 | 系统提示词人设（`@deepseek-ai/dsh-persona` prefix） |
+| `model.provider` / `model.model` | `''` | 字符串成对 | 会话模型；空 = 跟随 DSH 默认 |
+| `model.reasoningEffort` | `''` | 模型可选层级 | 思考层级；空 = 模型默认 |
+| `permissionPreset` | `''` | 权限预设名 | 沙箱 + 审批组合；空 = 不设置 |
+| `order` | `100` | 1..10000 | DSH preset 列表排序 |
+
+- 保存 / 删除走 `GET|POST /dsh-qq-relay/api/presets` 与 `POST /api/presets/delete`；
+  host 校验后落盘并**动态注册**（`ctx.agentPresets.register`），不需要重启 GUI。
+- 组合表 = 内置 `standard` 的 20 行 + persona；见 [persona.md](./persona.md) §2。
+- 每会话首次派发时应用预设的模型（追加 `model/selection`，不覆盖用户手动选择）与权限
+  （`permissionPresets.set`），详见 [persona.md](./persona.md) §4。
+
 ## 3. 写死的常量（想调得先改成配置段）
 
 这些目前是代码里的常量，**不在配置里**；下表列出位置与含义，作为"要不要顺手做成配置"的参考。

@@ -10,7 +10,7 @@
  * 由 host 的 normalizeConfig 负责，错误信息原样显示。
  */
 
-import type { RelayConfigPatch, RelayConfigView, RelayStatusView } from './api.js'
+import type { RelayConfigPatch, RelayConfigView, RelayPresetView, RelayStatusView } from './api.js'
 
 /** 受控表单状态：全部字符串，方便 input 直接绑定。 */
 export interface RelayFormState {
@@ -300,6 +300,88 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
 export function isFormDirty(form: RelayFormState, config: RelayConfigView): boolean {
   const base = formFromConfig(config)
   return (Object.keys(base) as (keyof RelayFormState)[]).some((key) => form[key] !== base[key])
+}
+
+/** 插件预设编辑器里的受控状态（v0.20.0；全部字符串）。 */
+export interface RelayPresetDraft {
+  id: string
+  name: string
+  description: string
+  persona: string
+  provider: string
+  model: string
+  reasoningEffort: string
+  permissionPreset: string
+  order: string
+}
+
+/** 空预设草稿。 */
+export function emptyPresetDraft(): RelayPresetDraft {
+  return {
+    id: '',
+    name: '',
+    description: '',
+    persona: '',
+    provider: '',
+    model: '',
+    reasoningEffort: '',
+    permissionPreset: '',
+    order: '100',
+  }
+}
+
+/** host 预设视图 → 草稿。 */
+export function presetDraftFromView(preset: RelayPresetView): RelayPresetDraft {
+  return {
+    id: preset.id,
+    name: preset.name,
+    description: preset.description,
+    persona: preset.persona,
+    provider: preset.model.provider,
+    model: preset.model.model,
+    reasoningEffort: preset.model.reasoningEffort,
+    permissionPreset: preset.permissionPreset,
+    order: String(preset.order),
+  }
+}
+
+/** 草稿 → 提交给 host 的预设对象；校验只做页面能立刻发现的那一层。 */
+export function buildPresetFromDraft(draft: RelayPresetDraft): ParseResult<RelayPresetView> {
+  const problems: string[] = []
+  const id = draft.id.trim()
+  if (!/^[a-z0-9][a-z0-9-]{0,40}$/u.test(id)) {
+    problems.push('预设 id 只能用小写字母 / 数字 / 连字符，且不超过 41 字符')
+  }
+  const name = draft.name.trim()
+  if (name === '') problems.push('预设名称必填')
+  const persona = draft.persona.trim()
+  if (persona === '') problems.push('人设文本必填')
+  if (persona.length > 4000) problems.push('人设文本最多 4000 字符')
+  const provider = draft.provider.trim()
+  const model = draft.model.trim()
+  if ((provider === '') !== (model === '')) problems.push('模型必须同时选 provider 与 model（或都留空）')
+  const orderRaw = draft.order.trim() === '' ? '100' : draft.order.trim()
+  const order = Number(orderRaw)
+  if (!/^\d+$/u.test(orderRaw) || !Number.isInteger(order) || order < 1 || order > 10000) {
+    problems.push('预设排序必须是 1..10000 的整数')
+  }
+  if (problems.length > 0) return { ok: false, problems }
+  return {
+    ok: true,
+    value: {
+      id,
+      name,
+      description: draft.description.trim(),
+      persona,
+      model: {
+        provider,
+        model,
+        reasoningEffort: provider === '' ? '' : draft.reasoningEffort.trim(),
+      },
+      permissionPreset: draft.permissionPreset.trim(),
+      order,
+    },
+  }
 }
 
 /** 群项目目录表格的一行（白名单 ∪ 已映射 ∪ 已配置项目）。 */

@@ -19,7 +19,7 @@
 - 排错顺序：插件面板里找不到这个组合包 → 没装入 profile / 没重启 GUI；组合包页里没有配置块 →
   client 半身没加载或注册失败（看浏览器控制台与插件页状态）。
 
-页面是**二级结构**：固定的状态行 + 保存动作，下面是「连接 / 项目 / 行为 / 记录」四个二级页面
+页面是**二级结构**：固定的状态行 + 保存动作，下面是「连接 / 项目 / 行为 / 预设 / 记录」五个二级页面
 （下划线 tab，沿用宿主插件页的分区风格）。
 
 ## 2. 页面内容
@@ -39,6 +39,7 @@
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
 | 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
 | 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
+| 预设 | 插件管理的 QQ 预设列表（名称 / 模型 / 权限 / 编辑 / 删除）；新建 / 编辑表单：id · 名称 · 描述 · persona · provider / model / 思考层级 · 权限预设 · 排序（v0.20.0） | 保存预设 / 取消 / 删除（正在使用的预设在 host 侧拒绝删除） |
 | 记录 | `chatRetentionDays`（0 = 永不自动删除；7..3650 = 自动清理） | 「立即清理」（用输入框天数 1..3650，二次确认） |
 
 - 行为页还有**每群实时状态表**：待评估条数 / 最近发言 / 冷却 / DSH 忙 / 评估中，外加全局计数
@@ -51,6 +52,9 @@
   保存后 preset 只影响新建会话（已有群要 `/new` 或「重新绑定」），人设下一条消息生效。
 - 「最近消息」：该群最近 24 小时聊天记录（最多 20 条），只读显示时间 / 显示名 / @ 与引用标记 /
   媒体标记（含 `[文件]` / `[群文件下载失败]`）。
+- 「预设」页（v0.20.0）：列表 + 编辑器；provider / model / 思考层级下拉来自宿主
+  `modelCatalog`，权限来自 `permissionCatalog`；宿主没有对应服务时模型字段退化为手填。
+  保存后 host 动态注册 preset（无需重启 GUI），但已有群会话要 `/new` 才换过去。
 - 页面每 5 秒静默刷新一次状态（只刷新连接态与映射，不覆盖正在编辑的表单）。
 - 破坏性动作（重新绑定 / 解除绑定 / 清空映射 / 立即清理）用浏览器 `confirm` 二次确认。
 
@@ -117,6 +121,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 | GET / HEAD | `/dsh-qq-relay/api/messages?groupId=&limit=` | 最近 24 小时聊天记录（默认 20、上限 100 条），返回 `{ groupId, limit, windowMs, messages }`（v0.14.0） |
 | POST | `/dsh-qq-relay/api/mapping/delete` | body `{ groupId }`：解除该群会话绑定并重建 relay，返回 `{ mapping: { groupId, removed }, status }`（v0.14.0） |
 | POST | `/dsh-qq-relay/api/mapping/clear` | 解除全部群映射并重建 relay，返回 `{ mappings: { cleared }, status }`（v0.14.0） |
+| GET / HEAD / POST | `/dsh-qq-relay/api/presets` | GET 返回状态（含 `presets` / `presetService` / `modelCatalog` / `permissionCatalog`）；POST body `{ preset }` 保存并动态注册，返回 `{ presets, status }`（v0.20.0） |
+| POST | `/dsh-qq-relay/api/presets/delete` | body `{ id }`：删除插件预设（正在使用的返回 409），返回 `{ presets, status }`（v0.20.0） |
 
 状态快照字段（节选）：
 

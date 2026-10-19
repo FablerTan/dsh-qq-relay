@@ -166,6 +166,7 @@ export function TextInput(props: {
   inputMode?: 'numeric' | 'decimal'
   autoComplete?: string
   ariaLabel?: string
+  disabled?: boolean
 }): ReactElement {
   return (
     <input
@@ -177,6 +178,7 @@ export function TextInput(props: {
       autoComplete={props.autoComplete ?? 'off'}
       spellCheck={false}
       aria-label={props.ariaLabel}
+      disabled={props.disabled === true}
       onChange={(event) => { props.onChange(event.target.value) }}
     />
   )

@@ -76,6 +76,10 @@
   `- id: dsh-qq-relay` + `config:` 整块替换；token 放 `~/.dsh/.env` 的 `DSH_QQ_RELAY_TOKEN`，
   patch 里用 `!!js 'process.env.QQ_RELAY_TOKEN'` 引用（注意：`DSH_` 前缀是 DSH 启动环境的保留名，不能写进 `.env`）。改配置后需重启该 profile 的 GUI。
 - 临时停用整行：`- id: dsh-qq-relay` + `disabled: true`。
+- **插件预设（v0.20.0）**：`presets.json` 存 persona + 模型 / 思考层级 / 权限；host 启动时
+  `ctx.agentPresets.register()` 动态注册成 DSH agent preset，保存后立即重新注册。组合表来自
+  `lib/model/preset-template.js`（内置 `standard` 快照），见 [persona.md](./persona.md)。
+  每群会话首次派发前应用预设的模型（追加 `model/selection`）与权限（`permissionPresets.set`）。
 - **配置页覆盖（P1.5）**：插件面板 → dsh-qq-relay 组合包页保存的字段写入
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /

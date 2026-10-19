@@ -130,7 +130,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     commandPrefixes: ['/dsh'],
   })
 
-  assert.equal(routes.length, 8, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条路由')
+  assert.equal(routes.length, 10, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条 / presets 二条路由')
 
   const initial = await call(routes, '/dsh-qq-relay/api/status')
   assert.equal(initial.status, 200)
@@ -151,6 +151,11 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.equal(status.gate.classifier, null)
   assert.equal(status.gate.threshold, 0.7)
   assert.deepEqual(status.agentPresets, { supported: false, items: [], missing: false })
+  assert.equal(status.presets.length, 1)
+  assert.equal(status.presets[0].id, 'qq-relay')
+  assert.deepEqual(status.presetService, { supported: false, registered: [] })
+  assert.equal(status.modelCatalog, null)
+  assert.equal(status.permissionCatalog, null)
 
   const invalid = await call(routes, '/dsh-qq-relay/api/config', {
     method: 'POST',
@@ -477,7 +482,7 @@ test('apply：注册 qq_send / qq_poke 工具，离线时返回 queued / 报错'
     groups: [100],
     workspace: join(home, 'ws'),
   })
-  assert.equal(routes.length, 8)
+  assert.equal(routes.length, 10)
   assert.equal(tools.length, 2)
   const send = tools.find((tool) => tool.name === 'qq_send')
   const poke = tools.find((tool) => tool.name === 'qq_poke')
@@ -534,4 +539,69 @@ test('apply：启动时把旧全局聊天日志迁移到群项目 .qq-relay', as
   assert.equal(readFileSync(join(project, '.qq-relay', '.gitignore'), 'utf8'), '*\n')
   assert.equal(existsSync(join(storageDir, 'chat', '100', '2026-10-19.jsonl')), false, '旧文件应被移走')
   assert.equal(existsSync(join(storageDir, 'chat-migration.json')), true)
+})
+test('apply：插件预设 CRUD（v0.20.0）', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-presets-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => {
+    for (const cleanup of cleanups.splice(0).reverse()) {
+      try { if (typeof cleanup === 'function') cleanup() } catch {}
+    }
+  })
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 't',
+    selfId: 999,
+    groups: [100],
+    workspace: join(home, 'ws'),
+  })
+
+  const saved = await call(routes, '/dsh-qq-relay/api/presets', {
+    method: 'POST',
+    body: JSON.stringify({ preset: { id: 'catgirl', name: '猫娘', persona: '你是群里的猫娘助手。', order: 120 } }),
+  })
+  assert.equal(saved.status, 200)
+  assert.equal(saved.payload.value.presets.length, 2)
+  assert.equal(saved.payload.value.presets.some((preset) => preset.id === 'catgirl'), true)
+  assert.equal(saved.payload.value.status.presets.some((preset) => preset.id === 'catgirl'), true)
+
+  const presetFile = join(home, '.dsh', 'storages', 'dsh-qq-relay', 'presets.json')
+  assert.equal(existsSync(presetFile), true)
+  const stored = JSON.parse(readFileSync(presetFile, 'utf8'))
+  assert.deepEqual(stored.presets.map((preset) => preset.id).sort(), ['catgirl', 'qq-relay'])
+
+  const invalid = await call(routes, '/dsh-qq-relay/api/presets', {
+    method: 'POST',
+    body: JSON.stringify({ preset: { id: 'Bad Id', name: '', persona: '' } }),
+  })
+  assert.equal(invalid.status, 400)
+  assert.equal(invalid.payload.error.code, 'PRESET_INVALID')
+
+  // 正在被 QQ 会话使用的预设拒绝删除
+  const selected = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ agentPreset: 'qq-relay' }),
+  })
+  assert.equal(selected.status, 200)
+  const inUse = await call(routes, '/dsh-qq-relay/api/presets/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id: 'qq-relay' }),
+  })
+  assert.equal(inUse.status, 409)
+  assert.equal(inUse.payload.error.code, 'PRESET_IN_USE')
+
+  const removed = await call(routes, '/dsh-qq-relay/api/presets/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id: 'catgirl' }),
+  })
+  assert.equal(removed.status, 200)
+  assert.equal(removed.payload.value.presets.some((preset) => preset.id === 'catgirl'), false)
 })

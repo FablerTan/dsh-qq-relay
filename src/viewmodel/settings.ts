@@ -16,18 +16,23 @@ import {
   createRelaySettingsApi,
   type RelayApiResult,
   type RelayPanelMessageView,
+  type RelayPresetView,
   type RelayStatusView,
 } from '../model/api.js'
 import {
   buildConfigPatch,
   buildGroupWorkspacesPatch,
+  buildPresetFromDraft,
   emptyForm,
+  emptyPresetDraft,
   formFromConfig,
   isFormDirty,
   isProjectRowsDirty,
+  presetDraftFromView,
   projectRowsFromStatus,
   type GroupProjectRow,
   type RelayFormState,
+  type RelayPresetDraft,
 } from '../model/form.js'
 
 /**
@@ -37,13 +42,14 @@ import {
 const api = createRelaySettingsApi({ fetch: (input, init) => globalThis.fetch(input, init) })
 
 /** 配置页的二级页面。 */
-export type SettingsTab = 'connection' | 'project' | 'behavior' | 'records'
+export type SettingsTab = 'connection' | 'project' | 'behavior' | 'presets' | 'records'
 
 /** 二级页面导航（顺序即渲染顺序）。 */
 export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'connection', label: '连接' },
   { id: 'project', label: '项目' },
   { id: 'behavior', label: '行为' },
+  { id: 'presets', label: '预设' },
   { id: 'records', label: '记录' },
 ]
 
@@ -138,6 +144,12 @@ export interface RelaySettingsModel {
   tokenHint: string
   gateLine: StatusLine
   messages: RelayMessagesState
+  /** 插件预设（v0.20.0）。 */
+  presets: RelayPresetView[]
+  presetDraft: RelayPresetDraft
+  /** null = 未在编辑；'' = 新建中；其余 = 正在编辑该 id。 */
+  presetEditingId: string | null
+  presetBusy: boolean
   setTab: (tab: SettingsTab) => void
   updateField: (key: RelayFormTextField, value: string) => void
   /** 代答开关（v0.18.0）：布尔字段单独走这里，不进 updateField 的字符串通道。 */
@@ -155,6 +167,12 @@ export interface RelaySettingsModel {
   openMessages: (groupId: number) => void
   closeMessages: () => void
   reloadMessages: () => void
+  newPreset: () => void
+  editPreset: (id: string) => void
+  updatePresetDraft: (key: keyof RelayPresetDraft, value: string) => void
+  cancelPresetEdit: () => void
+  savePreset: () => void
+  deletePreset: (id: string) => void
 }
 
 /** 配置页的状态与动作（挂载即拉一次状态，之后每 5 秒静默刷新）。 */
@@ -168,9 +186,14 @@ export function useRelaySettings(): RelaySettingsModel {
   const [notice, setNotice] = useState<string | null>(null)
   const [tab, setTab] = useState<SettingsTab>('connection')
   const [messages, setMessages] = useState<RelayMessagesState>(EMPTY_MESSAGES)
+  const [presets, setPresets] = useState<RelayPresetView[]>([])
+  const [presetDraft, setPresetDraft] = useState<RelayPresetDraft>(emptyPresetDraft)
+  const [presetEditingId, setPresetEditingId] = useState<string | null>(null)
+  const [presetBusy, setPresetBusy] = useState(false)
 
   const applyStatus = useCallback((next: RelayStatusView, syncForm: boolean) => {
     setStatus(next)
+    setPresets(next.presets)
     if (syncForm) {
       setForm(formFromConfig(next.config))
       setProjectRows(projectRowsFromStatus(next))
@@ -382,6 +405,83 @@ export function useRelaySettings(): RelaySettingsModel {
     }
   }, [form.chatRetentionDays, applyStatus])
 
+  /** 新建预设：进入编辑态，草稿清空。 */
+  const newPreset = useCallback(() => {
+    setPresetEditingId('')
+    setPresetDraft(emptyPresetDraft())
+    setError(null)
+    setNotice(null)
+  }, [])
+
+  /** 编辑已有预设：复制到草稿。 */
+  const editPreset = useCallback((id: string) => {
+    const found = presets.find((preset) => preset.id === id)
+    if (found === undefined) return
+    setPresetEditingId(id)
+    setPresetDraft(presetDraftFromView(found))
+    setError(null)
+    setNotice(null)
+  }, [presets])
+
+  const updatePresetDraft = useCallback((key: keyof RelayPresetDraft, value: string) => {
+    setPresetDraft((previous) => ({ ...previous, [key]: value }))
+  }, [])
+
+  const cancelPresetEdit = useCallback(() => {
+    setPresetEditingId(null)
+    setPresetDraft(emptyPresetDraft())
+    setError(null)
+  }, [])
+
+  /** 保存预设：校验 → host 校验 / 落盘 / 动态注册 → 刷新状态。 */
+  const savePreset = useCallback(async () => {
+    const built = buildPresetFromDraft(presetDraft)
+    if (!built.ok) {
+      setNotice(null)
+      setError(built.problems.join('；'))
+      return
+    }
+    setPresetBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await api.savePreset(built.value)
+    setPresetBusy(false)
+    if (result.ok) {
+      applyStatus(result.value.status, false)
+      setPresets(result.value.presets)
+      setPresetEditingId(null)
+      setPresetDraft(emptyPresetDraft())
+      setNotice('预设已保存；新注册的 preset 对新会话生效。')
+    } else {
+      setError(errorText(result))
+    }
+  }, [presetDraft, applyStatus])
+
+  /** 删除预设：正在被 QQ 会话使用的由 host 拒绝。 */
+  const deletePreset = useCallback(async (id: string) => {
+    const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
+    if (typeof confirmFn === 'function') {
+      const approved = confirmFn(
+        '删除预设「' + id + '」？\n'
+        + '已使用该预设的旧会话保留原组合；之后新建的会话不能再选它。',
+      )
+      if (!approved) return
+    }
+    setPresetBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await api.deletePreset(id)
+    setPresetBusy(false)
+    if (result.ok) {
+      applyStatus(result.value.status, false)
+      setPresets(result.value.presets)
+      if (presetEditingId === id) cancelPresetEdit()
+      setNotice('已删除预设「' + id + '」。')
+    } else {
+      setError(errorText(result))
+    }
+  }, [applyStatus, presetEditingId, cancelPresetEdit])
+
   const dirty = useMemo(
     () => status !== null && (isFormDirty(form, status.config) || isProjectRowsDirty(projectRows, status)),
     [form, projectRows, status],
@@ -419,5 +519,15 @@ export function useRelaySettings(): RelaySettingsModel {
     openMessages,
     closeMessages,
     reloadMessages,
+    presets,
+    presetDraft,
+    presetEditingId,
+    presetBusy,
+    newPreset,
+    editPreset,
+    updatePresetDraft,
+    cancelPresetEdit,
+    savePreset: () => { void savePreset() },
+    deletePreset: (id) => { void deletePreset(id) },
   }
 }

@@ -77,6 +77,65 @@ export interface RelayAgentPresetsView {
   missing: boolean
 }
 
+/** 插件管理的 QQ 预设（v0.20.0）：persona + 可选模型 / 思考层级 / 权限。 */
+export interface RelayPresetView {
+  id: string
+  name: string
+  description: string
+  persona: string
+  model: {
+    provider: string
+    model: string
+    /** 空串 = 跟随模型默认。 */
+    reasoningEffort: string
+  }
+  /** 空串 = 不指定权限预设。 */
+  permissionPreset: string
+  order: number
+}
+
+/** 模型目录里的一个思考层级。 */
+export interface RelayReasoningEffortView {
+  id: string
+  name: string
+  description: string
+}
+
+/** 模型目录里的一个模型。 */
+export interface RelayModelView {
+  id: string
+  name: string
+  description: string
+  /** 空数组 = 该模型没有可选思考层级。 */
+  efforts: RelayReasoningEffortView[]
+  defaultEffort: string
+}
+
+/** 模型目录里的一个 provider。 */
+export interface RelayModelProviderView {
+  id: string
+  name: string
+  models: RelayModelView[]
+}
+
+/** 宿主模型目录（页面里选 provider / model / 思考层级）。 */
+export interface RelayModelCatalogView {
+  groups: RelayModelProviderView[]
+  default: { provider: string; model: string; reasoningEffort: string }
+}
+
+/** 权限预设目录（沙箱 + 审批的组合）。 */
+export interface RelayPermissionOptionView {
+  value: string
+  name: string
+  description: string
+}
+
+export interface RelayPermissionCatalogView {
+  options: RelayPermissionOptionView[]
+  defaultPreset: string
+}
+
 /** host 侧的配置视图（token 永不出现，只有是否已配置与来源）。 */
 export interface RelayConfigView {
   wsUrl: string
@@ -126,6 +185,14 @@ export interface RelayStatusView {
   gate: RelayGateStatusView | null
   /** DSH agent preset 名册（v0.19.0）；旧 host 缺字段时按「不支持」兜底。 */
   agentPresets: RelayAgentPresetsView
+  /** 插件管理的预设（v0.20.0）。 */
+  presets: RelayPresetView[]
+  /** 动态注册状态：supported=false 时预设只在 presets.json 里、DSH 不可选。 */
+  presetService: { supported: boolean; registered: string[] }
+  /** 模型目录（v0.20.0；可能是 null：宿主未就绪 / 无可用 provider）。 */
+  modelCatalog: RelayModelCatalogView | null
+  /** 权限目录（v0.20.0；可能是 null：宿主没有 permission-presets 行）。 */
+  permissionCatalog: RelayPermissionCatalogView | null
   mappings: RelayMappingView[]
 }
 
@@ -177,6 +244,12 @@ export interface RelayMappingDeleteValue {
 /** 清空全部映射的 value。 */
 export interface RelayMappingsClearValue {
   mappings: { cleared: number }
+  status: RelayStatusView
+}
+
+/** 保存 / 删除预设的 value（最新预设列表 + 状态）。 */
+export interface RelayPresetsValue {
+  presets: RelayPresetView[]
   status: RelayStatusView
 }
 
@@ -238,6 +311,10 @@ export const MESSAGES_PATH = '/dsh-qq-relay/api/messages'
 export const MAPPING_DELETE_PATH = '/dsh-qq-relay/api/mapping/delete'
 /** 解除全部群映射（v0.14.0）。 */
 export const MAPPING_CLEAR_PATH = '/dsh-qq-relay/api/mapping/clear'
+/** 插件预设保存 / 读取（v0.20.0）。 */
+export const PRESETS_PATH = '/dsh-qq-relay/api/presets'
+/** 插件预设删除（v0.20.0）。 */
+export const PRESETS_DELETE_PATH = '/dsh-qq-relay/api/presets/delete'
 
 /** 配置页用到的能力面（组合根注入 `fetch` 后得到实例）。 */
 export interface RelaySettingsApi {
@@ -249,6 +326,8 @@ export interface RelaySettingsApi {
   messages(groupId: number, limit?: number): Promise<RelayApiResult<RelayMessagesValue>>
   deleteMapping(groupId: number): Promise<RelayApiResult<RelayMappingDeleteValue>>
   clearMappings(): Promise<RelayApiResult<RelayMappingsClearValue>>
+  savePreset(preset: RelayPresetView): Promise<RelayApiResult<RelayPresetsValue>>
+  deletePreset(id: string): Promise<RelayApiResult<RelayPresetsValue>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -288,6 +367,78 @@ function asPanelMessages(value: unknown): RelayPanelMessageView[] {
         }))
       : [],
   }))
+}
+
+/** 预设数组兜底。 */
+function asPresets(value: unknown): RelayPresetView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => {
+    const model = isRecord(entry.model) ? entry.model : {}
+    return {
+      id: typeof entry.id === 'string' ? entry.id : '',
+      name: typeof entry.name === 'string' ? entry.name : '',
+      description: typeof entry.description === 'string' ? entry.description : '',
+      persona: typeof entry.persona === 'string' ? entry.persona : '',
+      model: {
+        provider: typeof model.provider === 'string' ? model.provider : '',
+        model: typeof model.model === 'string' ? model.model : '',
+        reasoningEffort: typeof model.reasoningEffort === 'string' ? model.reasoningEffort : '',
+      },
+      permissionPreset: typeof entry.permissionPreset === 'string' ? entry.permissionPreset : '',
+      order: typeof entry.order === 'number' ? entry.order : 100,
+    }
+  }).filter((preset) => preset.id !== '')
+}
+
+/** 模型目录兜底（null = 宿主未提供）。 */
+function asModelCatalog(value: unknown): RelayModelCatalogView | null {
+  if (!isRecord(value) || !Array.isArray(value.groups)) return null
+  const groups = value.groups.filter(isRecord).map((group) => ({
+    id: typeof group.id === 'string' ? group.id : '',
+    name: typeof group.name === 'string' ? group.name : '',
+    models: Array.isArray(group.models)
+      ? group.models.filter(isRecord).map((model) => {
+          const reasoning = isRecord(model.reasoning) ? model.reasoning : null
+          return {
+            id: typeof model.id === 'string' ? model.id : '',
+            name: typeof model.name === 'string' ? model.name : '',
+            description: typeof model.description === 'string' ? model.description : '',
+            efforts: reasoning !== null && Array.isArray(reasoning.efforts)
+              ? reasoning.efforts.filter(isRecord).map((effort) => ({
+                  id: typeof effort.id === 'string' ? effort.id : '',
+                  name: typeof effort.name === 'string' ? effort.name : '',
+                  description: typeof effort.description === 'string' ? effort.description : '',
+                }))
+              : [],
+            defaultEffort: reasoning !== null && typeof reasoning.defaultEffort === 'string'
+              ? reasoning.defaultEffort
+              : '',
+          }
+        })
+      : [],
+  }))
+  const def = isRecord(value.default) ? value.default : {}
+  return {
+    groups,
+    default: {
+      provider: typeof def.provider === 'string' ? def.provider : '',
+      model: typeof def.model === 'string' ? def.model : '',
+      reasoningEffort: typeof def.reasoningEffort === 'string' ? def.reasoningEffort : '',
+    },
+  }
+}
+
+/** 权限目录兜底。 */
+function asPermissionCatalog(value: unknown): RelayPermissionCatalogView | null {
+  if (!isRecord(value) || !Array.isArray(value.options)) return null
+  return {
+    options: value.options.filter(isRecord).map((option) => ({
+      value: typeof option.value === 'string' ? option.value : '',
+      name: typeof option.name === 'string' ? option.name : '',
+      description: typeof option.description === 'string' ? option.description : '',
+    })).filter((option) => option.value !== ''),
+    defaultPreset: typeof value.defaultPreset === 'string' ? value.defaultPreset : '',
+  }
 }
 
 /** agent preset 名册数组兜底（旧 host / 服务缺失 → 空数组）。 */
@@ -389,6 +540,17 @@ function asStatus(value: unknown): RelayStatusView | null {
           missing: value.agentPresets.missing === true,
         }
       : { supported: false, items: [], missing: false },
+    presets: asPresets(value.presets),
+    presetService: isRecord(value.presetService)
+      ? {
+          supported: value.presetService.supported === true,
+          registered: Array.isArray(value.presetService.registered)
+            ? value.presetService.registered.filter((id): id is string => typeof id === 'string')
+            : [],
+        }
+      : { supported: false, registered: [] },
+    modelCatalog: asModelCatalog(value.modelCatalog),
+    permissionCatalog: asPermissionCatalog(value.permissionCatalog),
     gate: isRecord(value.gate)
       ? {
           enabled: value.gate.enabled === true,
@@ -515,6 +677,22 @@ export function createRelaySettingsApi(options: { fetch: typeof fetch }): RelayS
           messages: asPanelMessages(result.value.messages),
         },
       }
+    },
+    async savePreset(preset) {
+      const result = await requestEnvelope(fetchImpl, PRESETS_PATH, jsonPost({ preset }))
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asStatus(value.status) : null
+      if (status === null || !isRecord(value)) return badPayload<RelayPresetsValue>()
+      return { ok: true, value: { presets: asPresets(value.presets), status } }
+    },
+    async deletePreset(id) {
+      const result = await requestEnvelope(fetchImpl, PRESETS_DELETE_PATH, jsonPost({ id }))
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asStatus(value.status) : null
+      if (status === null || !isRecord(value)) return badPayload<RelayPresetsValue>()
+      return { ok: true, value: { presets: asPresets(value.presets), status } }
     },
     async deleteMapping(groupId) {
       const result = await requestEnvelope(fetchImpl, MAPPING_DELETE_PATH, jsonPost({ groupId }))

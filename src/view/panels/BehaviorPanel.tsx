@@ -133,7 +133,7 @@ export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactEl
           <h4 className="qqr-subhead">角色与人设</h4>
           <p className="qqr-hint">
             所有群共用一个 DSH agent preset；切换后只影响之后新建的会话（群里发 /new，或到「项目」页点「重新绑定」）。
-            插件自带「QQ 群聊」预设（装好插件后出现在下拉里），也可在 DSH 里自定义 preset 后选它。
+            下拉包含 DSH 内置预设和「预设」页里插件管理的预设（自带一个「QQ 群聊」）。
           </p>
           {presetNote}
         </Block>

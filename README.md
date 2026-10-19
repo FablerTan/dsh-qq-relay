@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.19.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.20.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -16,7 +16,8 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 （`group_upload` → 下载落盘 → 可选直通，见 [docs/media.md](./docs/media.md) §5.2）；P10 已落地
 **配置页迁到插件面板 + 二级页面 + 跟随宿主主题**（v0.17.0，见 [docs/client.md](./docs/client.md)）；P13.1 已落地
 **角色预设与轻量人设**（v0.19.0：插件自带「QQ 群聊」agent preset + 配置页可选 preset + prompt 注入人设与
-平台约定，见 [docs/persona.md](./docs/persona.md)）。设计见
+平台约定，见 [docs/persona.md](./docs/persona.md)）；v0.20.0 起预设可在配置页**新建 / 编辑 / 删除**，
+并逐预设设置**模型、思考层级、权限**（动态注册，无需改 profile）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -58,7 +59,8 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 见 [media.md](./docs/media.md) §5.2）、触发规则修正 + 代答（v0.18.0：引用别人消息 / @ 别人不再触发；
 可选「@ 名单里的人且 TA 最近没说话时代 TA 回应」，见 [gate.md](./docs/gate.md) §2.1/§2.6）、
 角色预设与轻量人设（v0.19.0：插件自带「QQ 群聊」agent preset / 配置页可选 preset / prompt 注入人设与
-平台约定，见 [persona.md](./docs/persona.md)）。
+平台约定，见 [persona.md](./docs/persona.md)）、预设管理与预设级模型 / 思考层级 / 权限（v0.20.0：
+配置页「预设」页可增删改，presets.json + 动态注册，见 [persona.md](./docs/persona.md) §2）。
 **仍未定案**：群审批（按钮）——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -146,6 +148,27 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.20.0 预设管理：增删改 + 模型 / 思考层级 / 权限（2026-10-19）
+
+- **预设从 bundle patch 移进插件**：不再随 `cordis.patch.yml` 静态插入，改为
+  `~/.dsh/storages/dsh-qq-relay/presets.json`（首次启动种子「QQ 群聊」）；插件启动时用
+  `ctx.agentPresets.register()` 动态注册成 DSH agent preset，保存后立即重注册（不需要重启 GUI）。
+  组合表仍复用 DSH 内置 `standard`（`lib/model/preset-template.js`，21 行），DSH 升级后按
+  [persona.md](./docs/persona.md) §2 同步。
+- **配置页新增「预设」二级页**：列表（名称 / 模型 / 权限 / 删除）+ 新建 / 编辑表单；字段
+  id / 名称 / 描述 / persona / provider / model / 思考层级 / 权限预设 / 排序。宿主模型目录
+  （`sessionController.modelCatalog()`）与权限目录（`permissionPresets.catalog()`）进状态快照，
+  页面下拉直接用。
+- **预设级会话参数**：建会话后用预设里的模型 / 思考层级向会话追加一条 `model/selection`
+  事件（只在该会话还没有任何模型选择时，避免覆盖用户手动选择）；权限用
+  `permissionPresets.set(agent.session, name)` 应用一次。每个会话只应用一次，重启后首次派发补上。
+- **新路由** `GET/POST /api/presets` 与 `POST /api/presets/delete`；删除正在使用的预设返回 409。
+  预设 id 与 DSH 内置 preset 冲突时保存被拒（或注册时标 warning）。
+- 单测 258 → 266（presets 模型 / store / 动态注册 / 会话应用 + apply 路由），并修好
+  `apply.test` 新用例漏清理导致的挂起。
+- client 新增 `PresetsPanel`，`TextInput` 支持 disabled；文档同步 persona / config / client /
+  architecture / roadmap / README / AGENTS。
 
 ### v0.19.0 角色预设与轻量人设（2026-10-19）
 
