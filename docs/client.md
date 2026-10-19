@@ -141,4 +141,5 @@ src/
 - 没有「恢复 profile 默认值」按钮：删掉 settings.json 后重启即可回到 patch 配置。
 - 闸门可编辑项（去抖 / 最小间隔 / jev 阈值）已进表单（v0.10.0）；`enabled` / `model` / `slowTimer`
   仍为 patch 只读。
-- `commands`（QQ 侧命令层）目前是 patch 只读配置，设置页暂无入口。
+- `commands`（QQ 侧命令层）与 `reply`（引用 / 占位 / 连发合并）目前是 patch 只读配置，
+  设置页暂无入口。

@@ -472,7 +472,34 @@ test('config：approval 段默认与校验', () => {
   assert.ok(invalid.problems.some((p) => p.includes('approval.roles')))
 })
 
-test('config：gate 的 jev 分类器配置（默认与校验）', () => {
+test('config：reply 段默认与校验（v0.11.1）', () => {
+  const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.deepEqual(defaults.config.reply, { quote: true, ackDelayMs: 8000, mergeWindowMs: 400 })
+
+  const custom = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    reply: { quote: false, ackDelayMs: '3s', mergeWindowMs: '500ms' },
+  })
+  assert.equal(custom.ok, true)
+  assert.equal(custom.config.reply.quote, false)
+  assert.equal(custom.config.reply.ackDelayMs, 3000)
+  assert.equal(custom.config.reply.mergeWindowMs, 500)
+
+  const invalid = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    reply: { quote: 'yes', ackDelayMs: '5m', mergeWindowMs: 6000 },
+  })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('reply.quote')))
+  assert.ok(invalid.problems.some((p) => p.includes('reply.ackDelayMs')))
+  assert.ok(invalid.problems.some((p) => p.includes('reply.mergeWindowMs')))
+})
+
+test('config：gate 的 jev 分类器默认与校验', () => {
   const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
   assert.equal(defaults.config.gate.model, 'typesafe/jev-1.14')
   assert.equal(defaults.config.gate.jevEndpoint, 'https://openrouter.ai/api/alpha/decisions')

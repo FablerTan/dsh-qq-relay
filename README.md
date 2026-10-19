@@ -1,12 +1,13 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.11.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.11.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
 P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `/stop` / `/status` / `/help`，
-见 [docs/commands.md](./docs/commands.md)）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+见 [docs/commands.md](./docs/commands.md)）；P6 已落地**回复体验**（引用触发消息 / 处理中占位 /
+直通连发合并，见 [docs/reply.md](./docs/reply.md)）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -38,7 +39,8 @@ DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群�
 群项目目录与聊天记录 `.qq-relay/` + prompt 拼接（P4，见 [chat-context.md](./docs/chat-context.md)）、
 入向图片 / 表情落盘与路径引用（P4.1，见 [media.md](./docs/media.md)）、
 QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/help`，群主 / 管理员可用，
-见 [commands.md](./docs/commands.md)）。
+见 [commands.md](./docs/commands.md)）、回复体验（P6：引用触发消息 / 8 秒「处理中」占位 /
+400ms 连发合并，见 [reply.md](./docs/reply.md)）。
 **仍未定案**：群审批（按钮）、媒体收发、client 面板增强、聊天记录清理 UI——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -88,6 +90,7 @@ dsh-qq-relay/
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
 | [docs/media.md](./docs/media.md) | 入向媒体落盘：图片 / 表情下载到 `.qq-relay/media/`、聊天记录与 prompt 里的路径 | 改媒体 / 排查图片下载时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
+| [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送：契约、安全、离线队列、验证 | 改工具 / 排查推送失败时 |
 | [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
@@ -121,6 +124,16 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.11.1 回复体验：引用 / 处理中 / 连发合并（2026-10-19）
+
+- 回复**引用触发消息**：直通取触发的那条、闸门批次取批次最后一条；引用发送被拒（原消息撤回等）
+  自动退回普通发送，回复不丢。
+- turn 超过 `ackDelayMs`（默认 8s）未结束 → 先回「收到，处理中…」；该占位不刷新闸门发言窗口 /
+  冷却、不写聊天日志，结束后照常发结果；已发占位但本轮无文本时补一句收尾。
+- 直通消息**连发合并**：@ / 引用 / 命令前缀触发的消息在 400ms 窗口内合并成一次 prompt，只起一个 turn。
+- 新增 `reply` 配置段（`quote` / `ackDelayMs` / `mergeWindowMs`，patch 只读）；规格见 [docs/reply.md](./docs/reply.md)。
+- 单测 187 个（新增 reply 配置校验 1 个 + relay 回复体验集成 8 个）；host 半身改动，需重启 profile GUI 生效。
 
 ### v0.11.0 QQ 侧命令层（2026-10-19）
 

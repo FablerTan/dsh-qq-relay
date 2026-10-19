@@ -3,7 +3,8 @@
 > 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
 > P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter）、P3 `qq_send` 主动推送与
 > QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）与 P4.1 入向媒体落盘已实现（2026-10-19）；
-> P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）已实现（v0.11.0，见 [commands.md](./commands.md)）**。
+> P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）已实现（v0.11.0，见 [commands.md](./commands.md)）；
+> P6 回复体验（引用触发消息 / 处理中占位 / 直通连发合并）已实现（v0.11.1，见 [reply.md](./reply.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -28,6 +29,7 @@
 | 消息闸门 | 10 分钟快路 + 2 小时慢路 + jev 分类器；见 gate.md |
 | @ 直通 | @ / 引用回复 / 显式命令不走闸门，直接交给 DSH |
 | QQ 侧命令 | `/new` / `/stop` / `/status` / `/help` 由命令层截获（先于直通与闸门，群主 / 管理员可用），见 [commands.md](./commands.md) |
+| 回复体验 | 结果首条引用触发消息；长轮次先回「处理中」占位；直通消息 400ms 内合并，见 [reply.md](./reply.md) |
 | 回复 | 没有平台回复窗口，turn 结束即可发；受 QQ 风控与频率限制 |
 | 最小发言间隔 | 默认 45 秒，期间的消息并入下一批 |
 | 会话映射 | 默认一个 QQ 群对应一个自动创建的 DSH 会话（草案，见第 5 节） |
@@ -51,6 +53,7 @@
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
 | `commands` | object | `{ enabled: true, bare: true, roles: ['owner','admin'] }` | QQ 侧命令层（P5，v0.11.0）：`/new` / `/stop` / `/status` / `/help`；`bare` 控制裸写式，`roles` 控制可执行角色，详见 [commands.md](./commands.md) |
+| `reply` | object | `{ quote: true, ackDelayMs: 8s, mergeWindowMs: 400ms }` | 出向回复体验（P6，v0.11.1）：引用触发消息 / 处理中占位阈值（0 = 关）/ 直通连发合并窗口（0 = 不合并），详见 [reply.md](./reply.md) |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
@@ -129,7 +132,7 @@ OneBot WS 事件
   → 含图片 / 表情时先下载到 <project>/.qq-relay/media/（失败只记 failed）
   → 落盘 chat log（<project>/.qq-relay/chat/<群号>/，媒体路径写进 media 数组）
   → 命令层（/new /stop /status /help；只认白名单命令名，命中即执行并回复，不派发 prompt）
-  → 直通（@ / 引用 / 命令）或 gate（快路 / 慢路；分类器未接时普通消息 fail closed）
+  → 直通（@ / 引用 / 命令；先经 400ms 连发合并窗口）或 gate（快路 / 慢路；分类器未接时普通消息 fail closed）
   → relay.dispatch（prompt 拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针）
   → ctx.sessionController.prompt({sessionId, content, source})
      或 ctx.sessionController.resolveAgent(id) + agent.followup(createUserMessage(...))
@@ -154,6 +157,8 @@ ctx.on('agent/error', ...)          # 失败提示
 
 - 只回「由 QQ 触发」的轮次；GUI 里发起的轮次默认不回发（避免刷屏）。
 - 发送不区分被动 / 主动，turn 结束即发；失败按 retcode 退避重试。
+- **回复体验（P6）**：结果首条引用触发消息（引用失败自动退回普通发送）；turn 超过 8 秒未结束先回
+  「收到，处理中…」（不刷新闸门窗口）；见 [reply.md](./reply.md)。
 - **主动推送（P3）**：`qq_send` 工具（见 [tools.md](./tools.md)）走同一个发送队列，
   供任意会话发通知；白名单双重校验，离线排队。
 - **QQ 侧审批（P3）**：QQ 会话里的 `approval/request` 由审批桥发到群里，群主 / 管理员回复

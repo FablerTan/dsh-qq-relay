@@ -14,6 +14,7 @@ import { createMappingStore } from '../lib/model/mapping.js'
 import { createStateStore } from '../lib/model/state.js'
 import { createChatLog, localDateKey } from '../lib/model/chat-log.js'
 import { chatRootFor, ensureRelayDir, projectDirFor } from '../lib/model/project.js'
+import { ACK_TEXT } from '../lib/model/reply.js'
 import { createRelay } from '../lib/controller/relay.js'
 
 const flush = async () => {
@@ -26,7 +27,7 @@ function createHarness(t, options = {}) {
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   const handlers = new Map()
-  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], cancel: [] }
+  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [] }
 
   const ctx = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
@@ -76,6 +77,14 @@ function createHarness(t, options = {}) {
       calls.sends.push({ groupId, text })
       return { status: 'ok', retcode: 0, data: { message_id: 'm' + String(calls.sends.length) } }
     },
+    async sendGroupReply(groupId, messageId, text) {
+      calls.replies.push({ groupId, messageId, text })
+      if (options.replyFails === true) {
+        return { status: 'failed', retcode: 1200, message: '引用消息不存在', data: null }
+      }
+      calls.sends.push({ groupId, text })
+      return { status: 'ok', retcode: 0, data: { message_id: 'r' + String(calls.replies.length) } }
+    },
   }
 
   const config = normalizeConfig({
@@ -86,6 +95,8 @@ function createHarness(t, options = {}) {
     workspace: dir,
     commandPrefixes: ['/dsh'],
     gate: options.gate,
+    // 单测默认关掉回复体验增强（引用 / 连发合并 / 处理中占位），避免每条消息多等窗口。
+    reply: options.reply ?? { quote: false, mergeWindowMs: 0, ackDelayMs: 0 },
   }).config
 
   const mapping = createMappingStore(join(dir, 'mapping.json'))
@@ -645,4 +656,207 @@ test('relay：/stop 在没有进行中轮次时只回提示', async (t) => {
   await wait(20)
   assert.equal(calls.cancel.length, 0)
   assert.ok(calls.sends[0].text.includes('本群还没有会话'), calls.sends[0].text)
+})
+test('relay：回复引用触发消息（v0.11.1）', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, { reply: { quote: true, mergeWindowMs: 0, ackDelayMs: 0 } })
+  relay.handleRawEvent(groupEvent({ message_id: 77 }))
+  await flush()
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '回答' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+
+  assert.deepEqual(calls.replies, [{ groupId: 100, messageId: '77', text: '回答' }])
+  assert.equal(calls.sends.length, 1, '引用发送成功后不再发普通消息')
+})
+
+test('relay：引用发送被拒时回退成普通发送', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, {
+    reply: { quote: true, mergeWindowMs: 0, ackDelayMs: 0 },
+    replyFails: true,
+  })
+  relay.handleRawEvent(groupEvent({ message_id: 79 }))
+  await flush()
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '回答' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+
+  assert.equal(calls.replies.length, 1, '先尝试引用发送')
+  assert.equal(calls.replies[0].messageId, '79')
+  assert.deepEqual(calls.sends, [{ groupId: 100, text: '回答' }], '引用失败后普通发送兜底')
+})
+
+test('relay：慢轮次先回「处理中」占位，结束后再发结果', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, { reply: { quote: false, mergeWindowMs: 0, ackDelayMs: 20 } })
+  relay.handleRawEvent(groupEvent({ message_id: 80 }))
+  await wait(60)
+
+  assert.equal(calls.sends.length, 1)
+  assert.equal(calls.sends[0].text, ACK_TEXT)
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '最终回答' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+
+  assert.equal(calls.sends.length, 2)
+  assert.equal(calls.sends[1].text, '最终回答')
+})
+
+test('relay：快轮次不产生「处理中」占位', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, { reply: { quote: false, mergeWindowMs: 0, ackDelayMs: 1000 } })
+  relay.handleRawEvent(groupEvent({ message_id: 83 }))
+  await flush()
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '很快' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+
+  assert.equal(calls.sends.length, 1)
+  assert.equal(calls.sends[0].text, '很快')
+})
+
+test('relay：已回「处理中」但本轮无文本时补一句收尾', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, { reply: { quote: false, mergeWindowMs: 0, ackDelayMs: 20 } })
+  relay.handleRawEvent(groupEvent({ message_id: 84 }))
+  await wait(60)
+  assert.equal(calls.sends[0].text, ACK_TEXT)
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+
+  assert.equal(calls.sends.length, 2)
+  assert.ok(calls.sends[1].text.includes('没有可发送的文本'), calls.sends[1].text)
+})
+
+test('relay：直通连发在窗口内合并成一次 prompt', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, { reply: { quote: true, mergeWindowMs: 40, ackDelayMs: 0 } })
+  const mention = (text, id) => groupEvent({
+    message_id: id,
+    message: [{ type: 'at', data: { qq: '999' } }, { type: 'text', data: { text } }],
+    raw_message: '[CQ:at,qq=999] ' + text,
+  })
+  relay.handleRawEvent(mention('第一条', 201))
+  relay.handleRawEvent(mention('第二条', 202))
+  await wait(100)
+
+  assert.equal(calls.prompt.length, 1, '两条 @ 合并成一轮')
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('新消息 2 条'), text)
+  assert.ok(text.includes('第一条') && text.includes('第二条'), text)
+  assert.ok(text.includes('（直通：@）'), text)
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '合并回答' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+
+  assert.equal(calls.replies[0].messageId, '202', '引用批次里最后一条消息')
+})
+
+test('relay：关闭合并窗口时每条 @ 各自成一轮', async (t) => {
+  const { relay, ctx, calls } = createHarness(t, { reply: { quote: false, mergeWindowMs: 0, ackDelayMs: 0 } })
+  const mention = (text, id) => groupEvent({
+    message_id: id,
+    message: [{ type: 'at', data: { qq: '999' } }, { type: 'text', data: { text } }],
+    raw_message: '[CQ:at,qq=999] ' + text,
+  })
+  relay.handleRawEvent(mention('第一条', 203))
+  relay.handleRawEvent(mention('第二条', 204))
+  await flush()
+  assert.equal(calls.prompt.length, 1, '同群串行：第二条先排队')
+
+  // 第一轮结束 → 队列里的第二条补派
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+  assert.equal(calls.prompt.length, 2)
+  assert.ok(calls.prompt[1].content[0].text.includes('第二条'), calls.prompt[1].content[0].text)
+})
+
+test('relay：命令回复不引用、也不触发处理中占位', async (t) => {
+  const { relay, calls } = createHarness(t, { reply: { quote: true, mergeWindowMs: 40, ackDelayMs: 20 } })
+  relay.handleRawEvent(textEvent('/status', { message_id: 205 }))
+  await wait(80)
+
+  assert.equal(calls.prompt.length, 0)
+  assert.equal(calls.replies.length, 0)
+  assert.equal(calls.sends.length, 1)
+  assert.ok(calls.sends[0].text.includes('【QQ relay 状态】'), calls.sends[0].text)
 })
