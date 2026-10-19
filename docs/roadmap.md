@@ -3,6 +3,8 @@
 > 状态：P0 已完成（2026-10-18）；P1「@ 直通」已真机验收；P1.5 基础配置页已落地（2026-10-19）；
 > **P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`）；
 > P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）**。
+> **P4 聊天记录与消息拼接**：`.qq-relay/` 隐藏目录 + 群项目目录 + prompt 拼接，
+> 规格已确认（2026-10-19），实现排期 v0.8.0，见 [chat-context.md](./chat-context.md)。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -82,7 +84,7 @@
 
 ### 进度（2026-10-19）
 
-- ✅ 聊天日志 JSONL 落盘 / 读取；P2.2 起按保留期（7 天）每天清理一次。
+- ✅ 聊天日志 JSONL 落盘 / 读取；P2.2 起按保留期（7 天）每天清理一次（v0.8.0 起改为默认永久保留，见 [chat-context.md](./chat-context.md) §7）。
 - ✅ 每群状态按群分文件 `state/<group_id>.json`：seen / pending / lastBotSpeakAt / lastReplyAt /
   cooldownUntil / evaluating / dshBusy；旧 `state.json` 一次性迁移；重启恢复 pending 与冷却，不立即发言。
 - ✅ 快路：bot 最近 10 分钟发过言 → 5 秒去抖合并，一批只调一次分类器。
@@ -129,6 +131,29 @@
   真机验证待用户重启 dwdev 后在任意会话调用确认）。
 - client 半身面板增强：映射管理、闸门状态、最近消息（基础配置页已在 P1.5 交付，见 [client.md](./client.md)）。
 - 多群资源控制：并发上限、队列、每群配额。
+
+## P4 聊天记录与消息拼接（规格已确认，2026-10-19）
+
+目标：聊天记录落在「群绑定的项目」隐藏目录 `.qq-relay/` 里，agent 可直接读；
+发给 DSH 的 prompt 带上群名 / 时间 / @ 与引用标记 / 历史指针。完整规格见
+[chat-context.md](./chat-context.md)。
+
+### 范围（v0.8.0）
+
+- 群项目目录：`groupWorkspaces`（每群可配，设置页可编辑），会话 cwd 与聊天目录同源。
+- 隐藏目录 `.qq-relay/`：`chat/<群号>/<日期>.jsonl` + 自忽略 `.gitignore`。
+- prompt 拼接：群名 / 群号 / 时间 / 条数 / `@你`、`引用 <id>` 标记 / 历史相对路径指针。
+- 旧全局聊天日志一次性迁移（幂等）。
+- 已映射群改项目后「重新绑定」按钮（rebind 路由）。
+- 保留策略：默认不自动删除（`chatRetentionDays: 0`）；清理 UI 留 v0.8.1。
+
+### 验收
+
+- 设置页为某群配置项目 → 该群聊天记录出现在 `<project>/.qq-relay/chat/<群号>/` 下。
+- 普通消息触发的 prompt 含群名、时间、条数、历史指针；@ 直通的 prompt 含 `@你` 语义。
+- `git status` 在该项目里保持干净（聊天记录被自我忽略）。
+- 重启 GUI 后历史记录仍在；旧全局日志迁移后不重复迁移。
+- `pnpm check` / `pnpm test` 全绿。
 
 ## 风险登记
 
