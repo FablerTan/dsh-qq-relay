@@ -287,6 +287,7 @@ src/
 | 群里画图没反应 | 该群会话是否已开画图（skill 全 cwd 可见，但 agent 要按 skill 触发）；看 relay 日志与 ComfyUI 队列 |
 | 出图 400 / 节点报错 | runner 会打印 `node_errors` 的 message/details；多为远端缺 custom_node / 权重 |
 | 图发不回群 | 产物路径是否在会话工作目录内；`qq_send images` ≤4 张 / ≤10 MiB；离线不排队 |
+| 报 `sendImage is not a function` | v0.21.0 及更早的 runtime 包装缺图片 / 文件转发；升级到 v0.21.1 并重启 GUI |
 
 - 常用端点：`/system_stats`（存活与版本）、`/object_info`（节点定义）、`/queue`（队列）、
   `/history`（含完整 API 图与产物）、`/view?filename=…&subfolder=&type=output`（取产物）。

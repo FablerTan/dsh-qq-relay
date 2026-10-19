@@ -80,6 +80,7 @@ execute 语义：
   `await tools.qq_send({ text: '测试推送' })`），到群里确认收到；离线时返回值应为
   `queued: true`，重连后自动补发。
 - 出向媒体真机：工作区里放一张图片，`await tools.qq_send({ images: ['/abs/path/a.png'] })`
+  （v0.21.1 起 `runtime.js` 的包装已转发 `sendImage` / `sendFile`；更早版本会报 `sendImage is not a function`）
   确认群里收到图片；再放一个 pdf，`await tools.qq_send({ file: '/abs/path/a.pdf', fileName: '报告.pdf' })`
   确认群文件里出现该文件。
 - 回戳真机：`await tools.qq_poke({ userId: <群友 QQ 号> })`，确认对方收到戳一戳；

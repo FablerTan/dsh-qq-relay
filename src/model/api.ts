@@ -237,6 +237,14 @@ export interface RelayMappingView {
   createdAt: number
 }
 
+/** workspace 挂载失败的会话（v0.21.1）：会在 DSH 侧栏显示为「未分组」。 */
+export interface RelayWorkspaceAttachIssueView {
+  groupId: number
+  sessionId: string
+  error: string
+  at: number
+}
+
 /** 状态快照：连接 / 配置 / 单实例锁 / 群映射。 */
 export interface RelayStatusView {
   plugin: string
@@ -261,6 +269,8 @@ export interface RelayStatusView {
   /** ComfyUI 画图状态（v0.21.0）；旧 host 缺字段时按「未连接 / 不支持」兜底。 */
   comfy: RelayComfyStatusView
   mappings: RelayMappingView[]
+  /** workspace 挂载健康（v0.21.1；旧 host 缺字段时为空数组）。 */
+  workspace: { attachIssues: RelayWorkspaceAttachIssueView[] }
 }
 
 /** 立即清理的结果（v0.13.0）：删除计数 + 清理后的状态快照。 */
@@ -445,6 +455,17 @@ function asPanelMessages(value: unknown): RelayPanelMessageView[] {
         }))
       : [],
   }))
+}
+
+/** workspace 挂载失败数组兜底（旧 host 没有这个字段 → 空数组）。 */
+function asWorkspaceAttachIssues(value: unknown): RelayWorkspaceAttachIssueView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    groupId: typeof entry.groupId === 'number' ? entry.groupId : 0,
+    sessionId: typeof entry.sessionId === 'string' ? entry.sessionId : '',
+    error: typeof entry.error === 'string' ? entry.error : '',
+    at: typeof entry.at === 'number' ? entry.at : 0,
+  })).filter((issue) => issue.sessionId !== '')
 }
 
 /** 预设数组兜底。 */
@@ -746,6 +767,9 @@ function asStatus(value: unknown): RelayStatusView | null {
           groups: asGateGroups(value.gate.groups),
         }
       : null,
+    workspace: {
+      attachIssues: isRecord(value.workspace) ? asWorkspaceAttachIssues(value.workspace.attachIssues) : [],
+    },
     mappings: mappings.map((entry) => ({
       groupId: typeof entry.groupId === 'number' ? entry.groupId : 0,
       sessionId: typeof entry.sessionId === 'string' ? entry.sessionId : '',

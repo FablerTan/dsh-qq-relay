@@ -57,7 +57,14 @@ function createHarness(t, options = {}) {
         calls.workspace.push(path)
         return {
           path,
-          async attachSession(sessionId) { calls.attach.push(sessionId) },
+          async attachSession(sessionId) {
+            // v0.21.1 回归：模拟宿主热重载后缓存的 Workspace 实体失效。
+            if (typeof options.workspaceAttachFails === 'number' && options.workspaceAttachFails > 0) {
+              options.workspaceAttachFails -= 1
+              throw new Error('workspace registry restarted')
+            }
+            calls.attach.push(sessionId)
+          },
         }
       },
     },
@@ -145,6 +152,9 @@ function createHarness(t, options = {}) {
   }).config
 
   const mapping = createMappingStore(join(dir, 'mapping.json'))
+  for (const seed of options.seedMapping ?? []) {
+    mapping.set(seed.groupId, { sessionId: seed.sessionId, workspacePath: seed.workspacePath ?? dir, title: 'seed', createdAt: Date.now() })
+  }
   const state = createStateStore({ dir: join(dir, 'state') })
   const chatLog = createChatLog({
     // 与组合根一致：聊天日志落在群项目的 .qq-relay/chat 下
@@ -219,6 +229,37 @@ function groupFileEvent(overrides = {}) {
     ...overrides,
   }
 }
+
+test('relay：workspace 挂载失败时丢缓存重试一次（v0.21.1 回归）', async (t) => {
+  const { relay, calls } = createHarness(t, { workspaceAttachFails: 1 })
+  relay.handleRawEvent(groupEvent())
+  await flush()
+
+  assert.deepEqual(calls.attach, ['session-1'], '重试后应挂载成功')
+  assert.equal(calls.workspace.length, 2, '第一次失败后应丢弃缓存、重新 create')
+  assert.deepEqual(relay.snapshot().workspaceAttachIssues, [])
+})
+
+test('relay：workspace 一直挂不上时记录 attachIssues（状态页提示「未分组」）', async (t) => {
+  const { relay } = createHarness(t, { workspaceAttachFails: 2 })
+  relay.handleRawEvent(groupEvent())
+  await flush()
+
+  const issues = relay.snapshot().workspaceAttachIssues
+  assert.equal(issues.length, 1)
+  assert.equal(issues[0].groupId, 100)
+  assert.equal(issues[0].sessionId, 'session-1')
+  assert.equal(issues[0].error.includes('workspace registry restarted'), true)
+})
+
+test('relay：启动时把映射里的历史会话补挂回 workspace（修复未分组）', async (t) => {
+  const { calls } = createHarness(t, {
+    seedMapping: [{ groupId: 100, sessionId: 'session-old' }],
+  })
+  await flush()
+
+  assert.equal(calls.attach.includes('session-old'), true, '启动补挂应挂上旧会话')
+})
 
 test('relay：@ 消息直通、建会话、prompt 带群名 / 时间 / @ 标记 / 历史指针', async (t) => {
   const { relay, calls, mapping, config } = createHarness(t)

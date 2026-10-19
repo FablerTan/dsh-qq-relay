@@ -6,7 +6,7 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.21.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.21.1**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -24,7 +24,9 @@
 > （`presets.json`，配置页「预设」页增删改 + 逐预设模型 / 思考层级 / 权限，动态注册，见
 > [docs/persona.md](./docs/persona.md)）；v0.21.0 加**画图能力**（探测配置的 ComfyUI，连上后动态
 > 注册插件自带的 `comfy-image` runtime skill + 配置页「画图」页，见
-> [docs/comfy.md](./docs/comfy.md)）；上级 §0 已仅对本插件解除。
+> [docs/comfy.md](./docs/comfy.md)）；v0.21.1 修 `qq_send` 出向图片 / 文件转发（runtime 包装补
+> `sendImage` / `sendFile`）与 workspace 挂载失败导致的「未分组」会话（失败重试 + 启动补挂 +
+> `status.workspace.attachIssues` 告警）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 

@@ -12,7 +12,8 @@
 > P10 配置页迁到插件面板（`plugins.bundle.config`，二级页面，样式走宿主 `--dsw-*` token）
 > 已实现（v0.17.0，见 [client.md](./client.md)）；角色预设（v0.19.0/v0.20.0，见 [persona.md](./persona.md)）；
 > **v0.21.0 画图能力（ComfyUI 探测 + 动态注册 `comfy-image` runtime skill）已实现，见
-> [comfy.md](./comfy.md)**。
+> [comfy.md](./comfy.md)**；v0.21.1 修 `qq_send` 出向图片 / 文件转发（runtime 包装补
+> `sendImage` / `sendFile`）与 workspace 挂载（失败重试 + 启动补挂，见 §3 会话映射）。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -232,6 +233,9 @@ ctx.on('agent/error', ...)          # 失败提示
   `groupWorkspaces[群号] → workspace` 解析，创建会话时**钉进 `workspacePath`**，之后聊天目录与 cwd 都以它为准。
 - 默认**自动创建**：首次需要接话时 sessionController.create({cwd: 项目目录})
   + workspaceRegistry.create(项目目录) + attachSession + sessionTitle.rename；映射持久化。
+  v0.21.1 起 attach 失败会**丢缓存重试一次**（宿主热重载 workspace 服务会让缓存实体失效），
+  relay 启动时还会按 mapping 把历史会话**补挂**回 workspace；仍失败的记录在
+  `status.workspace.attachIssues`（对应「未分组」现象）。
 - 也支持配置直接绑定已有 sessionId（「遥控现有会话」），绑定后同样受闸门控制。
 - 会话被删除 / 失效 → 重新创建并更新映射。
 - 一个群 = 一个会话；群内多用户共享上下文，靠昵称前缀区分。

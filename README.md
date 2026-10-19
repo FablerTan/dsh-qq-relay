@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.21.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.21.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 画图 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -155,6 +155,19 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.21.1 修复 qq_send 图片 / 文件发送与「未分组」会话（2026-10-19）
+
+- **`qq_send` 出向图片 / 文件（v0.12.0 起潜伏）**：`controller/runtime.js` 的运行时包装漏了
+  `sendImage` / `sendFile` 转发，agent 调 `qq_send` 发图直接报 `sendImage is not a function`。
+  现已补上；apply 集成新增回归断言（离线时返回可读的「当前离线」错误，而不是 TypeError）。
+- **群项目 workspace 挂载（会话在 DSH 侧栏显示「未分组」）**：会话创建后 `workspace.attachSession`
+  失败只打 warn，会话就不属于任何 workspace 分组；宿主热重载 workspace 服务后缓存实体失效，
+  更是每次新建都挂不上。现在失败会丢缓存、重新 `create` 再试一次；relay 启动时按 `mapping.json`
+  把历史会话**补挂**回各自 workspace（幂等），仍失败的记录到 `status.workspace.attachIssues`，
+  「项目」页会显示告警。
+- 单测 275 → 278（新增 workspace 重试 / 持续失败记录 / 启动补挂 3 个 relay 用例；apply 加图片回归断言）。
+- 这是 host 半身修复：**重启该 profile 的 GUI** 后旧会话会自动补挂，也可保存一次配置触发 relay 重建。
 
 ### v0.21.0 画图能力：ComfyUI 探测 + 动态注册 comfy-image skill（2026-10-19）
 

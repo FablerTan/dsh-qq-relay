@@ -83,6 +83,16 @@ function ProjectsCard({ model }: { model: RelaySettingsModel }): ReactElement {
           留空表示跟随上面的默认项目。改目录只影响之后新建的会话——已建会话请点「重新绑定」
           （旧项目里的聊天记录不会移动）。
         </p>
+        {status !== null && status.workspace.attachIssues.length > 0 ? (
+          <Line tone="warn">
+            {'有 ' + String(status.workspace.attachIssues.length)
+              + ' 个会话没能挂到群项目的 workspace，会在 DSH 侧栏显示为「未分组」：'
+              + status.workspace.attachIssues
+                .map((issue) => '群 ' + String(issue.groupId) + '（' + issue.error + '）')
+                .join('；')
+              + '。保存配置或点「重新连接」会自动补挂一次。'}
+          </Line>
+        ) : null}
       </Block>
       {status === null || projectRows.length === 0 ? (
         <Block>

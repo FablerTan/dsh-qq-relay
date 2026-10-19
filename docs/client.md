@@ -37,7 +37,7 @@
 | 页面 | 内容 | 动作 |
 |---|---|---|
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
-| 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
+| 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读）；workspace 挂载失败告警（v0.21.1，会话显示「未分组」时） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
 | 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
 | 画图 | ComfyUI 服务（启用画图 / 服务地址 / 探测超时 3s..120s / 连接成功后加载画图 skill）+「测试连接」+ 运行状态（可达 / 版本 / GPU / 队列 / 最近检查 / skill 加载与错误，v0.21.0） | 「测试连接」（只探测、不保存）；保存 `comfy` 后立即探测并决定是否注册 skill，不重建 relay |
 | 预设 | 插件管理的 QQ 预设列表（名称 / 模型 / 权限 / 编辑 / 删除）；新建 / 编辑表单：id · 名称 · 描述 · persona · provider / model / 思考层级 · 权限预设 · 排序（v0.20.0） | 保存预设 / 取消 / 删除（正在使用的预设在 host 侧拒绝删除） |
@@ -165,6 +165,9 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
   },
   "gate": { "enabled": true, "classifier": "jev", "threshold": 0.7, "groups": [] },
   "mappings": [{ "groupId": 10002, "sessionId": "session-…", "title": "QQ群：…" }],
+  "workspace": {
+    "attachIssues": [{ "groupId": 10002, "sessionId": "session-…", "error": "…", "at": 1790000000000 }]
+  },
   "comfy": {
     "enabled": true, "reachable": true, "checking": false, "checkedAt": 1790000000000,
     "version": "0.39.0", "device": "NVIDIA GeForce RTX 4070",
@@ -216,7 +219,7 @@ src/
     ├── theme.ts            # 注入的 CSS（--dsw-* token）+ useRelayStyles
     └── panels/
         ├── ConnectionPanel.tsx
-        ├── ProjectPanel.tsx
+        ├── ProjectPanel.tsx  # 群项目目录 + 最近消息；v0.21.1 起显示 workspace attachIssues 告警
         ├── BehaviorPanel.tsx
         ├── ComfyPanel.tsx   # 「画图」页：ComfyUI 开关 / 地址 / 超时 / skill 开关 / 测试连接 / 运行状态（v0.21.0）
         ├── PresetsPanel.tsx

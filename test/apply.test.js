@@ -510,6 +510,18 @@ test('apply：注册 qq_send / qq_poke 工具，离线时返回 queued / 报错'
   assert.ok(poke, '应注册 qq_poke')
   assert.equal(typeof send.execute, 'function')
   assert.equal(typeof send.output.render, 'function')
+
+  // v0.21.1 回归：runtime 包装曾漏掉 sendImage / sendFile，qq_send 发图直接
+  // 「sendImage is not a function」。离线时应是 relay 的可读错误，而不是 TypeError。
+  await assert.rejects(
+    () => send.execute({ images: ['/tmp/not-a-real-image.png'] }, {}),
+    (error) => {
+      const message = String(error?.message ?? error)
+      assert.equal(message.includes('is not a function'), false)
+      assert.equal(message.includes('当前离线'), true)
+      return true
+    },
+  )
   assert.equal(typeof poke.execute, 'function')
   assert.equal(typeof poke.output.render, 'function')
 
