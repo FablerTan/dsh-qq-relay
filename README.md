@@ -1,8 +1,9 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.3.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
-已落地（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+当前 **v0.4.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+已落地（2026-10-19）；P2.1 消息闸门骨架已落地（去抖 / 最小间隔 / 慢路 / 状态 / 发送队列，
+**jev 分类器暂未接**，`gate.enabled` 默认关）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -27,8 +28,9 @@ DSH 与 QQ 之间的**双向桥**：
 - 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
 - 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
-**已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射只读）。
-**仍未定案**：消息闸门与 jev、群审批（按钮）、主动推送工具、媒体收发、client 面板增强——先落 `docs/` 再实现。
+**已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射只读）、
+消息闸门骨架（P2.1：去抖 / 最小间隔 / 慢路 / 状态持久化 / 发送队列；jev 未接）。
+**仍未定案**：jev 分类器形态、群审批（按钮）、主动推送工具、媒体收发、client 面板增强——先落 `docs/` 再实现。
 
 ## 目录结构
 
@@ -46,8 +48,9 @@ dsh-qq-relay/
 │   │   ├── runtime.js    # relay 运行实例：整份配置热替换（配置页保存后重建连接）
 │   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
-│   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分
+│   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
+│   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分 / 闸门纯逻辑
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -102,6 +105,22 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### P2.1 消息闸门骨架（2026-10-19）
+
+- 普通群消息进入闸门调度：快路（bot 最近 10 分钟发过言）走 5 秒去抖合并，慢路（久未发言）累积到
+  2 小时定时器；两次发言至少间隔 45 秒（间隔内的批次延后不丢）；@ / 引用 / 命令直通保持原样
+  （`gate.mentionBypass` 可关）。**`gate.enabled` 默认 false**，开箱行为与 P1 完全一致。
+- 分类器以接口注入（`{ classify({ groupId, groupName, trigger, messages }) }`）；**暂不接模型**，
+  缺省实现永远 fail closed，但每次决策都记「批次数 / reply / confidence / reason / 耗时」日志，
+  为将来接 jev 留出可替换点。
+- 状态改为按群分文件 `~/.dsh/storages/dsh-qq-relay/state/<group_id>.json`（seen / pending /
+  lastBotSpeakAt / lastReplyAt / cooldownUntil / evaluating），旧 `state.json` 一次性迁移；
+  重启后恢复 pending 与冷却窗口，不立即发言。
+- 出向新增本地发送队列：断线或发送失败时排队，重连（`client open`）后按序补发；失败按
+  「风控限流（退避重试）/ 明确失败（不重试）」分类；队列上限 50 条、最长保留 30 分钟。
+- `gate` 配置段进 `normalizeConfig`（时长支持 `45s` / `10m` / `2h` 或毫秒数字，非法值直接拒绝）。
+- 单测 75 个（新增闸门纯逻辑、调度器假时钟、按群状态与迁移、断线队列集成）；`pnpm check` 全绿。
 
 ### P1.5 基础配置页（2026-10-19）
 

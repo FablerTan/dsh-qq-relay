@@ -1,6 +1,7 @@
 # 架构
 
-> 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地（2026-10-19）**。
+> 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
+> P2.1 消息闸门骨架已落地（jev 未接，2026-10-19）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -44,6 +45,7 @@
 | `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
+| `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 
 - 会话映射 / 闸门状态 / 聊天日志落在 `~/.dsh/storages/dsh-qq-relay/`。
 - **配置传递**：写在目标 profile 的 `~/.dsh/profiles/<name>/cordis.patch.yml`，用
@@ -69,16 +71,17 @@ lib/
 │   ├── runtime.js            # 运行实例：client+api+relay 三件套，支持整份配置热替换
 │   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
-│   ├── gate.js               # 闸门状态机：直通/快路/慢路/去抖/冷却/jev 调度（P2）
-│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复
+│   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
+│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列
 └── model/
     ├── config.js             # 配置默认值与校验
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL 落盘 / 读取 / 清理
-    ├── state.js              # 每群闸门状态持久化 + 单实例锁
-    ├── jev.js                # 分类器调用契约（fail closed，P2）
-    └── reply.js              # 回复构造、切分、重试队列
+    ├── gate.js               # 闸门纯逻辑（P2.1）：配置解析 / 决策 fail closed / 批次 / 时间窗
+    ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
+    ├── jev.js                # 分类器调用契约（待接模型，P2.2+）
+    └── reply.js              # 回复切分、退避、发送失败分类
 ~~~
 
 client 半身（`src/`）只做设置页：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）
@@ -87,10 +90,11 @@ host 半身只依赖 lib/model/。
 
 P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增 `controller/{runtime,config-routes,http}.js`
-与 `model/settings.js`；`gate.js`、`jev.js` 自 P2 起。
+与 `model/settings.js`；P2.1 新增 `controller/gate.js` 与 `model/gate.js`（`jev.js` 等接模型时再落）。
 
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
-单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面，以及
+单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
+调度器（假时钟：去抖合并 / 最小间隔 / 慢路 / fail closed / 重启恢复）、断线发送队列，以及
 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
@@ -102,7 +106,7 @@ OneBot WS 事件
   → codec 规范化（message_id / group_id / user_id / sender / message[] / raw_message）
   → 忽略 message_sent、去重（message_id）
   → 落盘 chat log
-  → gate（直通 / 快路 / 慢路）
+  → gate（直通 / 快路 / 慢路；分类器未接时普通消息 fail closed）
   → relay.dispatch
   → ctx.sessionController.prompt({sessionId, content, source})
      或 ctx.sessionController.resolveAgent(id) + agent.followup(createUserMessage(...))

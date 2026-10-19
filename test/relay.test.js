@@ -18,8 +18,9 @@ import { createRelay } from '../lib/controller/relay.js'
 const flush = async () => {
   for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
 }
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function createHarness(t) {
+function createHarness(t, options = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -55,7 +56,19 @@ function createHarness(t) {
     },
   }
 
-  const client = { on() { return () => {} } }
+  const clientHandlers = new Map()
+  const client = {
+    connected: options.connected !== false,
+    on(name, handler) {
+      if (!clientHandlers.has(name)) clientHandlers.set(name, new Set())
+      clientHandlers.get(name).add(handler)
+      return () => { clientHandlers.get(name)?.delete(handler) }
+    },
+    emit(name, payload) {
+      for (const handler of [...(clientHandlers.get(name) ?? [])]) handler(payload)
+    },
+    isOpen() { return this.connected },
+  }
   const api = {
     async sendGroupText(groupId, text) {
       calls.sends.push({ groupId, text })
@@ -70,16 +83,17 @@ function createHarness(t) {
     groups: [100],
     workspace: dir,
     commandPrefixes: ['/dsh'],
+    gate: options.gate,
   }).config
 
   const mapping = createMappingStore(join(dir, 'mapping.json'))
-  const state = createStateStore(join(dir, 'state.json'))
+  const state = createStateStore({ dir: join(dir, 'state') })
   const chatLog = createChatLog({ dir: join(dir, 'chat'), retentionDays: 7 })
-  const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog })
+  const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog, classifier: options.classifier ?? null })
   relay.start()
 
   t.after(() => relay.stop())
-  return { relay, ctx, calls, mapping, state, chatLog, config }
+  return { relay, ctx, calls, mapping, state, chatLog, config, client }
 }
 
 function groupEvent(overrides = {}) {
@@ -101,6 +115,14 @@ function groupEvent(overrides = {}) {
     raw_message: '[CQ:at,qq=999] 你好',
     ...overrides,
   }
+}
+
+function textEvent(text, overrides = {}) {
+  return groupEvent({
+    message: [{ type: 'text', data: { text } }],
+    raw_message: text,
+    ...overrides,
+  })
 }
 
 test('relay：@ 消息直通、建会话、prompt 带昵称前缀', async (t) => {
@@ -244,4 +266,79 @@ test('relay：长回复按 chunk 切分', async (t) => {
   assert.equal(calls.sends.length, 3)
   assert.ok(calls.sends.every((send) => send.text.length <= 1500))
   assert.equal(calls.sends.map((send) => send.text).join(''), 'y'.repeat(3200))
+})
+
+test('relay：闸门开启后普通消息合并成一次 prompt', async (t) => {
+  const classifierCalls = []
+  const classifier = {
+    async classify(input) {
+      classifierCalls.push(input)
+      return { reply: true, confidence: 0.9, reason: '测试', targetMsgIds: [] }
+    },
+  }
+  const { relay, calls, state } = createHarness(t, { gate: { enabled: true, debounce: '20ms' }, classifier })
+  state.update(100, { lastBotSpeakAt: Date.now() - 1000 })
+  relay.handleRawEvent(textEvent('第一条', { message_id: 11 }))
+  relay.handleRawEvent(textEvent('第二条', { message_id: 12 }))
+  await wait(150)
+
+  assert.equal(classifierCalls.length, 1)
+  assert.equal(classifierCalls[0].messages.length, 2)
+  assert.equal(calls.prompt.length, 1)
+  assert.equal(calls.prompt[0].content[0].text, '[tester] 第一条\n[tester] 第二条')
+})
+
+test('relay：闸门开启时 @ 直通立即派发，不调用分类器', async (t) => {
+  const classifierCalls = []
+  const classifier = {
+    async classify(input) {
+      classifierCalls.push(input)
+      return { reply: false, confidence: 0, reason: '不需要', targetMsgIds: [] }
+    },
+  }
+  const { relay, calls } = createHarness(t, { gate: { enabled: true, debounce: '10ms' }, classifier })
+  relay.handleRawEvent(groupEvent({ message_id: 21 }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+
+  await wait(80)
+  assert.equal(classifierCalls.length, 0)
+  assert.equal(calls.prompt.length, 1)
+})
+
+test('relay：闸门开启但未接分类器 → 普通消息 fail closed 不派发', async (t) => {
+  const { relay, calls, state } = createHarness(t, { gate: { enabled: true, debounce: '10ms' } })
+  state.update(100, { lastBotSpeakAt: Date.now() - 1000 })
+  relay.handleRawEvent(textEvent('有人说话', { message_id: 31 }))
+  await wait(100)
+  assert.equal(calls.prompt.length, 0)
+})
+
+test('relay：断线时回复进入发送队列，重连后补发', async (t) => {
+  const { relay, ctx, calls, client } = createHarness(t, { connected: false })
+  relay.handleRawEvent(groupEvent({ message_id: 41 }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '离线期间的回复' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+  assert.equal(calls.sends.length, 0, '断线时不应直接发送')
+
+  client.connected = true
+  client.emit('open')
+  await flush()
+  assert.deepEqual(calls.sends, [{ groupId: 100, text: '离线期间的回复' }])
 })

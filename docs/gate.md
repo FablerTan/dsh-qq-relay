@@ -1,6 +1,8 @@
 # 消息闸门（群聊）
 
-> 状态：**定案（2026-10-18，用户确认）**。目标：决定群里什么时候该由 bot 接话，
+> 状态：**定案（2026-10-18，用户确认）；P2.1 骨架已落地（2026-10-19）**——调度 / 去抖 /
+> 最小间隔 / 慢路定时 / 状态持久化 / 发送队列已实现并有单测；**jev 分类器未接**（用户决定
+> 先不接模型），缺省实现 fail closed，详见 §11。目标：决定群里什么时候该由 bot 接话，
 > 控制刷屏与模型成本。协议端事实见 [onebot-channel.md](./onebot-channel.md)，
 > 整体架构见 [architecture.md](./architecture.md)。
 
@@ -161,3 +163,30 @@ gate:
 - 慢路评估游标：按「最近 2 小时」还是「距上次评估以来」。
 - 是否对 @ 直通增加「处理中」即时回执（默认关闭）。
 - 队列保留时限与丢弃策略。
+
+## 11. 实现备注（P2.1，2026-10-19）
+
+- **代码位置**：纯逻辑 `lib/model/gate.js`（配置解析 / 决策 fail closed / 批次 / 时间窗）；
+  调度 `lib/controller/gate.js`（去抖、最小间隔、慢路定时、分类器调用）；
+  接入 `lib/controller/relay.js`（直通判定、批次派发、发送队列）；状态 `lib/model/state.js`。
+- **配置键**（`config.gate`，见 architecture §2.1）：`enabled`（默认 false）、`mentionBypass`、
+  `fastWindow`（10m）、`fastMinReplyInterval`（45s）、`debounce`（5s）、`slowTimer`（2h）、
+  `slowWindow`（2h）、`maxBatchMessages`（100）、`classifierTimeoutMs`（1.5s）。
+  时长字段接受 `500ms` / `45s` / `10m` / `2h` 或毫秒数字，内部统一为毫秒；未知键 / 非法值直接
+  进 `problems`（配置整体 fail closed）。
+- **分类器接口**：`createRelay({ classifier })` 注入
+  `{ classify({ groupId, groupName, trigger, messages }) } → { reply, confidence, reason, targetMsgIds }`，
+  `trigger` 为 `fast` / `slow`。缺省 `createNullClassifier()` 永远返回
+  `reply: false, reason: 'classifier-not-configured'`；超时或抛错按 `reply: false` 处理，且每次都写
+  一条决策日志（批次条数 / reply / confidence / reason / 耗时）。接模型时只需产出该接口的实现，
+  不用改调度器。
+- **状态与恢复**：每群一个 `state/<group_id>.json`；pending 随消息增量落盘，重启后重新装载；
+  但**不重建慢路定时器**——重启后第一条消息才会重新起 2 小时计时（避免一启动就说话）。
+- **发送队列**：`relay` 内存队列（不落盘，进程重启即丢），断线 / 发送失败入队，`client open`
+  时按序补发；超过 30 分钟丢弃并记日志，上限 50 条。失败分类：文本命中频率 / 风控关键词 → 退避重试，
+  其余 → 不重试（避免刷错误日志）。
+- **尚未实现**（接 jev 前补齐）：慢路「最近 2 小时」时间窗裁剪（当前 pending 只按条数上限 200）、
+  `dshBusy` 串行控制（目前靠 relay 的群级队列 + 上限 5 条限流）、决策日志落盘（目前走宿主日志）。
+- **单测**：`test/gate.test.js`（假时钟：合并 / 最小间隔 / 慢路 / fail closed / 重启恢复）、
+  `test/model.test.js`（配置 / 决策 / 批次 / 发送失败分类）、`test/relay.test.js`（直通不受闸门
+  影响、断线队列补发）。
