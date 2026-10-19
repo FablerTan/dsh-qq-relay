@@ -54,7 +54,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| GET / HEAD | `/dsh-qq-relay/api/status` | 状态快照（连接、配置视图、锁、映射、problems） |
+| GET / HEAD | `/dsh-qq-relay/api/status` | 状态快照（连接、配置视图、闸门 / 分类器状态、锁、映射、problems） |
 | GET / HEAD | `/dsh-qq-relay/api/config` | 同 `status`（配置视图就在 `value.config`） |
 | POST | `/dsh-qq-relay/api/config` | body = 可编辑字段子集；校验、落盘、重建连接后返回新状态 |
 | POST | `/dsh-qq-relay/api/reconnect` | 用当前配置重建连接 |
@@ -80,6 +80,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
     "accessTokenConfigured": true,
     "accessTokenSource": "profile"
   },
+  "gate": { "enabled": true, "classifier": "jev", "model": "typesafe/jev-1.14", "threshold": 0.7, "slowTimer": 7200000 },
   "mappings": [{ "groupId": 10002, "sessionId": "session-…", "title": "QQ群：…", "workspacePath": "…", "createdAt": 0 }]
 }
 ~~~

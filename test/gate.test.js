@@ -79,6 +79,7 @@ function createHarness(t, options = {}) {
     logger: null,
     classifier,
     gateLog,
+    chatLog: options.chatLog ?? null,
     now: clock.now,
     timers: clock,
     dispatch: async (messages, decision, meta) => { dispatched.push({ messages, decision, meta }) },
@@ -253,4 +254,31 @@ test('gate：stop 后定时器不再触发', async (t) => {
   gate.stop()
   await clock.advance(3 * 60 * 60 * 1000)
   assert.equal(classifierCalls.length, 0)
+})
+
+test('gate：分类器拿到聊天上下文（含 bot 发言），派发只带本批', async (t) => {
+  const contextRecords = [
+    { time: 1_000_200, messageId: 'bot-1', userId: '999', nickname: 'bot', role: 'bot', text: '刚才的回复' },
+  ]
+  const chatLog = { readRecent: () => contextRecords }
+  const harness = createHarness(t, { chatLog })
+  harness.state.update(100, { lastBotSpeakAt: harness.clock.now() - 1000 })
+  harness.gate.ingest(groupMessage({ messageId: 'msg-1', text: '再回复一句话' }))
+  await harness.clock.advance(5000)
+
+  assert.equal(harness.classifierCalls.length, 1)
+  assert.deepEqual(harness.classifierCalls[0].messages.map((item) => item.text), ['刚才的回复'])
+  assert.deepEqual(harness.classifierCalls[0].batch.map((item) => item.text), ['再回复一句话'])
+  assert.deepEqual(harness.dispatched[0].messages.map((item) => item.text), ['再回复一句话'])
+})
+
+test('gate：聊天日志读取失败时退回本批消息', async (t) => {
+  const chatLog = { readRecent: () => { throw new Error('broken log') } }
+  const harness = createHarness(t, { chatLog })
+  harness.state.update(100, { lastBotSpeakAt: harness.clock.now() - 1000 })
+  harness.gate.ingest(groupMessage({ messageId: 'msg-2', text: '求助' }))
+  await harness.clock.advance(5000)
+  assert.equal(harness.classifierCalls.length, 1)
+  assert.equal(harness.classifierCalls[0].messages.length, 1)
+  assert.equal(harness.classifierCalls[0].messages[0].text, '求助')
 })

@@ -133,6 +133,9 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.equal(JSON.stringify(status).includes('patch-token'), false)
   assert.deepEqual(status.problems, [])
   assert.deepEqual(status.mappings, [])
+  assert.equal(status.gate.enabled, false)
+  assert.equal(status.gate.classifier, null)
+  assert.equal(status.gate.threshold, 0.7)
 
   const invalid = await call(routes, '/dsh-qq-relay/api/config', {
     method: 'POST',

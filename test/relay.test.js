@@ -195,7 +195,7 @@ test('relay：引用回复直通', async (t) => {
 })
 
 test('relay：turn/end 收集 assistant 文本并回发', async (t) => {
-  const { relay, ctx, calls, state } = createHarness(t)
+  const { relay, ctx, calls, state, chatLog } = createHarness(t)
   relay.handleRawEvent(groupEvent())
   await flush()
 
@@ -217,6 +217,10 @@ test('relay：turn/end 收集 assistant 文本并回发', async (t) => {
 
   assert.deepEqual(calls.sends, [{ groupId: 100, text: '你好呀' }])
   assert.ok(state.get(100).lastBotSpeakAt > 0)
+
+  // bot 自己的发言也写进聊天日志，供 jev 分类器当上下文
+  const botRecord = chatLog.readRecent(100, 0).find((record) => record.role === 'bot')
+  assert.equal(botRecord.text, '你好呀')
 })
 
 test('relay：非本轮的 turn/end 不回发', async (t) => {

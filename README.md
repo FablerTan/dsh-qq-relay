@@ -113,6 +113,16 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### v0.7.1 jev 上下文修正（2026-10-19）
+
+- 修掉「jev 只看本批、看不到前因」的问题：分类器现在拿到聊天日志里最近 60 条消息
+  （包含 bot 自己的发言），派发 DSH 的 prompt 仍只带 pending 本批。
+- relay 发送成功后把 bot 的发言写回聊天日志（`role: "bot"`），jev 的 state 因此能表达
+  「刚被 @ 过、刚回过一句」这类连续对话语境。
+- 状态接口新增 `gate` 字段（`enabled` / `classifier` / `model` / `threshold` / `slowTimer`），
+  方便 `curl` 排查 jev 是否启用。
+- 单测 121 个；host 半身改动，需重启 profile GUI 生效。
+
 ### v0.7.0 jev 分类器接入（2026-10-19）
 
 - 接入 TypeSafe 的 System One 决策模型 jev（OpenRouter Decisions API，默认 `typesafe/jev-1.14`）：

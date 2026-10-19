@@ -74,8 +74,9 @@ dispatch 成功 → lastBotSpeakAt = now；cooldownUntil = now + 2h；清空 pen
 - **模型**：TypeSafe 的 System One 决策模型 **jev**，经 OpenRouter Decisions API 调用
   （`POST https://openrouter.ai/api/alpha/decisions`），默认 `typesafe/jev-1.14`。
   jev 不是对话模型：它返回带概率的类型化答案（Noul = 是 / 否问题），不返回文本或推理。
-- **输入（`state`）**：群名、触发来源（`fast` / `slow`）、bot 标签、最近 60 条消息的
-  `{ speaker, role, text }`（每条正文截到 500 字符）；`questions.reply` 是一个 Noul 问题：
+- **输入（`state`）**：群名、触发来源（`fast` / `slow`）、bot 标签、聊天日志里最近 60 条消息
+  `{ speaker, role, text }`（每条正文截到 500 字符；**包含 bot 自己的发言**，`role: "bot"`，
+  由 relay 在发送成功后写回聊天日志）；`questions.reply` 是一个 Noul 问题：
   「现在要不要在这个群里发一条消息」，`criteria.true / false` 说明边界（有人对它说话 /
   需要接话 vs 普通闲聊 / 回复会打扰）。
 - **输出**：响应 `answers.reply.noul` 是「是」的概率（0..1）；按 `gate.jevThreshold`
@@ -199,6 +200,9 @@ gate:
 - **决策日志（P2.2）**：每次决策落一条 `gate/YYYY-MM-DD.jsonl`（time / groupId / trigger /
   batch / reply / confidence / reason / costMs / messageIds），**不存正文**；保留 7 天，由组合根
   启动时和每天清理一次（聊天日志同款保留期一起清）。
+- **上下文与派发分离（v0.7.1）**：分类器看的是聊天日志最近 60 条（含 bot 发言），派发 DSH 的
+  prompt 只包含 pending 本批消息；这样 jev 能判断「刚被 @ 过 / 刚回过一句」这类语境，
+  又不会把旧消息重复喂给 agent。
 - **发送队列**：`relay` 内存队列（不落盘，进程重启即丢），断线 / 发送失败入队，`client open`
   时按序补发；超过 30 分钟丢弃并记日志，上限 50 条。失败分类：文本命中频率 / 风控关键词 → 退避重试，
   其余 → 不重试（避免刷错误日志）。
