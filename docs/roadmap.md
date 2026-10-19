@@ -15,6 +15,8 @@
 > **P7 client 面板增强**：闸门每群状态 / 最近消息 / 映射管理，v0.14.0 已实现（2026-10-19），见 [client.md](./client.md)。
 > **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现并真机验收（2026-10-19），见 [poke.md](./poke.md)。
 > **P9 入向群文件**：`group_upload` → 下载落盘 → 可选直通，v0.16.0 已实现（2026-10-19），见 [media.md](./media.md) §5.2。
+> **P10** 已落地（v0.17.0）；**P11** 已完成（v0.18.0）。**P12 / P13** 是 2026-10-19 用户确认的
+> 后续两个重点方向（一键环境安装、会话上下文增强：表情包 + 角色预设），状态：**规划中**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -464,6 +466,116 @@
   bot 起一轮并代你回应（prompt 含「直通：代答」与 `[代答：…]`）；你刚说过话 → 不代答。
 - 关闭代答 → @ 名单内的人也不触发。
 - 显式 `@全体成员` 的公告不触发会话。
+
+## P12 环境一键安装（规划中，2026-10-19 用户定为重点）
+
+目标：把「装 Docker / 起 Colima / 拉 NapCat / 扫码登录 / 写 OneBot 配置 / 回填插件配置」从
+[onebot-channel.md §3](./onebot-channel.md) 的手工步骤，收敛成插件面板里的**「环境」页**：
+每步一个状态和按钮，新机器从零到 relay 连上；已装好的机器只做诊断，「一键修复」只补缺的步骤。
+
+### 设计草案
+
+- 入口：插件面板新增「环境」二级页（连接 / 项目 / 行为 / 记录 / 环境）；「连接」页顶部在
+  环境未就绪时显示横幅（去修 → 环境页）。
+- host 新增 `controller/env.js` + `model/env.js`（纯逻辑、可单测）：
+  - `GET /dsh-qq-relay/api/env`：步骤清单 + 每步 `ok | warn | error`、证据（命令输出摘要）、
+    可执行动作 id；前端 5 秒轮询（与现有状态轮询一致）。
+  - `POST /dsh-qq-relay/api/env/action`：body `{ action, nonce }`；只跑**固定 argv**，
+    不经 shell 拼接；动作立即返回 + 日志游标，前端轮询 `GET /api/env/log?since=`
+    （环形缓冲、token 脱敏）。
+- 步骤（macOS 为主，命令固定）：
+  1. **Docker CLI**：`docker --version` / `docker compose version`；缺 → `brew install colima docker docker-compose`（安装类，需确认）。
+  2. **Docker daemon**：`docker info`；未起 → `colima start --cpu 4 --memory 4 --disk 60 --vm-type vz`。
+  3. **Compose 文件**：`<envDir>/docker-compose.yml`（生成 `WEBUI_TOKEN`、端口只绑
+     `127.0.0.1:3001/6099`、三个数据卷，与文档 §3.3 一致）。
+  4. **容器**：`docker compose up -d`（必要时先 `pull`）；`docker inspect napcat` 判状态。
+  5. **登录**：页面打开 `http://127.0.0.1:6099/webui?token=<token>` 让用户扫码——**唯一不可
+     自动化**的一步；轮询 `<envDir>/data/config/onebot11_*.json` 是否出现判断登录成功。
+  6. **OneBot 配置**：补齐 `token` / `port` / `messagePostFormat: array` /
+     `reportSelfMessage: false`，`docker compose restart napcat`。
+  7. **回填 + 自检**：写插件配置（`wsUrl` / `accessToken` / `selfId`）→ 重连 →
+     `get_login_info` 校验。
+- 配置：新增 `environment` 段（`enabled` / `dir` / `webuiToken` 只写不读）；默认
+  `dir = ~/napcat-docker`；现有 profile patch 配置不受影响。
+- 平台：macOS 优先（Colima）；Linux 走 docker compose 等价路径（有 daemon 即跳过 1、2）；
+  Windows / WSL 后置，文档只写「暂不支持」。
+- 安全：只允许白名单命令；不 `sudo`；不下载可执行文件（除 brew 包与 docker 镜像）；
+  安装类动作二次确认并显示确切命令；`envDir` 必须是绝对路径、不接受 shell 元字符；
+  路由沿用「JSON body + nonce」防 CSRF（浏览器跨站 JSON POST 会触发预检）。
+- 失败可读：每步保留确切命令与最后 N 行输出，提供「复制命令」，用户可自己在终端跑。
+
+### 风险 / 待确认
+
+- 风险：`brew install` 耗时长、可能失败；Docker Desktop 与 Colima 可能同时存在（先探测谁在跑）；
+  NapCat 镜像更新 / QQ 登录态失效要重新扫码；一键装完 ≠ 一定能登录（账号风控）。
+- **待确认**：
+  1. 「一键」边界——允许插件直接执行 `brew install` / `colima start`，还是只做「检测 + 复制命令」、
+     自动化容器与配置两步？
+  2. 环境目录固定 `~/napcat-docker`，还是设置页可改（默认值仍放那儿）？
+  3. 只支持 Docker + NapCat（推荐），还是也列 macOS 原生 NapCat Shell（文档已否定）？
+  4. 是否需要「卸载 / 重置环境」入口（删容器 + 数据卷，危险操作二次确认）？
+
+## P13 会话上下文增强：表情包与角色预设（规划中，2026-10-19 用户定为重点）
+
+目标：让 QQ 侧的 agent 更像群友——有稳定人设、会用 / 会学表情包；同时把
+「最终回复自动回发」这类平台约定写进 prompt，减小模型行为偏差。
+
+### P13.1 角色预设（先做，改动小）
+
+- **两层机制**：
+  1. **原生 DSH agent preset**：relay 建会话时透传
+     `sessionController.create({ cwd, agentPreset })`；新增配置
+     `agentPresets: { default?, byGroup?: { "<群号>": "<preset id>" } }`；设置页「行为」下拉的
+     选项来自 host `ctx.get('agentPresets').list()`（含 `broken` 原因；服务缺失时整块隐藏）。
+     preset 在会话创建时固定，切预设要 `/new` 或「重新绑定」。
+  2. **轻量人设**（不依赖 profile 改动）：配置 `persona: { enabled, text }`（可按群覆盖），
+     prompt 顶部注入强边界说明；默认关闭。用于快速试人设 / 不想动 profile 的场景。
+- **人设模板**（client 侧一键填表）：通用群友 / 猫娘 / 客服 / 技术助手 / 自定义；
+  字段：自称、性格、语气、口癖、回复长度、是否可用表情包。
+- **平台约定补进 prompt**（修协议级验收发现的 gap）：每轮 prompt 末尾固定一行
+  「直接输出最终回复即可，relay 会自动回发本群；不要用 `qq_send` 往本群发」，
+  避免双发与绕过引用 / 占位 / 合并。
+- 文档：新增 `docs/persona.md`，给一个 `@deepseek-ai/dsh-agent-preset` +
+  `@deepseek-ai/dsh-persona` 的 profile patch 示例（`prefix` 人设 + QQ 平台规则），
+  用户复制即用；插件**不**动态注册 preset（会话恢复要求 preset 在启动时已声明）。
+- 验收：设置页选 preset → 新建会话后走该 preset 的系统提示词；旧会话不受影响；
+  `/new` 后生效；preset 不存在 → 保存时校验报错 / 建会话回退默认并记 problem；
+  关闭人设 → prompt 与 v0.18.0 等价；双发不再出现。
+
+### P13.2 表情包发送（拟人化第一步）
+
+- 出向 `qq_send` 增加 `sticker`（库内 id / 绝对路径 / 标签，≤2 张）；relay 发送
+  `image` 段并带 `sub_type: 1`（收藏表情样式）；商城表情 `mface` 需要
+  `emoji_id / emoji_package_id / key`，先用假协议端 + 真 NapCat 各验一次再决定是否支持。
+- **最终回复内嵌标记**：agent 在最终文本里写 `[[sticker:<id或tag>]]`，relay 抽出标记、
+  与文本合并成一条消息（`image(sub_type=1)` + `text`）发送，不额外发第二条消息；
+  标记非法 / 库中不存在 → 丢掉标记、正常发文本，不报错刷屏。
+- 频率：每轮最多 1 张；每群最短间隔（默认 60s）；超出静默丢弃。
+- 入向识别已有（`mface` / `image.sub_type=1` → `kind=sticker`；prompt 已有 `[表情：path]`）。
+
+### P13.3 表情包学习（后做，依赖 P13.2 的库）
+
+- 库：`<project>/.qq-relay/stickers/<sha1>.<ext>` + `index.jsonl`
+  （`sha1 / path / groupId / userId / time / summary / mface / tags / desc / uses / lastUsedAt`）。
+- 自动收集：本群 `kind=sticker` 落盘成功后按 sha1 去重入库；容量上限（默认 500 / 群，LRU 淘汰）；
+  随 `chatRetentionDays` 清理；不跨群复用（隐私）。
+- 标签：agent 通过 `qq_sticker_save({ path, tags, desc })` 把喜欢的入库 / 补标签；
+  也可手改 `index.jsonl`；检索 `qq_sticker_list({ query })`。
+- prompt：`stickers.enabled` 且本群有库时附一份紧凑目录（前 10 条：id + tags + 描述），
+  只列文本、不内联图片；教 agent 用 `[[sticker:…]]`。
+- 可选：导入 bot 小号「收藏表情」当初始素材（NapCat `fetch_custom_face` 返回 URL 列表 →
+  下载入库；一次性动作，放设置页按钮）。
+- 风险：刷屏（频率 + 每轮上限）、群友隐私（只收集本群、不外传）、版权（不导出）、
+  库体积与清理。默认收集开、发送开？——**待确认**（也可先都默认关，设置页显式开启）。
+
+### 待确认（P13）
+
+1. 角色预设优先走原生 DSH agent preset（推荐、系统提示词强度高，但要动 profile），
+   还是先做插件内轻量人设（零 profile 改动、prompt 注入）？两条都做的话谁先？
+2. 表情包：优先「能发」（P13.2）还是「能学」（P13.3）？发送样式接受「收藏表情」
+   （图片 + `sub_type=1`）还是必须真·商城表情（需要 `mface` key，可能过期）？
+3. 表情包默认开还是默认关？
+4. 排期：P12 → P13（v0.19.0 / v0.20.x），还是 P13 先做？
 
 ## 协议级联调验收（2026-10-19，AI 代理执行，非真机）
 
