@@ -21,6 +21,9 @@ function fakeCtx() {
   const fake = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
     on: () => () => {},
+    // 宿主服务表里没有 agentPresets（或尚未就绪）时必须安全降级——
+    // 曾经的回归：get() 返回 undefined，代码只判 null 导致激活抛错、路由全丢。
+    get: () => undefined,
     inject: (_names, callback) => {
       let dispose
       try {
@@ -147,6 +150,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.equal(status.gate.enabled, false)
   assert.equal(status.gate.classifier, null)
   assert.equal(status.gate.threshold, 0.7)
+  assert.deepEqual(status.agentPresets, { supported: false, items: [], missing: false })
 
   const invalid = await call(routes, '/dsh-qq-relay/api/config', {
     method: 'POST',

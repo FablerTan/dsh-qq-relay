@@ -93,6 +93,9 @@ dsh-qq-relay:
   仍然保留在配置里，等宿主支持后生效。
 - 状态快照的 `agentPresets` 字段：`{ supported, items[], missing }`；`items` 里 `broken` 非空
   表示该 preset 激活失败；`missing` 表示配置里的 preset 已不在名册（建会话会退回默认）。
+- 实现注意：`ctx.get('agentPresets')` 在插件 `apply()` 阶段可能返回 **undefined**（服务尚未提供），
+  必须把 undefined 与「不是 `list()` 服务」一起判掉；否则激活抛错会让整条插件行失效、配置页
+  请求全部 404/405。v0.19.0 曾踩过这个坑，`test/apply.test.js` 已有回归用例。
 
 ## 4. prompt 形状
 
