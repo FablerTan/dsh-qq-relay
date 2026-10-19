@@ -9,13 +9,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  attachGroupFile,
   attachMedia,
   decodeEntities,
+  GROUP_FILE_MAX_BYTES,
   mediaDateKey,
   mediaRelativePath,
   normalizeMediaRecords,
   planMedia,
   pruneMedia,
+  sanitizeFileStem,
   sanitizeStem,
   sniffImageExt,
   sniffMediaExt,
@@ -314,3 +317,78 @@ test('media：normalizeMediaRecords 保留 video / voice', () => {
   assert.equal(out[1].status, 'failed')
   assert.equal(out[2].kind, 'image', '未知 kind 回退成 image')
 })
+test('media：sanitizeFileStem 去路径 / 保留 Unicode / 剥扩展名', () => {
+  assert.equal(sanitizeFileStem('报告.pdf'), '报告')
+  assert.equal(sanitizeFileStem('../../evil.txt'), 'evil')
+  assert.equal(sanitizeFileStem('a b:c?.log'), 'a_b_c_.log'.replace(/.log$/, ''))
+  assert.equal(sanitizeFileStem('...'), 'file')
+  assert.equal(sanitizeFileStem(''), 'file')
+})
+
+test('media：attachGroupFile 下载群文件并按原名定扩展名（v0.16.0）', async (t) => {
+  const project = join(tempDir(t), 'proj')
+  const body = Buffer.from('%PDF-1.4 group file', 'utf8')
+  let fetched = 0
+  const media = await attachGroupFile({
+    projectDir: project,
+    groupId: 100,
+    fileId: 'abc123',
+    fileName: '报告.pdf',
+    size: body.length,
+    url: 'https://example.com/download?fname=',
+    timeMs: T,
+    fetchImpl: async () => { fetched += 1; return okResponse(body, { contentType: 'application/octet-stream' }) },
+  })
+  assert.equal(fetched, 1)
+  assert.equal(media.length, 1)
+  assert.equal(media[0].kind, 'file')
+  assert.equal(media[0].status, 'saved')
+  assert.equal(media[0].file, '报告.pdf')
+  assert.equal(media[0].bytes, body.length)
+  assert.equal(media[0].path, '.qq-relay/media/100/2026-10-19/abc123-报告.pdf')
+  assert.equal(readFileSync(join(project, media[0].path)).toString('utf8'), body.toString('utf8'))
+})
+
+test('media：attachGroupFile 超限不下载、缺 URL / HTTP 失败记 failed', async (t) => {
+  const project = join(tempDir(t), 'proj')
+  let fetched = 0
+  const tooLarge = await attachGroupFile({
+    projectDir: project, groupId: 100, fileId: 'big', fileName: 'big.bin',
+    size: GROUP_FILE_MAX_BYTES + 1, url: 'https://example.com/big',
+    timeMs: T,
+    fetchImpl: async () => { fetched += 1; return okResponse(Buffer.from('x')) },
+  })
+  assert.equal(fetched, 0, '超限时不应发起下载')
+  assert.equal(tooLarge[0].status, 'failed')
+  assert.equal(tooLarge[0].reason, 'too-large')
+  assert.equal(tooLarge[0].file, 'big.bin')
+
+  const noUrl = await attachGroupFile({
+    projectDir: project, groupId: 100, fileId: 'nourl', fileName: 'a.txt', size: 3, url: '', timeMs: T,
+    fetchImpl: async () => { fetched += 1; return okResponse(Buffer.from('x')) },
+  })
+  assert.equal(fetched, 0)
+  assert.equal(noUrl[0].status, 'failed')
+  assert.equal(noUrl[0].reason, 'invalid-url')
+
+  const httpFail = await attachGroupFile({
+    projectDir: project, groupId: 100, fileId: '404', fileName: 'a.txt', size: 3,
+    url: 'https://example.com/a.txt', timeMs: T,
+    fetchImpl: async () => okResponse(Buffer.from(''), { status: 404 }),
+  })
+  assert.equal(httpFail[0].status, 'failed')
+  assert.equal(httpFail[0].reason, 'http-404')
+})
+
+test('media：normalizeMediaRecords 保留 file kind 与原始文件名', () => {
+  const out = normalizeMediaRecords([
+    { kind: 'file', status: 'saved', path: '.qq-relay/media/100/x/report.pdf', file: 'report.pdf', bytes: 10 },
+    { kind: 'file', status: 'failed', reason: 'too-large', file: 'big.zip', bytes: 999 },
+  ])
+  assert.equal(out[0].kind, 'file')
+  assert.equal(out[0].file, 'report.pdf')
+  assert.equal(out[1].kind, 'file')
+  assert.equal(out[1].status, 'failed')
+  assert.equal(out[1].reason, 'too-large')
+})
+

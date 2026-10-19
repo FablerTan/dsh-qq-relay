@@ -14,6 +14,7 @@
 > **P4.3 聊天记录清理**：保留天数 UI + 立即清理，v0.13.0 已实现（2026-10-19），见 [chat-context.md](./chat-context.md) §7。
 > **P7 client 面板增强**：闸门每群状态 / 最近消息 / 映射管理，v0.14.0 已实现（2026-10-19），见 [client.md](./client.md)。
 > **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现并真机验收（2026-10-19），见 [poke.md](./poke.md)。
+> **P9 入向群文件**：`group_upload` → 下载落盘 → 可选直通，v0.16.0 已实现（2026-10-19），见 [media.md](./media.md) §5.2。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -373,6 +374,35 @@
 - agent 调 `qq_poke` → 对方收到戳；NapCat 离线时工具报「当前离线」。
 - `poke.enabled=false` / 非白名单群 → 事件被忽略。
 - host 半身改动，需重启 profile GUI 生效。
+
+## P9 入向群文件（v0.16.0 已实现，2026-10-19）
+
+目标：群里上传的文件能落进群项目并被 agent 使用；默认按「一次上传 = 一次交互」直通一轮，
+可配置成只记录。规格见 [media.md](./media.md) §5.2。
+
+### 范围（v0.16.0）
+
+- 识别 `notice.group_upload`（`file = { id, name, size, busid }`）；白名单群、忽略 bot 自己上传。
+- 下载：`get_group_file_url` → HTTP(S) GET → `.qq-relay/media/<群>/<日期>/<fileId>-<安全文件名><扩展名>`；
+  20 MiB 上限；失败只记 `failed`、不接话。
+- 上下文：聊天记录 `text = 上传了群文件：<name>` + `media` 里 `kind = "file"`；
+  `files.react: true`（默认）时直通起一轮（reason「群文件」），`false` 时只记录。
+- 配置 `files` 段（patch 只读）：`enabled` / `react`。
+
+### 验收状态（2026-10-19）
+
+- ✅ 单测：codec 1、配置 1、media 4、relay 7、prompt 1，共 244 个全过；`pnpm check` 全绿。
+- ✅ 协议端实测：`group_upload` 字段与文档一致；`get_group_file_url` 返回的 URL 可直接下载原文件；
+  上传只产生 notice、不额外产生 message 事件。
+- ⏳ 真机验收：重启 dwdev GUI 后按下面清单确认。
+
+### 验收
+
+- 群里上传 txt / pdf → 聊天记录出现、文件落盘到 `.qq-relay/media/`，bot 起一轮（默认）。
+- 超过 20 MiB → 只记录 `failed: too-large`，不下载、不接话。
+- `files.react: false` → 只记录不接话；`files.enabled: false` → 完全不处理。
+- 自己用 `qq_send` 上传文件 → 不触发（防自问自答）。
+- 设置页「最近消息」里显示 `[文件]`；host 半身改动，需重启 profile GUI 生效。
 
 ## 风险登记
 

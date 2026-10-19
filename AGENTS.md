@@ -6,7 +6,7 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.15.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.16.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -14,7 +14,8 @@
 > P4.2 媒体双向（入向视频 / 语音落盘 + `qq_send` 出向图片 / 文件）已落地、
 > P4.3 聊天记录清理（保留天数 + 立即清理）已落地、P7 client 面板增强
 > （闸门每群状态 / 最近消息 / 映射管理）已落地、P8 戳一戳识别与回戳
-> （被戳接话 / 互戳记录 / `qq_poke`）已真机验收（2026-10-19）；上级 §0 已仅对本插件解除。
+> （被戳接话 / 互戳记录 / `qq_poke`）已真机验收、P9 入向群文件
+> （`group_upload` → 下载落盘 → 可选直通）已落地（2026-10-19）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
@@ -37,7 +38,9 @@
   无文本消息不再进闸门（`codec.toChatLogRecord` / `controller/gate.js`）；P4.1 新增
   `model/media.js`（入向图片 / 表情 / 视频 / 语音落盘，聊天记录与 prompt 引用路径；
   v0.12.0 起含出向图片 / 文件的工具侧支撑：`controller/relay.js` 的 `sendImage` / `sendFile`、
-  `controller/tools.js` 的 `images` / `file` 参数，本地文件转 base64 经 NapCat 发送）；
+  `controller/tools.js` 的 `images` / `file` 参数，本地文件转 base64 经 NapCat 发送；
+  v0.16.0 起含入向群文件 `attachGroupFile`：`group_upload` → `get_group_file_url` → 落盘，
+  relay 的 `handleGroupFile` 负责直通 / `files` 配置段）；
   P5 新增 `model/commands.js`（QQ 侧命令层：解析 / 角色校验 / 回复文案），
   命令分发在 `controller/relay.js`（`proceedInbound` 里先于直通 / 闸门）；P6 在
   `controller/relay.js` 增加引用回复 / 处理中占位 / 直通连发合并（`reply` 配置段）；

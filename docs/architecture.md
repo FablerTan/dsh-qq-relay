@@ -7,7 +7,8 @@
 > P6 回复体验（引用触发消息 / 处理中占位 / 直通连发合并）已实现（v0.11.1，见 [reply.md](./reply.md)）；
 > P4.2 媒体双向（入向视频 / 语音 + 出向图片 / 文件）已实现（v0.12.0，见 [media.md](./media.md)）；
 > P7 client 面板增强（闸门每群状态 / 最近消息 / 映射管理）已实现（v0.14.0，见 [client.md](./client.md)）；
-> P8 戳一戳识别与回戳（被戳接话 / 互戳记录 / `qq_poke`）已实现（v0.15.0，见 [poke.md](./poke.md)）**。
+> P8 戳一戳识别与回戳（被戳接话 / 互戳记录 / `qq_poke`）已实现（v0.15.0，见 [poke.md](./poke.md)）；
+> P9 入向群文件（`group_upload` → 下载落盘 → 可选直通）已实现（v0.16.0，见 [media.md §5.2](./media.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -58,6 +59,7 @@
 | `commands` | object | `{ enabled: true, bare: true, roles: ['owner','admin'] }` | QQ 侧命令层（P5，v0.11.0）：`/new` / `/stop` / `/status` / `/help`；`bare` 控制裸写式，`roles` 控制可执行角色，详见 [commands.md](./commands.md) |
 | `reply` | object | `{ quote: true, ackDelayMs: 8s, mergeWindowMs: 400ms }` | 出向回复体验（P6，v0.11.1）：引用触发消息 / 处理中占位阈值（0 = 关）/ 直通连发合并窗口（0 = 不合并），详见 [reply.md](./reply.md) |
 | `poke` | object | `{ enabled: true, react: true, cooldownMs: 10s }` | 戳一戳（v0.15.0）：是否识别 / 被戳是否接话 / 每群冷却（0 = 不限，上限 10m），详见 [poke.md](./poke.md) |
+| `files` | object | `{ enabled: true, react: true }` | 入向群文件（v0.16.0）：是否识别 `group_upload` / 落盘成功后是否直通起一轮；上限 20 MiB，详见 [media.md §5.2](./media.md) |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
@@ -98,7 +100,7 @@ lib/
     ├── chat-log.js           # 群消息 JSONL（按群项目路由）/ 读取 / 清理 / 旧日志迁移
     ├── cleanup.js            # 清理（v0.13.0）：立即清理天数校验 + 聊天 / 媒体一次性清理（自动清理共用）
     ├── panel.js              # 设置页面板（v0.14.0）：最近消息查询校验 + 聊天记录 → 只读消息视图
-    ├── media.js              # 入向图片 / 表情 / 视频 / 语音落盘与清理、媒体类型识别（P4.1 / P4.2）
+    ├── media.js              # 入向图片 / 表情 / 视频 / 语音 / 群文件落盘与清理、媒体类型识别（P4.1 / P4.2 / v0.16.0）
     ├── project.js            # 群项目目录解析、`.qq-relay/` 创建与自忽略 .gitignore（P4）
     ├── prompt.js             # 消息拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针（P4）
     ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
@@ -125,8 +127,8 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 单实例锁、聊天日志读写清理、立即清理、面板最近消息、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
 决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` / `qq_poke` 工具契约与注册、审批命令匹配与桥接、
-群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1）、戳一戳识别 / 冷却 / 出向（v0.15.0），
-以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
+群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1）、群文件下载（v0.16.0）、
+戳一戳识别 / 冷却 / 出向（v0.15.0），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
 
@@ -136,6 +138,7 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 OneBot WS 事件
   → codec 规范化（message_id / group_id / user_id / sender / message[] / raw_message）
   → notice 分支：戳一戳（v0.15.0）→ 写聊天记录；被戳时按直通接话（见 poke.md）
+  → notice 分支：群文件（v0.16.0）→ get_group_file_url → 下载落盘；成功且 files.react 时直通（见 media.md §5.2）
   → 忽略 message_sent、去重（message_id）
   → 含图片 / 表情时先下载到 <project>/.qq-relay/media/（失败只记 failed）
   → 落盘 chat log（<project>/.qq-relay/chat/<群号>/，媒体路径写进 media 数组）
@@ -221,8 +224,8 @@ ctx.on('agent/error', ...)          # 失败提示
 - ~~jev 的部署形态与模型~~ 已定：OpenRouter Decisions API + `typesafe/jev-1.14`（P2.3）；阈值调优待真实群聊数据。
 - ~~审批文本命令的具体交互与超时策略~~ 已落地（P3，见 [approval.md](./approval.md)）。
 - 单聊（private）是否与群共享同一会话映射体系。
-- 媒体：入向视频 / 语音与出向图片 / 文件已落地（v0.12.0，见 [media.md](./media.md)）；
-  仍缺入向群文件（`group_upload` notice）、入向媒体转 DSH 附件、视频 / 语音转文字。
+- 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件与出向图片 / 文件已落地（v0.12.0 / v0.16.0，见 [media.md](./media.md)）；
+  仍缺入向媒体转 DSH 附件、视频 / 语音转文字。
 - ~~DSH → QQ 主动推送工具~~ 已落地为 `qq_send`（见 [tools.md](./tools.md)）。
 - client 面板增强：映射管理、审批开关、闸门可视化（基础配置页已在 P1.5 落地，见 [client.md](./client.md)）。
 - 多群并发时的资源上限与队列策略。

@@ -558,3 +558,28 @@ test('config：poke 段默认与校验（v0.15.0）', () => {
   assert.ok(invalid.problems.some((p) => p.includes('poke.react')))
   assert.ok(invalid.problems.some((p) => p.includes('poke.cooldownMs')))
 })
+test('config：files 段默认与校验（v0.16.0）', () => {
+  const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.deepEqual(defaults.config.files, { enabled: true, react: true })
+
+  const custom = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    files: { enabled: false, react: false },
+  })
+  assert.equal(custom.ok, true)
+  assert.equal(custom.config.files.enabled, false)
+  assert.equal(custom.config.files.react, false)
+
+  const invalid = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    files: { enabled: 'yes', react: 1 },
+  })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('files.enabled')))
+  assert.ok(invalid.problems.some((p) => p.includes('files.react')))
+})
+

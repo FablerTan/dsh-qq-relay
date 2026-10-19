@@ -28,7 +28,7 @@ function createHarness(t, options = {}) {
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   const handlers = new Map()
-  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [], images: [], files: [], pokes: [], memberInfo: [], groupInfo: [] }
+  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [], images: [], files: [], pokes: [], memberInfo: [], groupInfo: [], fileUrls: [] }
 
   const ctx = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
@@ -114,6 +114,11 @@ function createHarness(t, options = {}) {
       if (options.pokeFails === true) return { status: 'failed', retcode: 1200, message: '戳一戳失败', data: null }
       return { status: 'ok', retcode: 0, data: null }
     },
+    async getGroupFileUrl(groupId, fileId, busid = 0) {
+      calls.fileUrls.push({ groupId, fileId, busid })
+      if (options.fileUrlFails === true) return { status: 'failed', retcode: 1200, message: '文件不存在', data: null }
+      return { status: 'ok', retcode: 0, data: { url: options.fileUrl ?? 'https://example.com/file' } }
+    },
   }
 
   const config = normalizeConfig({
@@ -128,6 +133,7 @@ function createHarness(t, options = {}) {
     reply: options.reply ?? { quote: false, mergeWindowMs: 0, ackDelayMs: 0 },
     // 戳一戳默认不限冷却，避免测试里第二次戳被冷却吞掉（冷却行为单独测）。
     poke: options.poke ?? { cooldownMs: 0 },
+    files: options.files ?? { react: true },
   }).config
 
   const mapping = createMappingStore(join(dir, 'mapping.json'))
@@ -188,6 +194,20 @@ function pokeEvent(overrides = {}) {
     user_id: 205,
     target_id: 999,
     time: 1792340775,
+    ...overrides,
+  }
+}
+
+/** NapCat 群文件上传通知。 */
+function groupFileEvent(overrides = {}) {
+  return {
+    post_type: 'notice',
+    notice_type: 'group_upload',
+    self_id: 999,
+    group_id: 100,
+    user_id: 205,
+    time: 1792401431,
+    file: { id: 'file-1', name: '报告.pdf', size: 12, busid: 0 },
     ...overrides,
   }
 }
@@ -1097,3 +1117,117 @@ test('relay：poke 离线或 NapCat 拒绝时报可读错误', async (t) => {
   const failed = createHarness(t, { pokeFails: true })
   await assert.rejects(() => failed.relay.poke(100, 205), /戳一戳失败/)
 })
+function fileFetch(body, options = {}) {
+  const status = options.status ?? 200
+  return async () => ({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get(name) {
+        const key = String(name).toLowerCase()
+        if (key === 'content-type') return options.contentType ?? 'application/octet-stream'
+        if (key === 'content-length') return options.contentLength ?? String(body.length)
+        return null
+      },
+    },
+    async arrayBuffer() { return body },
+  })
+}
+
+test('relay：群文件上传下载落盘并直通一轮（v0.16.0）', async (t) => {
+  const body = Buffer.from('%PDF-1.4 群文件', 'utf8')
+  const { relay, calls, chatLog, dir } = createHarness(t, { fetchImpl: fileFetch(body) })
+  relay.handleRawEvent(groupFileEvent({ file: { id: 'file-1', name: '报告.pdf', size: body.length, busid: 0 } }))
+  await wait(80)
+
+  assert.deepEqual(calls.fileUrls, [{ groupId: 100, fileId: 'file-1', busid: 0 }])
+  assert.equal(calls.prompt.length, 1)
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('新消息 1 条（直通：群文件）'), text)
+  assert.ok(text.includes('上传了群文件：报告.pdf'), text)
+  assert.ok(text.includes('[文件：.qq-relay/media/100/2026-10-19/file-1-报告.pdf]'), text)
+
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].messageId, 'file:file-1')
+  assert.equal(records[0].text, '上传了群文件：报告.pdf')
+  assert.equal(records[0].media[0].kind, 'file')
+  assert.equal(records[0].media[0].status, 'saved')
+  assert.equal(records[0].media[0].file, '报告.pdf')
+  assert.equal(existsSync(join(dir, records[0].media[0].path)), true, '聊天记录里的相对路径可直接访问')
+})
+
+test('relay：files.react=false 时群文件只记录不接话', async (t) => {
+  const body = Buffer.from('hello', 'utf8')
+  const { relay, calls, chatLog } = createHarness(t, { files: { react: false }, fetchImpl: fileFetch(body) })
+  relay.handleRawEvent(groupFileEvent({ file: { id: 'file-2', name: 'a.txt', size: body.length, busid: 0 } }))
+  await wait(80)
+
+  assert.equal(calls.prompt.length, 0)
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].media[0].status, 'saved')
+})
+
+test('relay：files.enabled=false 时完全忽略群文件', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { files: { enabled: false }, fetchImpl: fileFetch(Buffer.from('x')) })
+  relay.handleRawEvent(groupFileEvent())
+  await wait(50)
+
+  assert.equal(calls.fileUrls.length, 0)
+  assert.equal(calls.prompt.length, 0)
+  assert.equal(chatLog.readRecent(100, 0).length, 0)
+})
+
+test('relay：群文件下载失败只记录、不接话', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { fetchImpl: fileFetch(Buffer.from(''), { status: 403 }) })
+  relay.handleRawEvent(groupFileEvent())
+  await wait(80)
+
+  assert.equal(calls.prompt.length, 0)
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].media[0].status, 'failed')
+  assert.equal(records[0].media[0].reason, 'http-403')
+})
+
+test('relay：get_group_file_url 失败时记 invalid-url、不接话', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { fileUrlFails: true, fetchImpl: fileFetch(Buffer.from('x')) })
+  relay.handleRawEvent(groupFileEvent())
+  await wait(80)
+
+  assert.equal(calls.fileUrls.length, 1)
+  assert.equal(calls.prompt.length, 0)
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].media[0].status, 'failed')
+  assert.equal(records[0].media[0].reason, 'invalid-url')
+})
+
+test('relay：群文件超限不下载、不接话', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { fetchImpl: fileFetch(Buffer.from('x')) })
+  relay.handleRawEvent(groupFileEvent({ file: { id: 'big', name: 'big.zip', size: 21 * 1024 * 1024, busid: 0 } }))
+  await wait(60)
+
+  assert.equal(calls.prompt.length, 0)
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].media[0].status, 'failed')
+  assert.equal(records[0].media[0].reason, 'too-large')
+})
+
+test('relay：自己上传 / 非白名单 / 重复群文件事件都被忽略', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { fetchImpl: fileFetch(Buffer.from('x')) })
+  relay.handleRawEvent(groupFileEvent({ user_id: 999 }))
+  relay.handleRawEvent(groupFileEvent({ group_id: 200 }))
+  await wait(50)
+  assert.equal(chatLog.readRecent(100, 0).length, 0)
+  assert.equal(calls.fileUrls.length, 0)
+
+  relay.handleRawEvent(groupFileEvent())
+  relay.handleRawEvent(groupFileEvent())
+  await wait(100)
+  assert.equal(chatLog.readRecent(100, 0).length, 1)
+  assert.equal(calls.prompt.length, 1)
+})
+

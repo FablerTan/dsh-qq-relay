@@ -115,7 +115,7 @@ OneBot 11 事件为 JSON。关键事件：
 | message | message_type = group / private，含 group_id、user_id、message_id、message[]、raw_message、sender | 主路径 |
 | message_sent | 机器人自己发出的消息 | **必须忽略**，防回环 |
 | meta_event | lifecycle（connect / enable / disable）、heartbeat | 连接状态与心跳 |
-| notice | group_upload、group_increase / decrease、group_recall、notify.poke 等 | 戳一戳已识别（v0.15.0）；其余 P3 可用 |
+| notice | group_upload、group_increase / decrease、group_recall、notify.poke 等 | 戳一戳（v0.15.0）/ 群文件（v0.16.0）已识别；其余 P3 可用 |
 | request | 加好友 / 加群请求、群邀请 | 忽略或 P3 |
 
 群消息关键字段：
@@ -145,6 +145,14 @@ OneBot 11 事件为 JSON。关键事件：
 - 昵称 / 群名由插件补查 `get_group_member_info` / `get_group_info`（缓存 10 分钟），
   查不到时退化 QQ 号 / `群 <id>`；
 - 去重键用 `(group_id, time, user_id, target_id)`。
+
+群文件上传事件（v0.16.0 起识别，行为见 [media.md](./media.md) §5.2）：
+
+- `post_type: notice`、`notice_type: group_upload`、`group_id`、`user_id`、`time`；
+- `file = { id, name, size, busid }`（2026-10-19 实测；`id` 是文件 UUID，**不是** `file_id`）；
+- 上传只会产生这一条 notice，**不会**额外产生 `message` 事件（实测），所以不存在双触发；
+- 下载：`get_group_file_url(group_id, file_id=file.id, busid)` 返回 `{ url }`，URL 可直接 GET；
+- 下载链接带时效，拿到后应立即下载；事件没有 message_id，去重键用 `file:<file.id>`。
 
 ## 6. 调用 API
 
@@ -178,6 +186,7 @@ OneBot 11 事件为 JSON。关键事件：
 | get_group_member_info / get_group_member_list | 成员昵称 / 角色 |
 | get_group_msg_history | 断线后补上下文（可选） |
 | group_poke | 群戳一戳（NapCat 扩展：`group_id` + `user_id`，无响应数据） |
+| get_group_file_url | 群文件下载链接（`group_id` + `file_id` + `busid` → `{ url }`） |
 | send_poke | 群 / 私聊戳一戳（NapCat 扩展，按是否传 `group_id` 分流） |
 
 - message 为消息段数组：text、image、file、record、at、reply、face 等。
@@ -236,6 +245,7 @@ OneBot 11 事件为 JSON。关键事件：
 | 真机：容器重启需重新扫码 | ✅（已知代价） |
 | 群戳一戳事件 / `group_poke`（v0.15.0） | ✅ `group_poke` 返回 ok；poke 事件字段与文档一致（bot 戳群友实测） |
 | 真机：别人戳 bot → DSH 回复（v0.15.0） | ✅（2026-10-19 用户确认） |
+| `group_upload` 事件字段 / `get_group_file_url` 下载（v0.16.0） | ✅ 实测（2026-10-19）：字段与文档一致；URL GET 返回原文件；上传不额外产生 message 事件 |
 | 长文本切分上限 / 图片 / 文件 / 风控退避 | 待验证 |
 
 ## 参考

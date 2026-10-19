@@ -91,9 +91,9 @@ function errorText<T>(result: RelayApiResult<T>): string {
 
 /** 面板消息里的媒体标记（只读展示，不暴露 URL）。 */
 function mediaLabels(media: RelayPanelMessageView['media']): string[] {
-  const labels: Record<string, string> = { image: '图片', sticker: '表情', face: '表情', video: '视频', voice: '语音' }
+  const labels: Record<string, string> = { image: '图片', sticker: '表情', face: '表情', video: '视频', voice: '语音', file: '文件' }
   return media.map((entry) => (entry.status === 'failed'
-    ? '[媒体下载失败]'
+    ? (entry.kind === 'file' ? '[群文件下载失败]' : '[媒体下载失败]')
     : '[' + (labels[entry.kind] ?? '媒体') + ']'))
 }
 

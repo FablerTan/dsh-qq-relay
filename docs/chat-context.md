@@ -1,7 +1,7 @@
 # 聊天记录与消息拼接（规格）
 
 > 状态：**已实现（v0.8.0，2026-10-19；v0.8.1 修正日志元信息与空文本消息；v0.9.0 增加媒体落盘引用；
-> v0.15.0 增加戳一戳记录，见 [poke.md](./poke.md)）**；
+> v0.15.0 增加戳一戳记录，见 [poke.md](./poke.md)；v0.16.0 增加群文件记录，见 [media.md](./media.md) §5.2）**；
 > 本文既是规格也是现状记录。媒体下载细节见 [media.md](./media.md)。
 > 聊天记录落在「群绑定的项目」隐藏目录里、DSH 会话可读；发给 DSH 的 prompt 由
 > `lib/model/prompt.js` 统一拼接。真机验收待用户重启 GUI 后确认。
@@ -78,6 +78,9 @@ OneBot 事件 → codec.toInternalEvent（segments → text，丢 at / reply 结
 - `raw` 仍是 OneBot `raw_message`（含 CQ 码），调试 / 回放用。
 - 戳一戳（v0.15.0）也写日志：`text` 为「戳了你一下 / 戳了 `<目标>` 一下」，`raw: "poke"`，
   `messageId` 用合成键 `poke:<time>:<user>:<target>`（事件没有 message_id）；见 [poke.md](./poke.md)。
+- 群文件（v0.16.0）也写日志：`text` 为「上传了群文件：<文件名>」，`raw: "group_upload"`，
+  `messageId` 用合成键 `file:<file.id>`，`media[0].kind = "file"`、`media[0].file` 为原始文件名；
+  见 [media.md](./media.md) §5.2。
 - bot 自己的发言继续以 `role: "bot"`、`nickname: "bot"` 写入（jev 上下文依赖）。
 
 ## 4. 项目解析（每群）
@@ -137,10 +140,18 @@ dsh-qq-relay:
 [历史记录：.qq-relay/chat/10002/]
 ```
 
+**群文件（v0.16.0，`files.react: true` 时）**：
+
+```
+[QQ群：示例群（10002）] 2026-10-19 17:17 新消息 1 条（直通：群文件）
+[17:17:11] [tester] [文件：.qq-relay/media/10002/2026-10-19/7a75-报告.pdf] 上传了群文件：报告.pdf
+[历史记录：.qq-relay/chat/10002/]
+```
+
 规则：
 
 - 头部：群名（缺省用「群 <id>」）、群号、本地日期时间（取批次首条消息时间）、条数；
-  直通时追加原因（`@` / `引用` / `命令` / `戳一戳`）。
+  直通时追加原因（`@` / `引用` / `命令` / `戳一戳` / `群文件`）。
 - 行：`[HH:mm:ss] [显示名]（标记）正文`；显示名取 `card || nickname || userId`（统一两处逻辑）。
 - 标记：`@你`（`mentionsSelf`）、`引用 <被引用 message_id>`（`replyToId` 非空）；都没有则省略。
 - 媒体标记（v0.9.0）：`[图片：<相对路径>]` / `[表情：<相对路径>]` / `[表情 <faceText>]` /

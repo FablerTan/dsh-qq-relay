@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.15.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.16.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
@@ -11,7 +11,8 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 `qq_send` 出向图片 / 文件，见 [docs/media.md](./docs/media.md)）；P4.3 已落地**聊天记录清理**
 （保留天数 + 立即清理，见 [docs/chat-context.md](./docs/chat-context.md) §7）；P7 已落地**client 面板增强**
 （闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）；P8 已落地并真机验收**戳一戳识别与回戳**
-（被戳接话 / 互戳记录 / `qq_poke`，见 [docs/poke.md](./docs/poke.md)）。设计见
+（被戳接话 / 互戳记录 / `qq_poke`，见 [docs/poke.md](./docs/poke.md)）；P9 已落地**入向群文件**
+（`group_upload` → 下载落盘 → 可选直通，见 [docs/media.md](./docs/media.md) §5.2）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -33,7 +34,7 @@ DSH 与 QQ 之间的**双向桥**：
 - 协议端：**真实 QQ 号 + NapCat + OneBot 11 正向 WebSocket**——DSH 单轮可能超过 5 分钟，官方机器人的群聊被动回复窗口（5 分钟）会让长任务结果只能改走主动消息（受配额、可被关闭）；真实 QQ 号可随时发送。官方通道方案保留为备选（[docs/official-bot-channel.md](./docs/official-bot-channel.md)）。
 - 账号：一个 **QQ 小号**登录 NapCat 作 bot，主号操作；**群聊优先**（群 @ 直通 + 群内普通消息经闸门过滤）；单聊放 P3。
 - 消息闸门：**10 分钟快路 + 2 小时慢路 + jev 分类器**，@ 直通、最小发言间隔（见 [docs/gate.md](./docs/gate.md)）。
-- 运行形态：host 半身单进程插件；client 半身 v1 不做；插件不管理 profile。
+- 运行形态：host 半身单进程插件；client 半身提供设置页（不做独立应用）；插件不管理 profile。
 - 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
 - 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
@@ -49,8 +50,9 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 `qq_send` 出向图片 / 文件，见 [media.md](./docs/media.md)）、聊天记录清理（P4.3：保留天数 +
 立即清理，见 [chat-context.md](./docs/chat-context.md) §7）、client 面板增强（P7：闸门每群状态 / 最近消息 /
 映射增删，见 [client.md](./docs/client.md)）、戳一戳识别与回戳（P8：被戳接话 / 互戳记录 / `qq_poke`，
-见 [poke.md](./docs/poke.md)）。
-**仍未定案**：群审批（按钮）、入向群文件——先落 `docs/` 再实现。
+见 [poke.md](./docs/poke.md)）、入向群文件（P9：`group_upload` → 下载落盘 → 可选直通，
+见 [media.md](./docs/media.md) §5.2）。
+**仍未定案**：群审批（按钮）——先落 `docs/` 再实现。
 
 ## 目录结构
 
@@ -97,7 +99,7 @@ dsh-qq-relay/
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
-| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 | 改媒体 / 排查媒体收发时 |
+| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 | 改媒体 / 排查媒体收发时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送 / `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
@@ -134,6 +136,20 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.16.0 入向群文件（2026-10-19）
+
+- 识别 OneBot `notice.group_upload`：白名单群、非 bot 自己上传的群文件 → `get_group_file_url`
+  取下载链接 → 下载到 `.qq-relay/media/<群>/<日期>/<fileId>-<安全文件名><扩展名>`（≤20 MiB）。
+- 落盘成功后写聊天记录（`text = 上传了群文件：<名>`，`media` 里 `kind = "file"`）；
+  默认 `files.react: true` 按直通起一轮（reason「群文件」），`false` 时只记录。
+- 失败（超限 / 取链接失败 / HTTP / 超时）只记 `failed`、不接话；bot 自己通过 `qq_send`
+  上传产生的 `group_upload` 忽略（防自问自答）。
+- 新增 `files` 配置段（`enabled` / `react`，patch 只读）。
+- 新增 `api.getGroupFileUrl` / `model/media.js` 的 `attachGroupFile`；设置页「最近消息」
+  增加 `[文件]` 标记。
+- 同步 media / chat-context / onebot-channel / architecture / roadmap / README / AGENTS。
+- 单测 244 个（新增 14 个：codec 1 / 配置 1 / media 4 / relay 7 / prompt 1）；host 半身改动，需重启 profile GUI 生效。
 
 ### v0.15.0 戳一戳识别与回戳（2026-10-19）
 

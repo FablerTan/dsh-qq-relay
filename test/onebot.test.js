@@ -303,6 +303,18 @@ test('api：封装 action 与响应判定', async () => {
     params: { group_id: 1, user_id: 2 },
   })
 
+  await api.getGroupFileUrl(1, 'file-id', 0)
+  assert.deepEqual(calls[3], {
+    action: 'get_group_file_url',
+    params: { group_id: 1, file_id: 'file-id', busid: 0 },
+  })
+
+  await api.getGroupFileUrl(1, 'file-id', 102)
+  assert.deepEqual(calls[4], {
+    action: 'get_group_file_url',
+    params: { group_id: 1, file_id: 'file-id', busid: 102 },
+  })
+
   assert.equal(isOk({ status: 'failed', retcode: 1200 }), false)
   assert.equal(isOk(null), false)
   assert.equal(failureText({ status: 'failed', retcode: 1200, message: '被移出群' }), '被移出群')
@@ -341,9 +353,34 @@ test('codec：戳一戳事件（notice notify poke）', () => {
   assert.equal(other.targetsSelf, false)
 
   // 其他 notice 仍走通用分支
-  const generic = toInternalEvent({ post_type: 'notice', notice_type: 'group_upload', self_id: 1, group_id: 100, user_id: 205 })
+  const generic = toInternalEvent({ post_type: 'notice', notice_type: 'group_recall', self_id: 1, group_id: 100, user_id: 205 })
   assert.equal(generic.kind, 'notice')
-  assert.equal(generic.noticeType, 'group_upload')
+  assert.equal(generic.noticeType, 'group_recall')
   assert.equal(generic.subType, '')
   assert.equal(generic.targetId, 0)
+})
+
+test('codec：群文件上传事件（notice group_upload）', () => {
+  const event = toInternalEvent({
+    post_type: 'notice',
+    notice_type: 'group_upload',
+    self_id: 999,
+    group_id: 100,
+    user_id: 205,
+    time: 1792401431,
+    file: { id: '7a7517222c484cf6bd30d0cff47157ec', name: '报告.pdf', size: 12345, busid: 0 },
+  })
+  assert.equal(event.kind, 'group-file')
+  assert.equal(event.groupId, 100)
+  assert.equal(event.userId, 205)
+  assert.equal(event.file.id, '7a7517222c484cf6bd30d0cff47157ec')
+  assert.equal(event.file.name, '报告.pdf')
+  assert.equal(event.file.size, 12345)
+  assert.equal(event.file.busid, 0)
+  assert.equal(event.timeMs, 1792401431 * 1000)
+
+  // 脏 file / 缺字段时也给出稳定形状
+  const dirty = toInternalEvent({ post_type: 'notice', notice_type: 'group_upload', self_id: 1, group_id: 100, user_id: 205, file: null })
+  assert.equal(dirty.kind, 'group-file')
+  assert.deepEqual(dirty.file, { id: '', name: '', size: 0, busid: 0 })
 })

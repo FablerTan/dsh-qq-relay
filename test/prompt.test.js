@@ -165,3 +165,32 @@ test('prompt：时间格式化与历史指针', () => {
   assert.equal(chatHistoryPointer(10002), '.qq-relay/chat/10002/')
   assert.equal(promptLine({ text: 'x' }, T), '[11:21:39] x')
 })
+test('prompt：群文件媒体标记（v0.16.0）', () => {
+  const saved = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{
+      text: '看看这个',
+      time: T,
+      nickname: 'TS',
+      media: [{ kind: 'file', status: 'saved', path: '.qq-relay/media/100/f-报告.pdf', file: '报告.pdf' }],
+    }],
+  })
+  assert.ok(saved.includes('[文件：.qq-relay/media/100/f-报告.pdf]'), saved)
+  assert.ok(saved.includes('看看这个'), saved)
+
+  const failed = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{
+      text: '文件呢',
+      time: T,
+      nickname: 'TS',
+      media: [{ kind: 'file', status: 'failed', reason: 'too-large', file: 'big.zip' }],
+    }],
+  })
+  assert.ok(failed.includes('[群文件下载失败]'), failed)
+})
+
