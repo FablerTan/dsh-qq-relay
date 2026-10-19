@@ -1,7 +1,7 @@
 # 架构
 
 > 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
-> P2.1 消息闸门骨架已落地（jev 未接，2026-10-19）**。
+> P2.1/P2.2 消息闸门骨架与收尾已落地（jev 未接）、P3 首项 `qq_send` 主动推送已落地（2026-10-19）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -72,7 +72,8 @@ lib/
 │   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
-│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列
+│   ├── tools.js              # qq_send 工具定义（P3：手写 ToolDefinition，零外部依赖）
+│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送
 └── model/
     ├── config.js             # 配置默认值与校验
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
@@ -96,7 +97,7 @@ P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
-决策日志、断线发送队列，以及
+决策日志、断线发送队列、`qq_send` 工具契约与注册，以及
 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
@@ -133,6 +134,8 @@ ctx.on('agent/error', ...)          # 失败提示
 
 - 只回「由 QQ 触发」的轮次；GUI 里发起的轮次默认不回发（避免刷屏）。
 - 发送不区分被动 / 主动，turn 结束即发；失败按 retcode 退避重试。
+- **主动推送（P3）**：`qq_send` 工具（见 [tools.md](./tools.md)）走同一个发送队列，
+  供任意会话发通知；白名单双重校验，离线排队。
 - 失败 / 中断：按配置发简短提示或静默。
 
 ## 5. 会话映射
@@ -177,6 +180,6 @@ ctx.on('agent/error', ...)          # 失败提示
 - 审批文本命令的具体交互与超时策略。
 - 单聊（private）是否与群共享同一会话映射体系。
 - 媒体收发（入向图片 / 文件转 DSH 附件、出向图片 / 文件）。
-- DSH → QQ 主动推送工具（如 qq_send）。
+- ~~DSH → QQ 主动推送工具~~ 已落地为 `qq_send`（见 [tools.md](./tools.md)）。
 - client 面板增强：映射管理、审批开关、闸门可视化（基础配置页已在 P1.5 落地，见 [client.md](./client.md)）。
 - 多群并发时的资源上限与队列策略。

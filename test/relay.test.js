@@ -350,3 +350,32 @@ test('relay：断线时回复进入发送队列，重连后补发', async (t) =>
   await flush()
   assert.deepEqual(calls.sends, [{ groupId: 100, text: '离线期间的回复' }])
 })
+
+test('relay：sendText 切分发送并刷新发言状态', async (t) => {
+  const { relay, calls, state } = createHarness(t)
+  const value = await relay.sendText(100, 'x'.repeat(3200))
+  assert.equal(value.queued, false)
+  assert.equal(value.chunks, 3)
+  assert.equal(value.groupId, 100)
+  assert.equal(calls.sends.length, 3)
+  assert.equal(calls.sends.map((send) => send.text).join(''), 'x'.repeat(3200))
+  assert.ok(state.get(100).lastBotSpeakAt > 0)
+})
+
+test('relay：sendText 校验白名单', async (t) => {
+  const { relay, calls } = createHarness(t)
+  await assert.rejects(() => relay.sendText(999, 'hi'), /不在白名单/)
+  assert.equal(calls.sends.length, 0)
+})
+
+test('relay：sendText 离线进队列，重连后补发', async (t) => {
+  const { relay, calls, client } = createHarness(t, { connected: false })
+  const value = await relay.sendText(100, '离线通知')
+  assert.equal(value.queued, true)
+  assert.equal(calls.sends.length, 0)
+
+  client.connected = true
+  client.emit('open')
+  await flush()
+  assert.deepEqual(calls.sends, [{ groupId: 100, text: '离线通知' }])
+})

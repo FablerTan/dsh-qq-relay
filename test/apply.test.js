@@ -17,6 +17,7 @@ import { apply } from '../lib/index.js'
 function fakeCtx() {
   const routes = []
   const cleanups = []
+  const tools = []
   const fake = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
     on: () => () => {},
@@ -54,8 +55,17 @@ function fakeCtx() {
         }
       },
     },
+    tools: {
+      register(definition) {
+        tools.push(definition)
+        return () => {
+          const index = tools.indexOf(definition)
+          if (index >= 0) tools.splice(index, 1)
+        }
+      },
+    },
   }
-  return { ctx: fake, routes, cleanups }
+  return { ctx: fake, routes, cleanups, tools }
 }
 
 function fakeReq({ method = 'GET', url = '/', body = null } = {}) {
@@ -95,7 +105,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     rmSync(home, { recursive: true, force: true })
   })
 
-  const { ctx, routes, cleanups } = fakeCtx()
+  const { ctx, routes, cleanups, tools } = fakeCtx()
   t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
 
   const workspace = join(home, 'ws')
@@ -160,4 +170,42 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.equal(reconnected.status, 200)
   assert.equal(reconnected.payload.ok, true)
   assert.equal(reconnected.payload.value.started, true)
+})
+
+test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-tool-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const { ctx, routes, cleanups, tools } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: join(home, 'ws'),
+  })
+  assert.equal(routes.length, 3)
+  assert.equal(tools.length, 1)
+  const definition = tools[0]
+  assert.equal(definition.name, 'qq_send')
+  assert.equal(typeof definition.execute, 'function')
+  assert.equal(typeof definition.output.render, 'function')
+
+  // WS 指向不存在的端口 → 离线；工具应把消息排进发送队列
+  const value = await definition.execute({ groupId: 100, text: '测试推送' })
+  assert.equal(value.groupId, 100)
+  assert.equal(value.chunks, 1)
+  assert.equal(value.queued, true)
+  assert.deepEqual(value.messageIds, [])
+
+  // 非白名单群被拒绝
+  await assert.rejects(() => definition.execute({ groupId: 200, text: 'x' }), /不在白名单/)
 })
