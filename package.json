@@ -1,7 +1,7 @@
 {
   "name": "dsh-qq-relay",
-  "version": "0.4.0",
-  "description": "把 DeepSeek Harness（DSH）接入 QQ 机器人的桥插件（host + client 双半身）。当前 v0.4.0：P1「@ 直通」已真机验收（OneBot 11 正向 WS，群聊优先）；P1.5 基础配置页（设置 →「QQ 机器人」）已落地；P2.1 消息闸门骨架已落地（jev 分类器未接）。",
+  "version": "0.4.1",
+  "description": "把 DeepSeek Harness（DSH）接入 QQ 机器人的桥插件（host + client 双半身）。当前 v0.4.1：P1「@ 直通」已真机验收（OneBot 11 正向 WS，群聊优先）；P1.5 基础配置页（设置 →「QQ 机器人」）已落地；P2.1/P2.2 消息闸门骨架与收尾已落地（jev 分类器未接）。",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

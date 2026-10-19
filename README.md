@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.4.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.4.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1 消息闸门骨架已落地（去抖 / 最小间隔 / 慢路 / 状态 / 发送队列，
 **jev 分类器暂未接**，`gate.enabled` 默认关）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
@@ -50,7 +50,7 @@ dsh-qq-relay/
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分 / 闸门纯逻辑
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 决策日志 / 回复切分 / 闸门纯逻辑
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -105,6 +105,16 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### P2.2 闸门收尾（2026-10-19）
+
+- 慢路按时间窗裁剪：只评估最近 `slowWindow`（默认 2 小时）内的 pending，更早的丢弃（仍在聊天日志里）。
+- DSH 忙标记：派发批次时置 `dshBusy`，turn 结束清除；忙时闸门延后评估，避免同群并发起两个 turn。
+- 决策日志落盘：每次决策写 `gate/YYYY-MM-DD.jsonl`（trigger / 批次 / reply / confidence / reason /
+  耗时 / message_id 列表，**不含正文**），保留 7 天，便于将来调 jev 阈值与回放。
+- 日志保留期真正生效：组合根启动时与每天清理聊天日志 / 决策日志（此前 `prune` 只写未接）。
+- 群成员昵称 / 角色改用事件自带的 `sender.card || nickname` / `role`，不额外查 API。
+- 单测 79 个；重启 dwdev GUI 后真机确认新 host 代码生效（按群状态文件已生成、发言窗口正常刷新）。
 
 ### P2.1 消息闸门骨架（2026-10-19）
 

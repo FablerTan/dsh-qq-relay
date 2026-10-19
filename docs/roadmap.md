@@ -81,18 +81,20 @@
 
 ### 进度（2026-10-19）
 
-- ✅ 聊天日志 JSONL 落盘 / 读取 / 7 天清理（P1 已有）。
+- ✅ 聊天日志 JSONL 落盘 / 读取；P2.2 起按保留期（7 天）每天清理一次。
 - ✅ 每群状态按群分文件 `state/<group_id>.json`：seen / pending / lastBotSpeakAt / lastReplyAt /
-  cooldownUntil / evaluating；旧 `state.json` 一次性迁移；重启恢复 pending 与冷却，不立即发言。
+  cooldownUntil / evaluating / dshBusy；旧 `state.json` 一次性迁移；重启恢复 pending 与冷却，不立即发言。
 - ✅ 快路：bot 最近 10 分钟发过言 → 5 秒去抖合并，一批只调一次分类器。
 - ✅ 最小发言间隔 45 秒：间隔内的批次延后（消息不丢）。
-- ✅ 慢路：2 小时定时器到点评估累积消息；无消息 no-op。
-- ✅ 分类器以接口注入：超时 / 报错 / 输出不合规一律 fail closed，决策日志记录批次与耗时。
+- ✅ 慢路：2 小时定时器到点评估累积消息，只取最近 2 小时（更早丢弃）；无消息 no-op。
+- ✅ 分类器以接口注入：超时 / 报错 / 输出不合规一律 fail closed；决策落 `gate/*.jsonl`（不含正文），
+  保留 7 天，便于调阈值 / 回放。
+- ✅ DSH 忙（dshBusy）时延后评估，避免同群并发起两个 turn。
 - ✅ 发送队列：断线或发送失败排队，重连后按序补发；风控限流退避、明确失败不重试；上限 50 条 / 30 分钟。
+- ✅ 群成员昵称 / 角色：直接取事件自带的 `sender.card || sender.nickname` / `sender.role`，
+  不额外调 `get_group_member_info`（事件缺字段时才需要补查）。
 - ⏳ **jev 分类器接模型**：形态未定（ctx.llm / 外部 endpoint / 本地），用户 2026-10-19 决定先不接；
   当前 `gate.enabled` 默认 false，开启且未注入分类器时普通消息永远不接话（fail closed）。
-- ⏳ 慢路「最近 2 小时」时间窗裁剪：pending 目前按条数上限（200）而非时间窗过滤，接 jev 时补。
-- ⏳ 群成员昵称 / 角色：目前直接用事件自带的 sender.nickname / role，未额外调 get_group_member_info。
 - ⏳ 真机验证：需先接分类器并 `gate.enabled: true`，再按下面验收清单跑。
 
 ### 范围

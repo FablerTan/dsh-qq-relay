@@ -13,6 +13,7 @@ import { DEFAULT_CONFIG, expandHome, formatSessionTitle, normalizeConfig } from 
 import { createMappingStore } from '../lib/model/mapping.js'
 import { acquireLock, createStateStore, migrateLegacyState, PENDING_LIMIT, SEEN_LIMIT } from '../lib/model/state.js'
 import { createChatLog, localDateKey } from '../lib/model/chat-log.js'
+import { createGateLog } from '../lib/model/gate-log.js'
 import { buildReplyChunks, classifySendFailure, nextBackoff, shouldRetryTransport } from '../lib/model/reply.js'
 import {
   buildBatch,
@@ -379,4 +380,38 @@ test('reply：发送失败分类（风控退避 vs 明确失败）', () => {
   assert.equal(classifySendFailure({ retcode: 1400, wording: '权限不足' }).kind, 'fatal')
   assert.equal(classifySendFailure({ retcode: 1401 }).message, 'retcode=1401')
   assert.equal(classifySendFailure(null).kind, 'fatal')
+})
+
+test('gate-log：追加 / 读取 / 保留期清理', (t) => {
+  const dir = tempDir(t)
+  const log = createGateLog({ dir, retentionDays: 7 })
+  const now = Date.now()
+
+  log.append({ time: now, groupId: 100, trigger: 'fast', batch: 3, reply: true, confidence: 0.8, reason: '测试', costMs: 12, messageIds: ['m1', 'm2'] })
+  log.append({ time: now + 1, groupId: 100, trigger: 'slow', batch: 1, reply: false, confidence: 0, reason: '不需要', costMs: 5 })
+
+  const recent = log.readRecent(0, now + 10)
+  assert.equal(recent.length, 2)
+  assert.equal(recent[0].trigger, 'fast')
+  assert.equal(recent[0].reply, true)
+  assert.deepEqual(recent[0].messageIds, ['m1', 'm2'])
+  assert.equal(recent[1].reply, false)
+  assert.ok(!JSON.stringify(recent).includes('正文'), '决策日志只存 message_id 不存正文')
+
+  // 伪造一份旧日志，验证 prune
+  writeFileSync(join(dir, '2020-01-01.jsonl'), '{}\n', 'utf8')
+  assert.equal(log.prune(now, 7), 1)
+  assert.equal(log.readRecent(0, now + 10).length, 2)
+})
+
+test('gate-log：坏行与非法记录被容忍', (t) => {
+  const dir = tempDir(t)
+  const log = createGateLog({ dir })
+  writeFileSync(log.fileFor(Date.now()), '{ bad json\n', 'utf8')
+  assert.equal(log.append({ groupId: 'x', trigger: 'weird' }).groupId, 0)
+  assert.equal(log.append(null), null)
+  const records = log.readRecent(0, Date.now() + 10)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].trigger, 'fast')
+  assert.equal(records[0].batch, 0)
 })

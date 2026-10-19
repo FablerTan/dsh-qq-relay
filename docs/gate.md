@@ -167,8 +167,9 @@ gate:
 ## 11. 实现备注（P2.1，2026-10-19）
 
 - **代码位置**：纯逻辑 `lib/model/gate.js`（配置解析 / 决策 fail closed / 批次 / 时间窗）；
-  调度 `lib/controller/gate.js`（去抖、最小间隔、慢路定时、分类器调用）；
-  接入 `lib/controller/relay.js`（直通判定、批次派发、发送队列）；状态 `lib/model/state.js`。
+  调度 `lib/controller/gate.js`（去抖、最小间隔、慢路定时、分类器调用、决策日志）；
+  接入 `lib/controller/relay.js`（直通判定、批次派发、发送队列、dshBusy 标记）；
+  状态 `lib/model/state.js`；决策日志 `lib/model/gate-log.js`。
 - **配置键**（`config.gate`，见 architecture §2.1）：`enabled`（默认 false）、`mentionBypass`、
   `fastWindow`（10m）、`fastMinReplyInterval`（45s）、`debounce`（5s）、`slowTimer`（2h）、
   `slowWindow`（2h）、`maxBatchMessages`（100）、`classifierTimeoutMs`（1.5s）。
@@ -182,11 +183,19 @@ gate:
   不用改调度器。
 - **状态与恢复**：每群一个 `state/<group_id>.json`；pending 随消息增量落盘，重启后重新装载；
   但**不重建慢路定时器**——重启后第一条消息才会重新起 2 小时计时（避免一启动就说话）。
+- **慢路时间窗（P2.2）**：慢路评估只取 `time >= now - slowWindow` 的 pending，更早的丢弃
+  （仍保留在聊天日志里）；窗口内无消息则 no-op。
+- **DSH 忙（P2.2）**：relay 派发批次时置 `dshBusy=true`，本轮 turn/end 后置 false；闸门评估发现
+  本群 `dshBusy` 就延后（pending 保留），避免同一群并发起两个 turn。
+- **决策日志（P2.2）**：每次决策落一条 `gate/YYYY-MM-DD.jsonl`（time / groupId / trigger /
+  batch / reply / confidence / reason / costMs / messageIds），**不存正文**；保留 7 天，由组合根
+  启动时和每天清理一次（聊天日志同款保留期一起清）。
 - **发送队列**：`relay` 内存队列（不落盘，进程重启即丢），断线 / 发送失败入队，`client open`
   时按序补发；超过 30 分钟丢弃并记日志，上限 50 条。失败分类：文本命中频率 / 风控关键词 → 退避重试，
   其余 → 不重试（避免刷错误日志）。
-- **尚未实现**（接 jev 前补齐）：慢路「最近 2 小时」时间窗裁剪（当前 pending 只按条数上限 200）、
-  `dshBusy` 串行控制（目前靠 relay 的群级队列 + 上限 5 条限流）、决策日志落盘（目前走宿主日志）。
+- **成员昵称**：直接用 OneBot 事件自带的 `sender.card || sender.nickname` 与 `sender.role`，
+  不额外调 `get_group_member_info`（事件缺字段时才需要补查，暂未实现）。
+- **尚未实现**：jev 分类器接模型（P2.3，形态待定）；真正的「群成员信息补查」与多群资源配额。
 - **单测**：`test/gate.test.js`（假时钟：合并 / 最小间隔 / 慢路 / fail closed / 重启恢复）、
   `test/model.test.js`（配置 / 决策 / 批次 / 发送失败分类）、`test/relay.test.js`（直通不受闸门
   影响、断线队列补发）。

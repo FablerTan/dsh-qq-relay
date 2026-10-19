@@ -276,7 +276,7 @@ test('relay：闸门开启后普通消息合并成一次 prompt', async (t) => {
       return { reply: true, confidence: 0.9, reason: '测试', targetMsgIds: [] }
     },
   }
-  const { relay, calls, state } = createHarness(t, { gate: { enabled: true, debounce: '20ms' }, classifier })
+  const { relay, ctx, calls, state } = createHarness(t, { gate: { enabled: true, debounce: '20ms' }, classifier })
   state.update(100, { lastBotSpeakAt: Date.now() - 1000 })
   relay.handleRawEvent(textEvent('第一条', { message_id: 11 }))
   relay.handleRawEvent(textEvent('第二条', { message_id: 12 }))
@@ -286,6 +286,14 @@ test('relay：闸门开启后普通消息合并成一次 prompt', async (t) => {
   assert.equal(classifierCalls[0].messages.length, 2)
   assert.equal(calls.prompt.length, 1)
   assert.equal(calls.prompt[0].content[0].text, '[tester] 第一条\n[tester] 第二条')
+  assert.equal(state.get(100).dshBusy, true, '派发后应标记 DSH 忙')
+
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+  assert.equal(state.get(100).dshBusy, false, 'turn 结束后应解除忙标记')
 })
 
 test('relay：闸门开启时 @ 直通立即派发，不调用分类器', async (t) => {

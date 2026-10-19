@@ -78,6 +78,7 @@ lib/
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL 落盘 / 读取 / 清理
+    ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
     ├── gate.js               # 闸门纯逻辑（P2.1）：配置解析 / 决策 fail closed / 批次 / 时间窗
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
     ├── jev.js                # 分类器调用契约（待接模型，P2.2+）
@@ -94,7 +95,8 @@ P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
-调度器（假时钟：去抖合并 / 最小间隔 / 慢路 / fail closed / 重启恢复）、断线发送队列，以及
+调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
+决策日志、断线发送队列，以及
 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流

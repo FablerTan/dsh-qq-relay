@@ -6,9 +6,9 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.4.0**：P1 @ 直通
-> 已真机验收、P1.5 基础配置页已落地、P2.1 消息闸门骨架已落地（jev 分类器未接，2026-10-19）；
-> 上级 §0 已仅对本插件解除。
+> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.4.1**：P1 @ 直通
+> 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地（jev 分类器未接，
+> 2026-10-19）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
@@ -20,8 +20,9 @@
   分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发、配置页 HTTP 面）+ `lib/model/`
   （配置、设置覆盖、会话映射、状态、聊天日志、回复）；P1 实现 `controller/onebot/{client,api,codec}.js`、
   `controller/relay.js`、`model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增
-  `controller/{runtime,config-routes,http}.js` 与 `model/settings.js`；P2.1 新增 `controller/gate.js`
-  （去抖 / 最小间隔 / 慢路 / 分类器注入）与 `model/gate.js`（闸门纯逻辑）；`model/jev.js` 待接模型时再落
+  `controller/{runtime,config-routes,http}.js` 与 `model/settings.js`；P2.1/P2.2 新增 `controller/gate.js`
+  （去抖 / 最小间隔 / 慢路 / dshBusy / 分类器注入）、`model/gate.js`（闸门纯逻辑）与
+  `model/gate-log.js`（决策日志）；`model/jev.js` 待接模型时再落
 - `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 

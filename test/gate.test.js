@@ -13,6 +13,7 @@ import { join } from 'node:path'
 
 import { normalizeGateConfig } from '../lib/model/gate.js'
 import { createStateStore } from '../lib/model/state.js'
+import { createGateLog } from '../lib/model/gate-log.js'
 import { createGate } from '../lib/controller/gate.js'
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
@@ -61,6 +62,7 @@ function createHarness(t, options = {}) {
 
   const clock = createClock()
   const state = createStateStore({ dir: join(dir, 'state') })
+  const gateLog = createGateLog({ dir: join(dir, 'gate') })
   const gateConfig = normalizeGateConfig({ enabled: true, ...(options.gate ?? {}) })
   const classifierCalls = []
   const dispatched = []
@@ -76,13 +78,14 @@ function createHarness(t, options = {}) {
     state,
     logger: null,
     classifier,
+    gateLog,
     now: clock.now,
     timers: clock,
     dispatch: async (messages, decision, meta) => { dispatched.push({ messages, decision, meta }) },
   })
   gate.start()
   t.after(() => gate.stop())
-  return { gate, state, gateConfig, classifierCalls, dispatched, clock, dir }
+  return { gate, state, gateConfig, classifierCalls, dispatched, clock, dir, gateLog }
 }
 
 function groupMessage(overrides = {}) {
@@ -108,7 +111,7 @@ test('gate：关闭时普通消息不触发任何调度', async (t) => {
 })
 
 test('gate：快路 3 条消息合并为一次分类与一次派发', async (t) => {
-  const { gate, state, classifierCalls, dispatched, clock } = createHarness(t)
+  const { gate, state, classifierCalls, dispatched, clock, gateLog } = createHarness(t)
   state.update(100, { lastBotSpeakAt: clock.now() - 1000 })
   gate.ingest(groupMessage({ text: '第一条' }))
   gate.ingest(groupMessage({ text: '第二条' }))
@@ -124,6 +127,12 @@ test('gate：快路 3 条消息合并为一次分类与一次派发', async (t) 
   assert.equal(dispatched[0].messages.length, 3)
   assert.equal(dispatched[0].meta.groupId, 100)
   assert.equal(state.get(100).pending.length, 0, '派发后 pending 应清空')
+
+  const logged = gateLog.readRecent(0, clock.now() + 1)
+  assert.equal(logged.length, 1)
+  assert.equal(logged[0].trigger, 'fast')
+  assert.equal(logged[0].batch, 3)
+  assert.equal(logged[0].reply, true)
 })
 
 test('gate：同一 message_id 重复事件只进批次一次', async (t) => {
@@ -186,6 +195,30 @@ test('gate：最小发言间隔未到 → 本批延后，不丢', async (t) => {
   assert.equal(classifierCalls.length, 0, '间隔未到不应调用分类器')
   assert.equal(dispatched.length, 0)
   await clock.advance(25 * 1000)
+  assert.equal(classifierCalls.length, 1)
+  assert.equal(dispatched.length, 1)
+})
+
+test('gate：慢路只评估最近 slowWindow 内的消息', async (t) => {
+  const { gate, clock, classifierCalls } = createHarness(t)
+  await clock.advance(4 * 60 * 60 * 1000) // 让「三小时前」仍是正数时间戳
+  gate.ingest(groupMessage({ text: '三小时前的旧消息', timeMs: clock.now() - 3 * 60 * 60 * 1000 }))
+  gate.ingest(groupMessage({ text: '刚发的消息', timeMs: clock.now() }))
+  await clock.advance(2 * 60 * 60 * 1000)
+  assert.equal(classifierCalls.length, 1)
+  assert.equal(classifierCalls[0].trigger, 'slow')
+  assert.deepEqual(classifierCalls[0].messages.map((item) => item.text), ['刚发的消息'])
+})
+
+test('gate：DSH 忙（dshBusy）时延后判定，不丢批次', async (t) => {
+  const { gate, state, classifierCalls, dispatched, clock } = createHarness(t)
+  state.update(100, { lastBotSpeakAt: clock.now() - 1000, dshBusy: true })
+  gate.ingest(groupMessage({ text: '等 DSH 忙完' }))
+  await clock.advance(5000)
+  assert.equal(classifierCalls.length, 0, 'DSH 忙时不应调用分类器')
+
+  state.update(100, { dshBusy: false })
+  await clock.advance(5000)
   assert.equal(classifierCalls.length, 1)
   assert.equal(dispatched.length, 1)
 })
