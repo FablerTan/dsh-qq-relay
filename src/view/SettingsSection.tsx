@@ -303,6 +303,46 @@ export function RelaySettingsSection(): ReactElement {
         />
       </Field>
 
+      <h3 style={{ margin: '14px 0 6px', fontSize: '0.95rem' }}>闸门</h3>
+      <p style={{ margin: '0 0 8px', color: MUTED, fontSize: '0.82em' }}>
+        {status === null || status.gate === null
+          ? '闸门状态读取中…'
+          : status.gate.enabled
+            ? '闸门已开启（' + (status.gate.classifier === null
+                ? '分类器未就绪：普通消息不会接话'
+                : '分类器 ' + status.gate.classifier + '，阈值 ' + String(status.gate.threshold))
+              + '）。保存后立即重建闸门，无需重启。'
+            : '闸门当前关闭（gate.enabled 来自 profile patch）：以下参数会保存，开启后才生效。'}
+      </p>
+      <Field label="普通消息去抖窗口" hint="同一波消息合并等待，0..60s（如 3s / 500ms）">
+        <input
+          value={form.gateDebounce}
+          onChange={(event) => updateField('gateDebounce', event.target.value)}
+          placeholder="5s"
+          style={INPUT_STYLE}
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="最小发言间隔" hint="距上次发言不足该间隔时延后评估，0..60m（如 10s / 45s）">
+        <input
+          value={form.gateFastMinReplyInterval}
+          onChange={(event) => updateField('gateFastMinReplyInterval', event.target.value)}
+          placeholder="45s"
+          style={INPUT_STYLE}
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="jev 接话阈值" hint="0..1；越高越保守（默认 0.7）">
+        <input
+          value={form.gateJevThreshold}
+          onChange={(event) => updateField('gateJevThreshold', event.target.value)}
+          inputMode="decimal"
+          placeholder="0.7"
+          style={INPUT_STYLE}
+          spellCheck={false}
+        />
+      </Field>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 12px', flexWrap: 'wrap' }}>
         <button type="button" onClick={() => { void onSave() }} disabled={busy || loading} style={BUTTON_STYLE}>
           保存并重连

@@ -10,6 +10,22 @@
  * `fetch` 由组合根注入：ViewModel / View 不碰全局，桩实现即可覆盖成功与失败两条路。
  */
 
+/** 闸门里可在设置页编辑的三个参数（时长单位：毫秒）。 */
+export interface RelayGateConfigView {
+  debounceMs: number
+  fastMinReplyIntervalMs: number
+  jevThreshold: number
+}
+
+/** 闸门运行状态（只读提示用）。 */
+export interface RelayGateStatusView {
+  enabled: boolean
+  classifier: string | null
+  model: string
+  threshold: number
+  slowTimer: number
+}
+
 /** host 侧的配置视图（token 永不出现，只有是否已配置与来源）。 */
 export interface RelayConfigView {
   wsUrl: string
@@ -20,6 +36,8 @@ export interface RelayConfigView {
   groupWorkspaces: Record<string, string>
   /** 聊天记录保留天数；0 = 永不自动删除。 */
   chatRetentionDays: number
+  /** 闸门参数（设置页可编辑）。 */
+  gate: RelayGateConfigView
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -45,6 +63,8 @@ export interface RelayStatusView {
   problems: string[]
   lock: { pid: number; startedAt: number; host?: string } | null
   config: RelayConfigView
+  /** 闸门运行状态；配置无效时为 null。 */
+  gate: RelayGateStatusView | null
   mappings: RelayMappingView[]
 }
 
@@ -57,6 +77,12 @@ export interface RelayConfigPatch {
   workspace?: string
   groupWorkspaces?: Record<string, string>
   chatRetentionDays?: number
+  /** 只提交设置页可改的子项；时长用 45s / 10m 这类文本，host 校验。 */
+  gate?: {
+    debounce?: string
+    fastMinReplyInterval?: string
+    jevThreshold?: number
+  }
   sessionTitle?: string
   replyChunkSize?: number
   commandPrefixes?: string[]
@@ -137,6 +163,15 @@ function asStatus(value: unknown): RelayStatusView | null {
           )
         : {},
       chatRetentionDays: typeof config.chatRetentionDays === 'number' ? config.chatRetentionDays : 0,
+      gate: isRecord(config.gate)
+        ? {
+            debounceMs: typeof config.gate.debounceMs === 'number' ? config.gate.debounceMs : 0,
+            fastMinReplyIntervalMs: typeof config.gate.fastMinReplyIntervalMs === 'number'
+              ? config.gate.fastMinReplyIntervalMs
+              : 0,
+            jevThreshold: typeof config.gate.jevThreshold === 'number' ? config.gate.jevThreshold : 0,
+          }
+        : { debounceMs: 0, fastMinReplyIntervalMs: 0, jevThreshold: 0 },
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)
@@ -145,6 +180,15 @@ function asStatus(value: unknown): RelayStatusView | null {
       accessTokenConfigured: config.accessTokenConfigured === true,
       accessTokenSource: config.accessTokenSource === 'settings' ? 'settings' : 'profile',
     },
+    gate: isRecord(value.gate)
+      ? {
+          enabled: value.gate.enabled === true,
+          classifier: typeof value.gate.classifier === 'string' ? value.gate.classifier : null,
+          model: typeof value.gate.model === 'string' ? value.gate.model : '',
+          threshold: typeof value.gate.threshold === 'number' ? value.gate.threshold : 0,
+          slowTimer: typeof value.gate.slowTimer === 'number' ? value.gate.slowTimer : 0,
+        }
+      : null,
     mappings: mappings.map((entry) => ({
       groupId: typeof entry.groupId === 'number' ? entry.groupId : 0,
       sessionId: typeof entry.sessionId === 'string' ? entry.sessionId : '',

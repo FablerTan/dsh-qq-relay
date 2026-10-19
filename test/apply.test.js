@@ -187,6 +187,27 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   const storedProjects = JSON.parse(readFileSync(settingsFile, 'utf8'))
   assert.deepEqual(storedProjects.config.groupWorkspaces, { '200': projectPath })
 
+  // 闸门三参数：可热改，写入 settings.json，非法值 400
+  const gateSaved = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 } }),
+  })
+  assert.equal(gateSaved.status, 200)
+  assert.deepEqual(gateSaved.payload.value.config.gate, {
+    debounceMs: 3000,
+    fastMinReplyIntervalMs: 10000,
+    jevThreshold: 0.6,
+  })
+  const storedGate = JSON.parse(readFileSync(settingsFile, 'utf8'))
+  assert.deepEqual(storedGate.config.gate, { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 })
+
+  const badGate = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { jevThreshold: 3 } }),
+  })
+  assert.equal(badGate.status, 400)
+  assert.ok(badGate.payload.error.message.includes('jevThreshold'))
+
   // 重新绑定：白名单群成功，未知群 400
   const rebound = await call(routes, '/dsh-qq-relay/api/rebind', {
     method: 'POST',

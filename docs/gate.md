@@ -152,6 +152,11 @@ gate:
   maxBatchMessages: 100
 ~~~
 
+- **设置页可改（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 三个参数在
+  设置 →「QQ 机器人」→「闸门」里编辑，保存后立即重建闸门（无需重启）；`jevThreshold` 由分类器
+  每次判定时读取，同样即时生效。其余 gate 字段仍只读（改 profile patch + 重启）。
+- 时长可写 `500ms` / `3s` / `10m` / `2h`；设置页保存的值叠加在 patch 之上（同名字段覆盖）。
+
 ## 9. 测试要点
 
 - 冷启动与重启后的冷却恢复（不立即发言）。

@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.9.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.10.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
@@ -117,6 +117,15 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### v0.10.0 闸门参数进设置页（2026-10-19）
+
+- 设置 →「QQ 机器人」新增「闸门」区块：`debounce`（去抖窗口）、`fastMinReplyInterval`（最小发言间隔）、
+  `jevThreshold`（接话阈值）可直接编辑，**保存即重建闸门，无需重启**。
+- `gate` 采用字段级合并：只覆盖设置页允许的三个子项，`enabled` / `model` / `slowTimer` 等仍由
+  profile patch 只读控制；时长支持 `500ms` / `3s` / `10m` / `2h`。
+- jev 分类器的阈值改为每次判定时读取当前配置（`getThreshold`），改阈值不需要重建分类器。
+- 状态接口的 `config.gate` 返回 `{ debounceMs, fastMinReplyIntervalMs, jevThreshold }`，页面回填用。
+- 单测 160 个；host + client 半身改动，需重启 profile GUI + 刷新页面生效。
 ### v0.9.1 媒体扩展名修正（2026-10-19）
 
 - 修掉「CQ file 后缀与实际图片格式不符」导致的落盘扩展名错误（真实案例：JPEG 被存成 `.png`，

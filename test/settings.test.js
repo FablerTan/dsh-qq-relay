@@ -169,6 +169,40 @@ test('settings：maskConfig 暴露群项目目录与保留天数', () => {
   assert.equal(JSON.stringify(view).includes('profile-token'), false)
 })
 
+test('settings：gate 三参数可编辑、与 patch 合并、校验与脱敏视图', () => {
+  const picked = pickEditable({
+    gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6, slowTimer: '1h', enabled: false },
+  })
+  assert.deepEqual(picked, { gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 } })
+
+  const merged = mergeConfig(
+    { ...PATCH_CONFIG, gate: { enabled: true, slowTimer: '2h', model: 'typesafe/jev-1.14' } },
+    { gate: { debounce: 3000 } },
+  )
+  assert.equal(merged.gate.enabled, true)
+  assert.equal(merged.gate.slowTimer, '2h')
+  assert.equal(merged.gate.model, 'typesafe/jev-1.14')
+  assert.equal(merged.gate.debounce, 3000)
+
+  const resolved = resolveConfig(
+    { ...PATCH_CONFIG, gate: { enabled: true } },
+    { gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 } },
+  )
+  assert.equal(resolved.ok, true)
+  assert.equal(resolved.config.gate.debounce, 3000)
+  assert.equal(resolved.config.gate.fastMinReplyInterval, 10000)
+  assert.equal(resolved.config.gate.jevThreshold, 0.6)
+  assert.equal(resolved.config.gate.enabled, true)
+
+  const view = maskConfig(resolved.config, {})
+  assert.deepEqual(view.gate, { debounceMs: 3000, fastMinReplyIntervalMs: 10000, jevThreshold: 0.6 })
+
+  const bad = resolveConfig(PATCH_CONFIG, { gate: { debounce: '90s', jevThreshold: 2 } })
+  assert.equal(bad.ok, false)
+  assert.ok(bad.problems.some((problem) => problem.includes('gate.debounce')))
+  assert.ok(bad.problems.some((problem) => problem.includes('gate.jevThreshold')))
+})
+
 test('settings：store 原子读写覆盖，坏文件当空覆盖', (t) => {
   const dir = tempDir(t)
   const file = join(dir, 'settings.json')

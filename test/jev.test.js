@@ -140,3 +140,19 @@ test('jev：超时 → fail closed（abort 请求）', async (t) => {
   assert.equal(decision.reply, false)
   assert.equal(decision.reason, 'jev-unavailable')
 })
+test('jev：getThreshold 每次判定时读取（设置页热改阈值）', async (t) => {
+  let threshold = 0.7
+  const classifier = createJevClassifier({
+    endpoint: 'https://openrouter.ai/api/alpha/decisions',
+    apiKey: 'test-key',
+    model: 'typesafe/jev-1.14',
+    threshold: 0.5,
+    getThreshold: () => threshold,
+    timeoutMs: 5000,
+    logger: null,
+    fetchImpl: async () => response(200, noul(0.6)),
+  })
+  assert.equal((await classifier.classify({ messages })).reply, false, '0.6 < 0.7')
+  threshold = 0.55
+  assert.equal((await classifier.classify({ messages })).reply, true, '0.6 >= 0.55')
+})

@@ -101,6 +101,8 @@
 - ✅ **jev 分类器接模型（P2.3）**：OpenRouter Decisions API + `typesafe/jev-1.14`（Noul 概率 →
   阈值 0.7 判定），key 走 `OPENROUTER_API_KEY` 环境变量；超时 / 网络 / 格式错误一律 fail closed。
   见 [gate.md §4](./gate.md)。
+- ✅ **闸门参数进设置页（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 可在
+  设置 →「QQ 机器人」→「闸门」里改，保存即重建闸门（无需重启）；阈值动态读取。
 - ⏳ 真机验证：`gate.enabled: true` + key 就绪后按下面验收清单跑（快路合并 / 慢路定时 / 冷却 / 频控）。
 - ⏳ 阈值调优：先用 0.7，按 `gate/*.jsonl` 决策日志再调。
 

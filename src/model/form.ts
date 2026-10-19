@@ -19,6 +19,9 @@ export interface RelayFormState {
   selfId: string
   groups: string
   workspace: string
+  gateDebounce: string
+  gateFastMinReplyInterval: string
+  gateJevThreshold: string
   sessionTitle: string
   replyChunkSize: string
   commandPrefixes: string
@@ -37,6 +40,9 @@ export function emptyForm(): RelayFormState {
     selfId: '',
     groups: '',
     workspace: '',
+    gateDebounce: '',
+    gateFastMinReplyInterval: '',
+    gateJevThreshold: '',
     sessionTitle: '',
     replyChunkSize: '',
     commandPrefixes: '',
@@ -51,10 +57,34 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     selfId: config.selfId > 0 ? String(config.selfId) : '',
     groups: config.groups.join(', '),
     workspace: config.workspace,
+    gateDebounce: formatDurationMs(config.gate.debounceMs),
+    gateFastMinReplyInterval: formatDurationMs(config.gate.fastMinReplyIntervalMs),
+    gateJevThreshold: String(config.gate.jevThreshold),
     sessionTitle: config.sessionTitle,
     replyChunkSize: config.replyChunkSize > 0 ? String(config.replyChunkSize) : '',
     commandPrefixes: config.commandPrefixes.join(', '),
   }
+}
+
+/** 毫秒 → 人读时长（优先 h / m / s，否则 ms）。 */
+export function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '0s'
+  if (ms % (60 * 60 * 1000) === 0) return String(ms / (60 * 60 * 1000)) + 'h'
+  if (ms % (60 * 1000) === 0) return String(ms / (60 * 1000)) + 'm'
+  if (ms % 1000 === 0) return String(ms / 1000) + 's'
+  return String(ms) + 'ms'
+}
+
+/** 人读时长 → 毫秒（支持 500ms / 3s / 10m / 2h）；非法返回 null。 */
+export function parseDurationMs(text: string): number | null {
+  const match = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/iu.exec(text.trim())
+  if (match === null) return null
+  const units: Record<string, number> = { ms: 1, s: 1000, m: 60 * 1000, h: 60 * 60 * 1000 }
+  const unit = units[match[2].toLowerCase()]
+  if (unit === undefined) return null
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount) || amount < 0) return null
+  return Math.round(amount * unit)
 }
 
 /** 按逗号 / 顿号 / 空白切分并去空。 */
@@ -136,6 +166,30 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
   const prefixes = parseCommandPrefixes(form.commandPrefixes)
   if (prefixes.ok) patch.commandPrefixes = prefixes.value
   else problems.push(...prefixes.problems)
+
+  const gate: NonNullable<RelayConfigPatch['gate']> = {}
+  const debounceText = form.gateDebounce.trim()
+  const debounceMs = parseDurationMs(debounceText)
+  if (debounceMs === null || debounceMs > 60 * 1000) {
+    problems.push('去抖窗口必须是 0..60s 的时长（如 3s / 500ms）')
+  } else {
+    gate.debounce = debounceText
+  }
+  const intervalText = form.gateFastMinReplyInterval.trim()
+  const intervalMs = parseDurationMs(intervalText)
+  if (intervalMs === null || intervalMs > 60 * 60 * 1000) {
+    problems.push('最小发言间隔必须是 0..60m 的时长（如 10s / 45s）')
+  } else {
+    gate.fastMinReplyInterval = intervalText
+  }
+  const thresholdText = form.gateJevThreshold.trim()
+  const threshold = Number(thresholdText)
+  if (thresholdText === '' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    problems.push('jev 阈值必须是 0..1 的数字（如 0.7）')
+  } else {
+    gate.jevThreshold = threshold
+  }
+  patch.gate = gate
 
   return problems.length > 0 ? { ok: false, problems } : { ok: true, value: patch }
 }

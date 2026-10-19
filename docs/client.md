@@ -18,6 +18,7 @@
 |---|---|
 | 状态行 | 已连接（昵称 / QQ 号）· 连接中（断线自动重连）· 未启动（配置待补全 / 另一个实例持锁，显示 pid） |
 | 配置表单 | `wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` · `workspace`（默认项目）· `sessionTitle` · `replyChunkSize` · `commandPrefixes` |
+| 闸门表单 | `gate.debounce` · `gate.fastMinReplyInterval` · `gate.jevThreshold`（保存即重建闸门，无需重启；`enabled` 等其余 gate 字段仍 patch 只读） |
 | 操作 | 「保存并重连」「重新连接」「刷新」，以及未保存修改提示 |
 | 群项目目录 | 可编辑表格：群号 / 会话（标题 + id 或「未创建」）/ 项目目录（留空 = 跟随默认项目）/ 「重新绑定」按钮（P4） |
 | 提示 | host 回来的校验问题（如 `wsUrl 必填`）逐条显示；保存成功/失败有状态提示 |
@@ -35,7 +36,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 ~~~
 
 - 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
-  chatRetentionDays / sessionTitle / replyChunkSize / commandPrefixes`；`reconnect` 等保持 patch 只读。
+  chatRetentionDays / gate.{debounce,fastMinReplyInterval,jevThreshold} / sessionTitle /
+  replyChunkSize / commandPrefixes`；`reconnect` 等保持 patch 只读。
   `groupWorkspaces` 由「群项目目录」表格整表提交（空表 = 清空覆盖）；`chatRetentionDays` 本期只有配置、
   没有表单入口（清理 UI 排 v0.8.2）。
 - **保存即生效**：host 用新配置重建 client + relay（单实例锁不重入），不需要重启 GUI。
@@ -79,6 +81,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
     "workspace": "/Users/<user>/dsh/qq-relay-ws",
     "groupWorkspaces": { "10002": "/Users/<user>/projects/my-app" },
     "chatRetentionDays": 0,
+    "gate": { "debounceMs": 3000, "fastMinReplyIntervalMs": 10000, "jevThreshold": 0.6 },
     "sessionTitle": "QQ群：{groupName}",
     "replyChunkSize": 1500,
     "commandPrefixes": ["/dsh"],
@@ -101,6 +104,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 | `wsUrl` / `accessToken` / `selfId` | 保存后立即断开旧连接、用新配置重连 |
 | `groups` / `commandPrefixes` / `replyChunkSize` | 立即对新事件生效 |
 | `workspace` / `groupWorkspaces` / `sessionTitle` | 只影响**之后新建**的会话；已存在的群映射保持原项目 / 标题（表格可查）。改已映射群的项目后点「重新绑定」才会换会话；旧项目聊天记录不移动 |
+| `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` | **立即生效**：保存后重建闸门，阈值由分类器每次判定时读取 |
 
 - 重连不重入单实例锁：锁属于进程，连接属于运行实例（`controller/runtime.js`）。
 - **保存会立即断开当前 WS**：进行中的 QQ 触发回合会被中止且不回发（配置改动属低频操作，
