@@ -69,6 +69,67 @@ export interface RelayPersonaConfigView {
   text: string
 }
 
+/** ComfyUI 画图配置（v0.21.0）：设置页「画图」二级页可编辑。 */
+export interface RelayComfyConfigView {
+  /** 是否启用画图能力（关闭时探测与 skill 注册都停止）。 */
+  enabled: boolean
+  /** ComfyUI HTTP 地址（无鉴权，只应指向可信网络）。 */
+  baseUrl: string
+  /** 探测 / 请求超时（毫秒）。 */
+  timeoutMs: number
+  /** 连接成功后是否把画图 skill 注册给 DSH。 */
+  skillEnabled: boolean
+}
+
+/** ComfyUI 队列长度（运行中 / 等待中）。 */
+export interface RelayComfyQueueView {
+  running: number
+  pending: number
+}
+
+/** 画图 skill 的动态注册状态（v0.21.0）。 */
+export interface RelayComfySkillStatusView {
+  name: string
+  loaded: boolean
+  error: string
+}
+
+/** ComfyUI 运行状态（v0.21.0；旧 host 缺字段时按「未连接 / 不支持」兜底，页面不白屏）。 */
+export interface RelayComfyStatusView {
+  enabled: boolean
+  baseUrl: string
+  timeoutMs: number
+  skillEnabled: boolean
+  /** false = 宿主没有 skills 服务，画图 skill 无法加载。 */
+  supported: boolean
+  reachable: boolean
+  checking: boolean
+  checkedAt: number
+  error: string
+  version: string
+  device: string
+  queue: RelayComfyQueueView
+  skill: RelayComfySkillStatusView
+}
+
+/** 一次连通性探测的结果（`POST /api/comfy/test` 的 probe）。 */
+export interface RelayComfyProbeView {
+  target: string
+  reachable: boolean
+  version: string
+  device: string
+  queue: RelayComfyQueueView
+  error: string
+  checkedAt: number
+  latencyMs: number
+}
+
+/** 「测试连接」接口的 value：探测结果 + 最新状态快照。 */
+export interface RelayComfyTestValue {
+  probe: RelayComfyProbeView
+  status: RelayStatusView
+}
+
 /** host 侧 agent preset 名册（服务缺失时 supported=false，页面隐藏选择器）。 */
 export interface RelayAgentPresetsView {
   supported: boolean
@@ -156,6 +217,10 @@ export interface RelayConfigView {
   agentPreset: string
   /** 轻量人设（v0.19.0）；默认关闭。 */
   persona: RelayPersonaConfigView
+  /** ComfyUI 画图配置（v0.21.0）；旧 host 缺字段时按默认值兜底。 */
+  comfy: RelayComfyConfigView
+  /** host 是否已经返回 comfy 配置（旧版 host 为 false，页面应提示重启）。 */
+  comfySupported: boolean
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -193,6 +258,8 @@ export interface RelayStatusView {
   modelCatalog: RelayModelCatalogView | null
   /** 权限目录（v0.20.0；可能是 null：宿主没有 permission-presets 行）。 */
   permissionCatalog: RelayPermissionCatalogView | null
+  /** ComfyUI 画图状态（v0.21.0）；旧 host 缺字段时按「未连接 / 不支持」兜底。 */
+  comfy: RelayComfyStatusView
   mappings: RelayMappingView[]
 }
 
@@ -281,6 +348,13 @@ export interface RelayConfigPatch {
     enabled?: boolean
     text?: string
   }
+  /** ComfyUI 画图（v0.21.0）：整块提交；timeoutMs 用毫秒数字，baseUrl 由 host 校验。 */
+  comfy?: {
+    enabled?: boolean
+    baseUrl?: string
+    timeoutMs?: number
+    skillEnabled?: boolean
+  }
   sessionTitle?: string
   replyChunkSize?: number
   commandPrefixes?: string[]
@@ -315,6 +389,8 @@ export const MAPPING_CLEAR_PATH = '/dsh-qq-relay/api/mapping/clear'
 export const PRESETS_PATH = '/dsh-qq-relay/api/presets'
 /** 插件预设删除（v0.20.0）。 */
 export const PRESETS_DELETE_PATH = '/dsh-qq-relay/api/presets/delete'
+/** ComfyUI 连通性测试（v0.21.0）；body 可选 { baseUrl?, timeoutMs? }。 */
+export const COMFY_TEST_PATH = '/dsh-qq-relay/api/comfy/test'
 
 /** 配置页用到的能力面（组合根注入 `fetch` 后得到实例）。 */
 export interface RelaySettingsApi {
@@ -328,6 +404,8 @@ export interface RelaySettingsApi {
   clearMappings(): Promise<RelayApiResult<RelayMappingsClearValue>>
   savePreset(preset: RelayPresetView): Promise<RelayApiResult<RelayPresetsValue>>
   deletePreset(id: string): Promise<RelayApiResult<RelayPresetsValue>>
+  /** ComfyUI 连通性测试（v0.21.0）：只探测，不改配置 / skill 注册。 */
+  testComfy(input?: { baseUrl?: string; timeoutMs?: number }): Promise<RelayApiResult<RelayComfyTestValue>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -452,6 +530,105 @@ function asAgentPresetItems(value: unknown): RelayAgentPresetView[] {
   })).filter((entry) => entry.id !== '')
 }
 
+/** ComfyUI 队列兜底。 */
+function asComfyQueue(value: unknown): RelayComfyQueueView {
+  if (!isRecord(value)) return { running: 0, pending: 0 }
+  return {
+    running: typeof value.running === 'number' ? value.running : 0,
+    pending: typeof value.pending === 'number' ? value.pending : 0,
+  }
+}
+
+/**
+ * ComfyUI 配置兜底（旧 host 没有 comfy 段 → 默认关闭）。
+ * 默认值与 host 侧 `DEFAULT_COMFY` / `maskComfyConfig` 保持一致。
+ */
+function asComfyConfig(value: unknown): RelayComfyConfigView {
+  if (!isRecord(value)) {
+    return {
+      enabled: false,
+      baseUrl: 'http://192.168.1.10:8188',
+      timeoutMs: 30000,
+      skillEnabled: true,
+    }
+  }
+  return {
+    enabled: value.enabled === true,
+    baseUrl: typeof value.baseUrl === 'string' && value.baseUrl !== ''
+      ? value.baseUrl
+      : 'http://192.168.1.10:8188',
+    timeoutMs: typeof value.timeoutMs === 'number' ? value.timeoutMs : 30000,
+    skillEnabled: value.skillEnabled !== false,
+  }
+}
+
+/** ComfyUI 运行状态兜底（旧 host 缺字段 → 全部关闭，页面不白屏）。 */
+function asComfyStatus(value: unknown): RelayComfyStatusView {
+  if (!isRecord(value)) {
+    return {
+      enabled: false,
+      baseUrl: '',
+      timeoutMs: 30000,
+      skillEnabled: false,
+      supported: false,
+      reachable: false,
+      checking: false,
+      checkedAt: 0,
+      error: '',
+      version: '',
+      device: '',
+      queue: { running: 0, pending: 0 },
+      skill: { name: '', loaded: false, error: '' },
+    }
+  }
+  const skill = isRecord(value.skill) ? value.skill : {}
+  return {
+    enabled: value.enabled === true,
+    baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : '',
+    timeoutMs: typeof value.timeoutMs === 'number' ? value.timeoutMs : 30000,
+    skillEnabled: value.skillEnabled !== false,
+    supported: value.supported === true,
+    reachable: value.reachable === true,
+    checking: value.checking === true,
+    checkedAt: typeof value.checkedAt === 'number' ? value.checkedAt : 0,
+    error: typeof value.error === 'string' ? value.error : '',
+    version: typeof value.version === 'string' ? value.version : '',
+    device: typeof value.device === 'string' ? value.device : '',
+    queue: asComfyQueue(value.queue),
+    skill: {
+      name: typeof skill.name === 'string' ? skill.name : '',
+      loaded: skill.loaded === true,
+      error: typeof skill.error === 'string' ? skill.error : '',
+    },
+  }
+}
+
+/** 「测试连接」的 probe 兜底（host 返回脏数据时用最新状态拼一个可渲染结果）。 */
+function asComfyProbe(value: unknown, fallback: RelayComfyStatusView): RelayComfyProbeView {
+  if (!isRecord(value)) {
+    return {
+      target: fallback.baseUrl,
+      reachable: fallback.reachable,
+      version: fallback.version,
+      device: fallback.device,
+      queue: asComfyQueue(fallback.queue),
+      error: fallback.error,
+      checkedAt: fallback.checkedAt,
+      latencyMs: 0,
+    }
+  }
+  return {
+    target: typeof value.target === 'string' ? value.target : fallback.baseUrl,
+    reachable: value.reachable === true,
+    version: typeof value.version === 'string' ? value.version : '',
+    device: typeof value.device === 'string' ? value.device : '',
+    queue: asComfyQueue(value.queue),
+    error: typeof value.error === 'string' ? value.error : '',
+    checkedAt: typeof value.checkedAt === 'number' ? value.checkedAt : 0,
+    latencyMs: typeof value.latencyMs === 'number' ? value.latencyMs : 0,
+  }
+}
+
 /**
  * 把未知 JSON 读成状态快照。
  * 只做形状兜底（页面不能因为 host 版本漂移白屏），字段级默认值给全。
@@ -525,6 +702,8 @@ function asStatus(value: unknown): RelayStatusView | null {
             text: typeof config.persona.text === 'string' ? config.persona.text : '',
           }
         : { enabled: false, text: '' },
+      comfy: asComfyConfig(config.comfy),
+      comfySupported: config.comfySupported === true,
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)
@@ -551,6 +730,7 @@ function asStatus(value: unknown): RelayStatusView | null {
       : { supported: false, registered: [] },
     modelCatalog: asModelCatalog(value.modelCatalog),
     permissionCatalog: asPermissionCatalog(value.permissionCatalog),
+    comfy: asComfyStatus(value.comfy),
     gate: isRecord(value.gate)
       ? {
           enabled: value.gate.enabled === true,
@@ -693,6 +873,20 @@ export function createRelaySettingsApi(options: { fetch: typeof fetch }): RelayS
       const status = isRecord(value) ? asStatus(value.status) : null
       if (status === null || !isRecord(value)) return badPayload<RelayPresetsValue>()
       return { ok: true, value: { presets: asPresets(value.presets), status } }
+    },
+    async testComfy(input) {
+      const body: { baseUrl?: string; timeoutMs?: number } = {}
+      if (typeof input?.baseUrl === 'string' && input.baseUrl.trim() !== '') body.baseUrl = input.baseUrl.trim()
+      if (typeof input?.timeoutMs === 'number' && Number.isFinite(input.timeoutMs)) body.timeoutMs = input.timeoutMs
+      const result = await requestEnvelope(fetchImpl, COMFY_TEST_PATH, jsonPost(body))
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asStatus(value.status) : null
+      if (status === null || !isRecord(value)) return badPayload<RelayComfyTestValue>()
+      return {
+        ok: true,
+        value: { probe: asComfyProbe(value.probe, status.comfy), status },
+      }
     },
     async deleteMapping(groupId) {
       const result = await requestEnvelope(fetchImpl, MAPPING_DELETE_PATH, jsonPost({ groupId }))

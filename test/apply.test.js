@@ -130,7 +130,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     commandPrefixes: ['/dsh'],
   })
 
-  assert.equal(routes.length, 10, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条 / presets 二条路由')
+  assert.equal(routes.length, 11, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条 / presets 二条 / comfy test 一条路由')
 
   const initial = await call(routes, '/dsh-qq-relay/api/status')
   assert.equal(initial.status, 200)
@@ -156,6 +156,26 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.deepEqual(status.presetService, { supported: false, registered: [] })
   assert.equal(status.modelCatalog, null)
   assert.equal(status.permissionCatalog, null)
+  assert.equal(status.config.comfySupported, true)
+  assert.deepEqual(status.config.comfy, {
+    enabled: false,
+    baseUrl: 'http://192.168.1.10:8188',
+    timeoutMs: 30000,
+    skillEnabled: true,
+  })
+  assert.equal(status.comfy.enabled, false)
+  assert.equal(status.comfy.supported, false, '假 ctx 没有 skills 服务')
+  assert.equal(status.comfy.skill.loaded, false)
+
+  // v0.21.0：测试连接路由必须 await 异步探测（回归：Promise 被当成同步结果 → CONFIG_FAILED）
+  const comfyTest = await call(routes, '/dsh-qq-relay/api/comfy/test', {
+    method: 'POST',
+    body: JSON.stringify({ baseUrl: 'http://127.0.0.1:1', timeoutMs: 3000 }),
+  })
+  assert.equal(comfyTest.status, 200)
+  assert.equal(comfyTest.payload.ok, true)
+  assert.equal(comfyTest.payload.value.probe.reachable, false)
+  assert.equal(comfyTest.payload.value.probe.target, 'http://127.0.0.1:1')
 
   const invalid = await call(routes, '/dsh-qq-relay/api/config', {
     method: 'POST',
@@ -482,7 +502,7 @@ test('apply：注册 qq_send / qq_poke 工具，离线时返回 queued / 报错'
     groups: [100],
     workspace: join(home, 'ws'),
   })
-  assert.equal(routes.length, 10)
+  assert.equal(routes.length, 11)
   assert.equal(tools.length, 2)
   const send = tools.find((tool) => tool.name === 'qq_send')
   const poke = tools.find((tool) => tool.name === 'qq_poke')

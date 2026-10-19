@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createRelaySettingsApi,
   type RelayApiResult,
+  type RelayComfyProbeView,
   type RelayPanelMessageView,
   type RelayPresetView,
   type RelayStatusView,
@@ -28,6 +29,7 @@ import {
   formFromConfig,
   isFormDirty,
   isProjectRowsDirty,
+  parseDurationMs,
   presetDraftFromView,
   projectRowsFromStatus,
   type GroupProjectRow,
@@ -42,19 +44,26 @@ import {
 const api = createRelaySettingsApi({ fetch: (input, init) => globalThis.fetch(input, init) })
 
 /** 配置页的二级页面。 */
-export type SettingsTab = 'connection' | 'project' | 'behavior' | 'presets' | 'records'
+export type SettingsTab = 'connection' | 'project' | 'behavior' | 'comfy' | 'presets' | 'records'
 
 /** 二级页面导航（顺序即渲染顺序）。 */
 export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'connection', label: '连接' },
   { id: 'project', label: '项目' },
   { id: 'behavior', label: '行为' },
+  { id: 'comfy', label: '画图' },
   { id: 'presets', label: '预设' },
   { id: 'records', label: '记录' },
 ]
 
-/** 表单里的字符串字段；`proxyEnabled` / `personaEnabled`（开关）走单独的 setter。 */
-export type RelayFormTextField = Exclude<keyof RelayFormState, 'proxyEnabled' | 'personaEnabled'>
+/**
+ * 表单里的字符串字段；开关类字段（proxyEnabled / personaEnabled /
+ * comfyEnabled / comfySkillEnabled）走单独的 setter。
+ */
+export type RelayFormTextField = Exclude<
+  keyof RelayFormState,
+  'proxyEnabled' | 'personaEnabled' | 'comfyEnabled' | 'comfySkillEnabled'
+>
 
 /** 状态点的色调（View 层只认这个，不认具体颜色）。 */
 export type StatusTone = 'ok' | 'warn' | 'error' | 'muted'
@@ -118,6 +127,33 @@ export function describeGate(status: RelayStatusView | null): StatusLine {
   }
 }
 
+/** 画图状态：开关 / 连通性 / skill 加载情况（v0.21.0）。 */
+export function describeComfy(status: RelayStatusView | null): StatusLine {
+  if (status === null) return { tone: 'muted', text: '画图状态读取中…' }
+  const comfy = status.comfy
+  if (!comfy.enabled) return { tone: 'muted', text: '画图能力已关闭' }
+  if (comfy.checking) return { tone: 'muted', text: '正在检查 ComfyUI…' }
+  if (!comfy.reachable) {
+    const detail = comfy.error !== '' ? comfy.error : '尚未检查'
+    return { tone: 'warn', text: 'ComfyUI 连不上：' + detail }
+  }
+  if (!comfy.supported) {
+    return { tone: 'warn', text: '宿主没有 skills 服务，画图 skill 无法加载' }
+  }
+  const version = comfy.version !== '' ? comfy.version : '未知版本'
+  const skill = comfy.skill.loaded ? 'skill 已加载' : 'skill 未加载'
+  return { tone: 'ok', text: 'ComfyUI ' + version + ' 可用 · ' + skill }
+}
+
+/** 「测试连接」的页面状态（v0.21.0）。 */
+export interface RelayComfyProbeState {
+  busy: boolean
+  error: string | null
+  result: RelayComfyProbeView | null
+}
+
+const EMPTY_COMFY_PROBE: RelayComfyProbeState = { busy: false, error: null, result: null }
+
 /** 最近消息面板的状态。 */
 export interface RelayMessagesState {
   groupId: number | null
@@ -143,6 +179,10 @@ export interface RelaySettingsModel {
   statusLine: StatusLine
   tokenHint: string
   gateLine: StatusLine
+  /** 画图状态行（v0.21.0）。 */
+  comfyLine: StatusLine
+  /** ComfyUI 连通性测试的页面状态（v0.21.0）。 */
+  comfyProbe: RelayComfyProbeState
   messages: RelayMessagesState
   /** 插件预设（v0.20.0）。 */
   presets: RelayPresetView[]
@@ -156,6 +196,12 @@ export interface RelaySettingsModel {
   setProxyEnabled: (enabled: boolean) => void
   /** 轻量人设开关（v0.19.0）。 */
   setPersonaEnabled: (enabled: boolean) => void
+  /** ComfyUI 画图开关（v0.21.0）。 */
+  setComfyEnabled: (enabled: boolean) => void
+  /** 「连接成功后加载画图 skill」开关（v0.21.0）。 */
+  setComfySkillEnabled: (enabled: boolean) => void
+  /** 用表单里的地址 / 超时探测一次 ComfyUI（不保存配置）。 */
+  testComfy: () => void
   updateProjectRow: (groupId: number, projectDir: string) => void
   refresh: () => void
   save: () => void
@@ -190,6 +236,7 @@ export function useRelaySettings(): RelaySettingsModel {
   const [presetDraft, setPresetDraft] = useState<RelayPresetDraft>(emptyPresetDraft)
   const [presetEditingId, setPresetEditingId] = useState<string | null>(null)
   const [presetBusy, setPresetBusy] = useState(false)
+  const [comfyProbe, setComfyProbe] = useState<RelayComfyProbeState>(EMPTY_COMFY_PROBE)
 
   const applyStatus = useCallback((next: RelayStatusView, syncForm: boolean) => {
     setStatus(next)
@@ -228,6 +275,14 @@ export function useRelaySettings(): RelaySettingsModel {
 
   const setPersonaEnabled = useCallback((enabled: boolean) => {
     setForm((previous) => ({ ...previous, personaEnabled: enabled }))
+  }, [])
+
+  const setComfyEnabled = useCallback((enabled: boolean) => {
+    setForm((previous) => ({ ...previous, comfyEnabled: enabled }))
+  }, [])
+
+  const setComfySkillEnabled = useCallback((enabled: boolean) => {
+    setForm((previous) => ({ ...previous, comfySkillEnabled: enabled }))
   }, [])
 
   const updateProjectRow = useCallback((groupId: number, projectDir: string) => {
@@ -405,6 +460,29 @@ export function useRelaySettings(): RelaySettingsModel {
     }
   }, [form.chatRetentionDays, applyStatus])
 
+  /**
+   * 「测试连接」：用表单里的地址 + 解析后的超时探测 ComfyUI。
+   * 只探测（不改配置、不改 skill 注册）；成功时用返回的状态快照刷新页面。
+   */
+  const testComfy = useCallback(async () => {
+    const baseUrl = form.comfyBaseUrl.trim()
+    const timeoutMs = parseDurationMs(form.comfyTimeout.trim())
+    if (timeoutMs === null || timeoutMs < 3000 || timeoutMs > 120000) {
+      setComfyProbe({ busy: false, error: 'ComfyUI 超时必须是 3s..120s 的时长（如 30s）', result: null })
+      return
+    }
+    setComfyProbe((previous) => ({ ...previous, busy: true, error: null }))
+    const input: { baseUrl?: string; timeoutMs?: number } = { timeoutMs }
+    if (baseUrl !== '') input.baseUrl = baseUrl
+    const result = await api.testComfy(input)
+    if (result.ok) {
+      applyStatus(result.value.status, false)
+      setComfyProbe({ busy: false, error: null, result: result.value.probe })
+    } else {
+      setComfyProbe({ busy: false, error: errorText(result), result: null })
+    }
+  }, [form.comfyBaseUrl, form.comfyTimeout, applyStatus])
+
   /** 新建预设：进入编辑态，草稿清空。 */
   const newPreset = useCallback(() => {
     setPresetEditingId('')
@@ -488,6 +566,7 @@ export function useRelaySettings(): RelaySettingsModel {
   )
   const statusLine = useMemo(() => describeStatus(status), [status])
   const gateLine = useMemo(() => describeGate(status), [status])
+  const comfyLine = useMemo(() => describeComfy(status), [status])
   const hint = useMemo(() => tokenHint(status), [status])
 
   return {
@@ -503,11 +582,16 @@ export function useRelaySettings(): RelaySettingsModel {
     statusLine,
     tokenHint: hint,
     gateLine,
+    comfyLine,
+    comfyProbe,
     messages,
     setTab,
     updateField,
     setProxyEnabled,
     setPersonaEnabled,
+    setComfyEnabled,
+    setComfySkillEnabled,
+    testComfy: () => { void testComfy() },
     updateProjectRow,
     refresh,
     save: () => { void save() },

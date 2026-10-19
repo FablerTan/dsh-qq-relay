@@ -1,8 +1,8 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.20.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
-搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 记录」二级页面）；
+当前 **v0.21.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 画图 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
@@ -17,7 +17,9 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 **配置页迁到插件面板 + 二级页面 + 跟随宿主主题**（v0.17.0，见 [docs/client.md](./docs/client.md)）；P13.1 已落地
 **角色预设与轻量人设**（v0.19.0：插件自带「QQ 群聊」agent preset + 配置页可选 preset + prompt 注入人设与
 平台约定，见 [docs/persona.md](./docs/persona.md)）；v0.20.0 起预设可在配置页**新建 / 编辑 / 删除**，
-并逐预设设置**模型、思考层级、权限**（动态注册，无需改 profile）。设计见
+并逐预设设置**模型、思考层级、权限**（动态注册，无需改 profile）；v0.21.0 加**画图能力**——探测配置的
+ComfyUI，连上后把插件自带的 `comfy-image` skill 动态注册给 DSH，群里出图 / 改图后产物用 `qq_send`
+发回群（见 [docs/comfy.md](./docs/comfy.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -60,7 +62,9 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 可选「@ 名单里的人且 TA 最近没说话时代 TA 回应」，见 [gate.md](./docs/gate.md) §2.1/§2.6）、
 角色预设与轻量人设（v0.19.0：插件自带「QQ 群聊」agent preset / 配置页可选 preset / prompt 注入人设与
 平台约定，见 [persona.md](./docs/persona.md)）、预设管理与预设级模型 / 思考层级 / 权限（v0.20.0：
-配置页「预设」页可增删改，presets.json + 动态注册，见 [persona.md](./docs/persona.md) §2）。
+配置页「预设」页可增删改，presets.json + 动态注册，见 [persona.md](./docs/persona.md) §2）、
+画图能力（v0.21.0：ComfyUI 探测 + 动态注册 `comfy-image` runtime skill，配置页「画图」页 +
+`POST /api/comfy/test`，见 [comfy.md](./docs/comfy.md)）。
 **仍未定案**：群审批（按钮）——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -77,22 +81,24 @@ dsh-qq-relay/
 │   ├── controller/
 │   │   ├── onebot/       # codec（事件编解码）· client（WS）· api（action 封装）
 │   │   ├── runtime.js    # relay 运行实例：整份配置热替换（配置页保存后重建连接）
-│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping）
+│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping / presets / comfy test）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
 │   │   ├── tools.js      # qq_send / qq_poke 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
-│   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
+│   │   ├── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
+│   │   └── comfy.js      # ComfyUI 探测 + 动态注册 comfy-image skill（v0.21.0）
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批 / comfy 配置与 skill 模板渲染
+│   ├── skills/comfy-image/ # 插件自带画图 skill（SKILL.md 模板 / 运行器 / 工作流 / 参考），随包发布
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ viewmodel（呈现态与动作）→ view（组件）
 │   ├── client.tsx        # 组合根：把配置页注册进 plugins.bundle.config（key = 包名）
 │   ├── model/            # api.ts（HTTP）· form.ts（表单 ↔ patch 纯逻辑）
 │   ├── viewmodel/        # settings.ts（状态 / 动作 hook、状态文案、二级页面定义）
-│   └── view/             # SettingsPage（外壳 + 状态行 + 二级页面导航）· controls · theme（CSS）· panels/*
+│   └── view/             # SettingsPage（外壳 + 状态行 + 二级页面导航）· controls · theme（CSS）· panels/*（含 ComfyPanel）
 ├── scripts/              # wrap-client（产物包装）· check-syntax · check-docs
-├── docs/                 # 设计文档（官方通道 / 消息闸门 / 架构 / 路线）
+├── docs/                 # 设计文档（一文档一主题：架构 / 通道 / 闸门 / 画图 / 路线…）
 ├── README.md             # 本文件
 └── AGENTS.md             # 本插件开发纪律（文档在哪 + pnpm check 闸门）
 ```
@@ -104,13 +110,14 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
-| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 项目 / 行为 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
+| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 项目 / 行为 / 画图 / 预设 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
 | [docs/config.md](./docs/config.md) | 配置总表：每个字段的默认值 / 范围 / 现在能否在配置页改 / 生效方式 + 写死常量清单 + 加字段的改动面 | 调配置 / 决定哪些进配置页时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
-| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 | 改媒体 / 排查媒体收发时 |
+| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 / 画图产物 | 改媒体 / 排查媒体收发时 |
+| [docs/comfy.md](./docs/comfy.md) | 画图：ComfyUI 配置 / 探测、动态注册 `comfy-image` skill 的生命周期与模板渲染、三个工作流、QQ 群用法与安全边界 | 开画图 / 排查画图不生效时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送 / `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
@@ -148,6 +155,31 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.21.0 画图能力：ComfyUI 探测 + 动态注册 comfy-image skill（2026-10-19）
+
+- **新配置段 `comfy`**：`enabled`（默认 false）/ `baseUrl`（默认 `http://192.168.1.10:8188`）/
+  `timeoutMs`（默认 30000，3s..120s）/ `skillEnabled`（默认 true），四项都能在配置页「画图」页改。
+- **host 探测 + 动态 skill**：新增 `lib/controller/comfy.js` 与 `lib/model/comfy.js`。启动后探测
+  ComfyUI（`/system_stats` + `/queue`，60s 周期 + 状态轮询补探），**首次连上**且开关允许时把插件
+  自带的 `comfy-image` skill 注册给 DSH（`ctx.skills.register`，`source=custom` /
+  `provider=dsh-qq-relay` / `resourceBase=lib/skills/comfy-image`）；之后探测失败**不注销**
+  （避免目录抖动），关闭 `enabled` / `skillEnabled` 才注销。注册不需要重启 GUI。
+- **skill 模板渲染**：`SKILL.md` 里的 `{{COMFY_HOST}}` / `{{SKILL_DIR}}` 在注册前替换成实际值，
+  frontmatter 剥离；残留占位符则拒绝注册并把错误带到状态上。
+- **配置页新增「画图」二级页**（顺序：连接 / 项目 / 行为 / 画图 / 预设 / 记录）：开关 / 服务地址 /
+  探测超时 / skill 开关 + 运行状态（可达、版本、GPU、队列、最近检查、skill 加载）+「测试连接」；
+  新路由 `POST /dsh-qq-relay/api/comfy/test`（只探测、不保存）。旧 host 缺 `comfy` 字段时按关闭兜底。
+- **保存语义**：仅 `comfy` 变化不重建 relay 连接（比较配置时忽略 `comfy`），保存后立即按新配置
+  探测并决定是否注册；不重启 GUI。`lib/skills/**` 随包发布。
+- **真实验证**：`192.168.1.10:8188` / ComfyUI 0.39.0 / RTX 4070，isolated DSH 实例启动后
+  `status.comfy.reachable = true`、`skill.loaded = true`；`POST /api/comfy/test` 用错误地址返回
+  `ok=true` + `probe.reachable=false`（探测失败也是成功响应，不抛路由错误）。
+- **client 已重建**：`lib/client.js` 含「画图」页（ComfyPanel）文案，GUI 重启后可见；
+  单测 266 → 275（新增 9 个 comfy 用例：配置 / 模板渲染 / probe / 注册与抖动保持 / 测试连接 /
+  `/api/comfy/test` 异步回归；config / settings / apply 断言同步）。
+- 文档同步：新增 [docs/comfy.md](./docs/comfy.md)，README / AGENTS / config / client /
+  architecture / media / roadmap。
 
 ### v0.20.0 预设管理：增删改 + 模型 / 思考层级 / 权限（2026-10-19）
 

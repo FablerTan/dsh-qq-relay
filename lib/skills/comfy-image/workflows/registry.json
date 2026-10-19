@@ -1,0 +1,28 @@
+{
+  "host": "http://192.168.1.10:8188",
+  "remote_root": "/home/user/comfy",
+  "note": "API 格式工作流注册表（本机 macOS 跨机调用 192.168.1.10 的 ComfyUI）。每项 = api.json（提交给 /prompt 的图）+ schema.json（允许改的白名单参数）。新增工作流时在界面里 File → Export Workflow (API) 导出，登记到本文件。",
+  "workflows": {
+    "qwen-t2i": {
+      "title": "Qwen-Image-2.1 文生图（base 20 步）",
+      "file": "qwen_image_2_1_t2i.api.json",
+      "schema": "qwen_image_2_1_t2i.schema.json",
+      "summary": "9 节点，纯文生图，base 主干 / 20 步 / cfg 1.0 / euler+beta；1:1 1.0MP 约 16s（比 turbo 8 步慢 2–3×，但皮肤与背景干净得多）。",
+      "source": "用户 2026-10-13 导出（sha256 25b1838b）；2026-10-17 切换 turbo/8/heun/simple → base/20/euler/beta（sha256 3f066dd3）；原图见 backups/workflows-pre-base-20261017.tar.gz"
+    },
+    "qwen-i2i": {
+      "title": "Qwen-Image-2.1 参考图编辑（base / euler+beta / 20 步，用户自配）",
+      "file": "qwen_image_2_1_i2i.api.json",
+      "schema": "qwen_image_2_1_i2i.schema.json",
+      "summary": "10 节点：t2i 图加一个 LoadImage 输入。latent 走 ResolutionSelector + EmptyLatentImage，无 switch、无 cache，base 20 步 euler+beta。人物一致性优于 qwen-edit，提示词宜短。约 16-20s（首次含加载）。",
+      "source": "用户 2026-10-13 自配（sha256 cece215c…）；2026-10-17 跟随 t2i 切换为 base/20/euler/beta（sha256 42d7565b）；原图见 backups/workflows-pre-base-20261017.tar.gz"
+    },
+    "qwen-edit": {
+      "title": "Qwen-Image-2.1 图像编辑（turbo，单参考图）",
+      "file": "qwen_image_2_1_image_edit.api.json",
+      "schema": "qwen_image_2_1_image_edit.schema.json",
+      "summary": "13 节点，用户 2026-10-13 从界面导出的原图。改提示词 / 换参考图 / 切尺寸模式，约 6-12s。",
+      "source": "用户导出，sha256 ed671814c15cf78b，原样保存"
+    }
+  }
+}

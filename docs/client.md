@@ -1,6 +1,6 @@
 # client 半身与配置页
 
-> 状态：**v0.17.0（2026-10-19）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
+> 状态：**v0.21.0（2026-10-19）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
 > 配置怎么分层、HTTP 面怎么调、保存后哪些东西立刻生效、样式怎么跟宿主主题一致。
 > 总体架构见 [architecture.md](./architecture.md)，配置项全表见 [config.md](./config.md)。
 
@@ -19,8 +19,8 @@
 - 排错顺序：插件面板里找不到这个组合包 → 没装入 profile / 没重启 GUI；组合包页里没有配置块 →
   client 半身没加载或注册失败（看浏览器控制台与插件页状态）。
 
-页面是**二级结构**：固定的状态行 + 保存动作，下面是「连接 / 项目 / 行为 / 预设 / 记录」五个二级页面
-（下划线 tab，沿用宿主插件页的分区风格）。
+页面是**二级结构**：固定的状态行 + 保存动作，下面是「连接 / 项目 / 行为 / 画图 / 预设 / 记录」六个
+二级页面（下划线 tab，沿用宿主插件页的分区风格）。
 
 ## 2. 页面内容
 
@@ -32,13 +32,14 @@
 | 动作 | 「刷新」「重新连接」「保存并重连」（主按钮）；任何二级页面都能直接保存 |
 | 提示 | host 校验问题逐条显示；保存成功 / 失败的提示；「有未保存的修改」 |
 
-### 2.2 四个二级页面
+### 2.2 六个二级页面
 
 | 页面 | 内容 | 动作 |
 |---|---|---|
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
 | 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
 | 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
+| 画图 | ComfyUI 服务（启用画图 / 服务地址 / 探测超时 3s..120s / 连接成功后加载画图 skill）+「测试连接」+ 运行状态（可达 / 版本 / GPU / 队列 / 最近检查 / skill 加载与错误，v0.21.0） | 「测试连接」（只探测、不保存）；保存 `comfy` 后立即探测并决定是否注册 skill，不重建 relay |
 | 预设 | 插件管理的 QQ 预设列表（名称 / 模型 / 权限 / 编辑 / 删除）；新建 / 编辑表单：id · 名称 · 描述 · persona · provider / model / 思考层级 · 权限预设 · 排序（v0.20.0） | 保存预设 / 取消 / 删除（正在使用的预设在 host 侧拒绝删除） |
 | 记录 | `chatRetentionDays`（0 = 永不自动删除；7..3650 = 自动清理） | 「立即清理」（用输入框天数 1..3650，二次确认） |
 
@@ -50,6 +51,11 @@
   `agentPresets.list()`，`broken` 的项标「（不可用）」并禁用）+ 轻量人设开关 / 多行文本框。
   宿主没有 `agentPresets` 服务时下拉隐藏并提示；配置里的 preset 不在名册时提示 missing。
   保存后 preset 只影响新建会话（已有群要 `/new` 或「重新绑定」），人设下一条消息生效。
+- 「画图」（v0.21.0）：四个字段 `comfy.enabled` / `baseUrl` / `timeoutMs` / `skillEnabled`；
+  「测试连接」用**表单里填的**地址与超时探测一次（不保存配置，返回 target / 可达 / 版本 / GPU /
+  队列 / 延迟 / 错误）；「运行状态」表展示后台探测结果与 `comfy-image` skill 是否加载。
+  宿主还是旧版本（没返回 `config.comfy`）时整页提示重启，字段按关闭兜底。详见
+  [comfy.md](./comfy.md)。
 - 「最近消息」：该群最近 24 小时聊天记录（最多 20 条），只读显示时间 / 显示名 / @ 与引用标记 /
   媒体标记（含 `[文件]` / `[群文件下载失败]`）。
 - 「预设」页（v0.20.0）：列表 + 编辑器；provider / model / 思考层级下拉来自宿主
@@ -89,7 +95,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 
 - 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
   chatRetentionDays / gate.{debounce,fastMinReplyInterval,jevThreshold} /
-  proxyReply.{enabled,targets,silenceWindow} / sessionTitle / replyChunkSize / commandPrefixes`；
+  proxyReply.{enabled,targets,silenceWindow} / sessionTitle / replyChunkSize / commandPrefixes /
+  agentPreset / persona.{enabled,text} / comfy.{enabled,baseUrl,timeoutMs,skillEnabled}`；
   `reconnect` / `commands` / `reply` / `poke` / `files` / `approval` 等保持 patch 只读
   （完整矩阵见 [config.md](./config.md) §4）。
   群项目目录由「项目」页表格整表提交（空表 = 清空覆盖）；
@@ -123,6 +130,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 | POST | `/dsh-qq-relay/api/mapping/clear` | 解除全部群映射并重建 relay，返回 `{ mappings: { cleared }, status }`（v0.14.0） |
 | GET / HEAD / POST | `/dsh-qq-relay/api/presets` | GET 返回状态（含 `presets` / `presetService` / `modelCatalog` / `permissionCatalog`）；POST body `{ preset }` 保存并动态注册，返回 `{ presets, status }`（v0.20.0） |
 | POST | `/dsh-qq-relay/api/presets/delete` | body `{ id }`：删除插件预设（正在使用的返回 409），返回 `{ presets, status }`（v0.20.0） |
+| POST | `/dsh-qq-relay/api/comfy/test` | body 可选 `{ baseUrl?, timeoutMs? }`：探测 ComfyUI（**只探测、不保存 / 不改 skill 注册**），返回 `{ probe: { target, reachable, version, device, queue, error, checkedAt, latencyMs }, status }`（v0.21.0） |
 
 状态快照字段（节选）：
 
@@ -146,18 +154,32 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
     "replyChunkSize": 1500,
     "commandPrefixes": ["/dsh"],
     "accessTokenConfigured": true,
-    "accessTokenSource": "profile"
+    "accessTokenSource": "profile",
+    "comfy": {
+      "enabled": false,
+      "baseUrl": "http://192.168.1.10:8188",
+      "timeoutMs": 30000,
+      "skillEnabled": true
+    },
+    "comfySupported": true
   },
   "gate": { "enabled": true, "classifier": "jev", "threshold": 0.7, "groups": [] },
-  "mappings": [{ "groupId": 10002, "sessionId": "session-…", "title": "QQ群：…" }]
+  "mappings": [{ "groupId": 10002, "sessionId": "session-…", "title": "QQ群：…" }],
+  "comfy": {
+    "enabled": true, "reachable": true, "checking": false, "checkedAt": 1790000000000,
+    "version": "0.39.0", "device": "NVIDIA GeForce RTX 4070",
+    "queue": { "running": 0, "pending": 0 },
+    "skill": { "name": "comfy-image", "loaded": true, "error": "" }
+  }
 }
 ~~~
 
 错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` / `REBIND_GROUP_INVALID` /
-`CLEANUP_DAYS_INVALID` / `MESSAGES_GROUP_INVALID` / `MAPPING_GROUP_INVALID` → 400；
-`CONFIG_BODY_TOO_LARGE` → 413；
+`CLEANUP_DAYS_INVALID` / `MESSAGES_GROUP_INVALID` / `MAPPING_GROUP_INVALID` /
+`COMFY_INVALID` → 400；`CONFIG_BODY_TOO_LARGE` → 413；
 `RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` / `CLEANUP_NOT_CONFIGURED` /
-`MESSAGES_NOT_CONFIGURED` / `MAPPING_NOT_STARTED` → 409；其余 → 500。请求体上限 64 KiB。
+`MESSAGES_NOT_CONFIGURED` / `MAPPING_NOT_STARTED` → 409；`COMFY_TEST_FAILED` 等其余 → 500；
+当前实例没注入画图测试处理器时 `POST /comfy/test` → 501 `CONFIG_UNSUPPORTED`。请求体上限 64 KiB。
 
 ## 6. 热更新语义
 
@@ -170,6 +192,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 | `chatRetentionDays` | 立即写入配置；下一次自动清理（重启后 / 每日）按新值执行。「立即清理」只清一次，不改配置 |
 | 立即清理 | 只删文件（聊天日文件 / 媒体日期目录），不动映射、会话与配置；删除后不可恢复 |
 | 解除绑定 / 清空全部映射 | 删本机映射并重建 relay（清掉 relay 内的会话缓存）；GUI 里的旧会话保留，下条消息按当前项目目录重新建会话 |
+| `comfy` 四项 | 保存后立即按新配置探测一次：只有 `enabled && skillEnabled` 且连得上才注册 / 保持 `comfy-image` skill；仅 `comfy` 变化**不重建 relay**（比较配置时忽略 `comfy`），不重启 GUI。「测试连接」不保存、不改注册 |
 
 - 重连不重入单实例锁：锁属于进程，连接属于运行实例（`controller/runtime.js`）。
 - **保存会立即断开当前 WS**：进行中的 QQ 触发回合会被中止且不回发（配置改动属低频操作，
@@ -189,12 +212,14 @@ src/
 │   └── settings.ts         # useRelaySettings：页面状态 + 动作；状态文案 / token 提示 / 闸门摘要；二级页面定义
 └── view/
     ├── SettingsPage.tsx    # 外壳：状态行 + 动作 + 二级页面 tab + 提示 + 页脚
-    ├── controls.tsx        # Button / Card / Row / Block / Line / StatusLineView / TextInput
+    ├── controls.tsx        # Button / Card / Row / Block / Line / StatusLineView / TextInput / Toggle / Select / TextArea
     ├── theme.ts            # 注入的 CSS（--dsw-* token）+ useRelayStyles
     └── panels/
         ├── ConnectionPanel.tsx
         ├── ProjectPanel.tsx
         ├── BehaviorPanel.tsx
+        ├── ComfyPanel.tsx   # 「画图」页：ComfyUI 开关 / 地址 / 超时 / skill 开关 / 测试连接 / 运行状态（v0.21.0）
+        ├── PresetsPanel.tsx
         └── RecordsPanel.tsx
 ~~~
 
@@ -207,8 +232,11 @@ src/
   `test/apply.test.js` 假 ctx + 临时 HOME 跑通注册、状态、保存、重连）。
 - `pnpm check`：语法 + 元数据 + `tsc --noEmit` + 文档↔源码配对。
 - 客户端没有浏览器测试：改完 client 半身跑 `pnpm build` 后**刷新页面**即可看到（v0.17.0 起
-  这类改动不需要重启 GUI）；真机：左栏「插件」→ dsh-qq-relay → 四个二级页面都渲染、
+  这类改动不需要重启 GUI）；真机：左栏「插件」→ dsh-qq-relay → 六个二级页面都渲染、
   改一个字段保存 → 观察状态行与日志里 `[relay] 配置已保存…并已重连`；群里 @ 机器人确认转发未中断。
+- 画图（v0.21.0）：`lib/client.js` 已含 ComfyPanel 文案，GUI 重启后「画图」页可见；
+  开 `comfy.enabled` 后点「测试连接」应看到 target / 可达 / 版本（错误地址则 `reachable=false`
+  且返回 `ok=true`），状态表的 skill 行显示 `comfy-image · 已加载 / 未加载`。
 - 明暗主题各看一遍：卡片 / 输入框 / 按钮 / tab 的颜色与发丝线跟随宿主，无残留字面色值。
 
 ## 9. 已知边界 / 后续
@@ -225,6 +253,8 @@ src/
   QQ 号匹配，页面不会提示——排查时看 host 日志的「代答触发 / 跳过」。
 - **删除 GUI 里的旧会话**仍无入口（本插件不管理 DSH 会话生命周期）。
 - 「立即清理」只清已解析出项目目录的群（白名单 ∪ 映射 ∪ 群项目配置）；旧全局 chat/ 目录由启动迁移处理。
+- 旧 host（没有 `comfy` 配置 / 状态字段）时「画图」页提示重启并按关闭兜底；host 有探测但
+  没有 `skills` 服务时 skill 行显示「未加载」并在状态行提示（`supported=false`）。
 - 停用插件的行后配置页随注册一起消失；这是插件管理器的契约，不是本插件的降级。
 - 不做 i18n（当前中文直出）；随插件一起演进。
 - 没有「恢复 profile 默认值」按钮：删掉 settings.json 后重启即可回到 patch 配置。
@@ -232,6 +262,7 @@ src/
 ## 10. 相关文档
 
 - 配置项全表与配置页覆盖矩阵：[config.md](./config.md)
+- 画图页契约 / 测试连接语义 / skill 生命周期：[comfy.md](./comfy.md)
 - 总体架构 / 配置层：[architecture.md](./architecture.md)
 - 聊天记录与清理：[chat-context.md](./chat-context.md) §7/§8
 - 宿主渲染树与选座：[../../docs/dsh-ui-render-tree.md](../../docs/dsh-ui-render-tree.md)

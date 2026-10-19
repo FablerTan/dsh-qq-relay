@@ -38,6 +38,14 @@ export interface RelayFormState {
   personaEnabled: boolean
   /** 轻量人设文本（v0.19.0）。 */
   personaText: string
+  /** ComfyUI 画图开关（v0.21.0）：布尔，走 setComfyEnabled。 */
+  comfyEnabled: boolean
+  /** ComfyUI 服务地址（http(s) URL；host 会校验）。 */
+  comfyBaseUrl: string
+  /** 探测超时：人读时长（如 30s）。 */
+  comfyTimeout: string
+  /** 连接成功后加载画图 skill（v0.21.0）：布尔，走 setComfySkillEnabled。 */
+  comfySkillEnabled: boolean
 }
 
 /** 解析结果：成功带值，失败带可逐条显示的问题。 */
@@ -66,6 +74,10 @@ export function emptyForm(): RelayFormState {
     agentPreset: '',
     personaEnabled: false,
     personaText: '',
+    comfyEnabled: false,
+    comfyBaseUrl: '',
+    comfyTimeout: '30s',
+    comfySkillEnabled: true,
   }
 }
 
@@ -90,6 +102,10 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     agentPreset: config.agentPreset,
     personaEnabled: config.persona.enabled,
     personaText: config.persona.text,
+    comfyEnabled: config.comfy.enabled,
+    comfyBaseUrl: config.comfy.baseUrl,
+    comfyTimeout: formatDurationMs(config.comfy.timeoutMs),
+    comfySkillEnabled: config.comfy.skillEnabled,
   }
 }
 
@@ -268,6 +284,24 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
     problems.push('轻量人设最多 4000 字符')
   }
   patch.persona = { enabled: form.personaEnabled, text: personaText }
+
+  // ComfyUI 画图（v0.21.0）：整块提交；超时 3s..120s（与 host 校验一致）。
+  const comfyBaseUrl = form.comfyBaseUrl.trim()
+  if (comfyBaseUrl === '') {
+    problems.push('ComfyUI 服务地址必填（如 http://192.168.1.10:8188）')
+  }
+  const comfyTimeoutText = form.comfyTimeout.trim()
+  const comfyTimeoutMs = parseDurationMs(comfyTimeoutText)
+  if (comfyTimeoutMs === null || comfyTimeoutMs < 3000 || comfyTimeoutMs > 120000) {
+    problems.push('ComfyUI 超时必须是 3s..120s 的时长（如 30s）')
+  } else if (comfyBaseUrl !== '') {
+    patch.comfy = {
+      enabled: form.comfyEnabled,
+      baseUrl: comfyBaseUrl,
+      timeoutMs: comfyTimeoutMs,
+      skillEnabled: form.comfySkillEnabled,
+    }
+  }
 
   const gate: NonNullable<RelayConfigPatch['gate']> = {}
   const debounceText = form.gateDebounce.trim()

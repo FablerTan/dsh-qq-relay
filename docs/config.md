@@ -1,6 +1,6 @@
 # 配置总表（哪些能改、现在能不能在配置页改、改了怎么生效）
 
-> 状态：**v0.18.0（2026-10-19）**。本文是**操作参考**：每个配置项的默认值 / 取值范围 /
+> 状态：**v0.21.0（2026-10-19）**。本文是**操作参考**：每个配置项的默认值 / 取值范围 /
 > 现在能不能在配置页改 / 改完之后怎么生效，外加一张**写死常量清单**（那些"想调但没暴露"的数）。
 > 字段为什么这样设计见 [architecture.md §2.1](./architecture.md)；配置页在哪、层序与 HTTP 契约见
 > [client.md](./client.md)；具体行为见各自专题文档。
@@ -155,6 +155,24 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 - 每会话首次派发时应用预设的模型（追加 `model/selection`，不覆盖用户手动选择）与权限
   （`permissionPresets.set`），详见 [persona.md](./persona.md) §4。
 
+### 2.12 画图（ComfyUI，v0.21.0）
+
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
+|---|---|---|---|---|---|
+| `comfy.enabled` | `false` | 布尔 | 画图总开关；关闭时停止探测并注销 `comfy-image` skill | 可 | 保存后立即探测 |
+| `comfy.baseUrl` | `http://192.168.1.10:8188` | 非空 `http://` / `https://` URL | ComfyUI 地址（无鉴权，只放可信网络）；尾部斜杠会被去掉 | 可 | 同上 |
+| `comfy.timeoutMs` | `30000` | 整数 `3000..120000`（毫秒） | 探测 / 连接测试超时 | 可 | 同上 |
+| `comfy.skillEnabled` | `true` | 布尔 | 连上后是否把 `comfy-image` runtime skill 注册给 DSH | 可 | 同上 |
+
+- 语义：host 探测 `<baseUrl>/system_stats` + `/queue`；**首次连上**且 `enabled && skillEnabled`
+  才注册插件自带的 `comfy-image` skill；之后探测失败**不注销**（避免目录抖动），
+  关闭 `enabled` 或 `skillEnabled` 才注销。详见 [comfy.md](./comfy.md)。
+- **保存后行为**：先按新配置探测，再决定是否注册；仅 `comfy` 变化**不重建 relay 连接**，
+  也不需要重启 GUI（skill 注册在运行时完成）。
+- 「测试连接」走 `POST /dsh-qq-relay/api/comfy/test`（body 可带未保存的 `baseUrl` / `timeoutMs`；
+  **只探测、不保存**），契约见 [client.md](./client.md) §5。
+- 旧 host 缺 `comfy` 段时页面按关闭兜底（`config.comfySupported = false`），提示重启 GUI。
+
 ## 3. 写死的常量（想调得先改成配置段）
 
 这些目前是代码里的常量，**不在配置里**；下表列出位置与含义，作为"要不要顺手做成配置"的参考。
@@ -178,20 +196,25 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 | `model/commands.js` | 命令别名 | `newchat`/`reset`、`cancel`、`info`、`?`/`菜单` | 命令识别（改不了，除改代码） |
 | `model/approval.js` | 同意 / 拒绝词 | 同意 / 允许 / ok / yes…、拒绝 / no / deny… | 审批文本判定词表 |
 | `model/cleanup.js` | 手动清理区间 | `1..3650` 天 | 「立即清理」允许比自动清理（`0` / `7..3650`）更激进 |
+| `controller/comfy.js` | `COMFY_CHECK_INTERVAL_MS` | 60s | 画图探测周期（状态轮询另有 30s 的补探阈值） |
+| `model/comfy.js` | `COMFY_SKILL_NAME` / `COMFY_SKILL_DESCRIPTION` | `comfy-image` / 约 100 字 | 动态注册的 skill 名与目录描述（DSH 目录只显示前 500 字符） |
 
 ## 4. 配置页覆盖矩阵
 
-- **现在可改（13 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项）**：
+- **现在可改（14 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项 +
+  4 个 comfy 子项）**：
   `wsUrl`、`accessToken`、`selfId`、`groups`、`workspace`、`groupWorkspaces`（表格）、
   `chatRetentionDays`、`sessionTitle`、`replyChunkSize`、`commandPrefixes`、
   `proxyReply`（`enabled` / `targets` / `silenceWindow`）、`agentPreset`、
-  `persona`（`enabled` / `text`），以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
+  `persona`（`enabled` / `text`）、`comfy`（`enabled` / `baseUrl` / `timeoutMs` / `skillEnabled`），
+  以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
 - **patch 只读（26 项）**：`reconnect`（2 子项）、`commands`（3）、`reply`（3）、`poke`（3）、
   `files`（2）、`approval`（3）、`gate` 其余 10 项（`enabled` / `mentionBypass` / `fastWindow` /
   `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` /
   `jevEndpoint` / `jevApiKeyEnv`）。
 - 白名单在两处：`model/settings.js` 的 `EDITABLE_KEYS`（+ `EDITABLE_GATE_KEYS` /
-  `EDITABLE_PROXY_KEYS` / `EDITABLE_PERSONA_KEYS` 与 `pickGate` / `pickProxyReply` / `pickPersona`）
+  `EDITABLE_PROXY_KEYS` / `EDITABLE_PERSONA_KEYS` / `EDITABLE_COMFY_KEYS` 与 `pickGate` /
+  `pickProxyReply` / `pickPersona` / `pickComfy`）
   决定**哪些字段能被页面覆盖并写盘**；`maskConfig` 决定**页面上能看到哪些值**。
   两处都要加，否则出现"能保存但看不到"或反之。
 
@@ -201,11 +224,12 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 1. `lib/model/settings.js`：`EDITABLE_KEYS`（顶层）或对应段的 `pick*` 白名单 + `mergeConfig` 合并分支；
 2. `lib/model/settings.js` 的 `maskConfig`：把值带进 `status.config`（含默认值兜底）；
+   （画图是既有例子：`EDITABLE_COMFY_KEYS` + `pickComfy` + `normalizeComfyConfig` + `maskComfyConfig`。）
 3. `src/model/form.ts`：`RelayFormState` 字段、`formFromConfig`、`buildConfigPatch` 的解析与校验、
    `isFormDirty` 自动跟随；
 4. `src/viewmodel/settings.ts`：把新动作挂进 `RelaySettingsModel`（如果它需要按钮 / 保存时提交）；
 5. `src/view/`：控件（开关 / 时长输入 / 数字 / 多选）落在对应二级页面
-   （`panels/{Connection,Project,Behavior,Records}Panel.tsx`）或 `controls.tsx`；
+   （`panels/{Connection,Project,Behavior,Comfy,Presets,Records}Panel.tsx`）或 `controls.tsx`；
 6. `src/model/api.ts`：`RelayConfigView` / `RelayConfigPatch` 类型；
 7. 测试：`test/settings.test.js`（白名单 / 脱敏 / 合并）、`test/apply.test.js`（保存 → 重建）；
 8. 文档：`docs/client.md` §2/§4、`docs/architecture.md` §2.1、本文 §4。
@@ -220,4 +244,4 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 - 字段设计动机：[architecture.md §2.1](./architecture.md)
 - 闸门参数含义 / 触发规则 / 代答：[gate.md](./gate.md) · 回复体验：[reply.md](./reply.md)
 - 戳一戳：[poke.md](./poke.md) · 群文件：[media.md §5.2](./media.md) · 命令：[commands.md](./commands.md)
-- 审批：[approval.md](./approval.md) · 工具上限：[tools.md](./tools.md)
+- 审批：[approval.md](./approval.md) · 工具上限：[tools.md](./tools.md) · 画图：[comfy.md](./comfy.md)

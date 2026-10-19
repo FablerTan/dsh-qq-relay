@@ -1,0 +1,92 @@
+{
+  "title": "Qwen-Image-2.1 文生图（base 20 步）",
+  "file": "qwen_image_2_1_t2i.api.json",
+  "source": "用户 2026-10-13 导出（sha256 25b1838b），2026-10-17 按用户实测切换：turbo/8 步/heun/simple → base/20 步/euler/beta（sha256 3f066dd3）。原导出备份见 backups/workflows-pre-base-20261017.tar.gz",
+  "verified": "2026-10-17 实测 16.0s 出 1376x768（16:9 / 1.0MP / base 20 步），产物 素材/output/Qwen_image_2.1_00041.png；旧 turbo 版为 10.0s",
+  "notes": [
+    "9 个节点，纯文生图：TextEncodeQwenImage21 的 images（autogrow，min=0）留空，尺寸只由 13 ResolutionSelector 决定。",
+    "2026-10-17 起默认 base 主干（qwen_image_2.1_int8_convrot）+ 20 步 + euler/beta，cfg 1.0：用户实测比 turbo 8 步干净得多（turbo 的颗粒/斑驳纹理是蒸馏带来的）。切回 turbo 时记着把 steps 改回 8。采样器/调度器仍未开放给 schema。",
+    "与 qwen-edit 的差别：没有参考图输入，也没有 ComfySwitchNode（不需要在参考图尺寸与选择器尺寸之间切换）。"
+  ],
+  "params": {
+    "prompt": {
+      "node": "459:452",
+      "field": "prompt",
+      "type": "string",
+      "required": true,
+      "description": "正向提示词，中英文均可。"
+    },
+    "negative_prompt": {
+      "node": "459:452",
+      "field": "negative_prompt",
+      "type": "string",
+      "default": "",
+      "description": "负向提示词。cfg=1.0 时 ComfyUI 跳过 uncond 分支，此项不生效。"
+    },
+    "aspect": {
+      "node": "13",
+      "field": "aspect_ratio",
+      "type": "enum",
+      "default": "1:1 (Square)",
+      "options": [
+        "1:1 (Square)",
+        "2:3 (Portrait Photo)",
+        "3:2 (Photo)",
+        "3:4 (Portrait Standard)",
+        "4:3 (Standard)",
+        "9:16 (Portrait Widescreen)",
+        "16:9 (Widescreen)",
+        "21:9 (Ultrawide)"
+      ],
+      "description": "宽高比。megapixels 固定时按此比例换算像素。"
+    },
+    "megapixels": {
+      "node": "13",
+      "field": "megapixels",
+      "type": "number",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 16.0,
+      "description": "目标总像素（百万）。1.0 ≈ 1024x1024。"
+    },
+    "multiple": {
+      "node": "13",
+      "field": "multiple",
+      "type": "integer",
+      "default": 8,
+      "min": 8,
+      "max": 128,
+      "description": "尺寸对齐的倍数。导出值是 8（该模型的潜空间下采样倍数）。"
+    },
+    "seed": {
+      "node": "459:458",
+      "field": "seed",
+      "type": "integer",
+      "random": true,
+      "description": "随机种子。不指定时由运行器随机生成。"
+    },
+    "steps": {
+      "node": "459:458",
+      "field": "steps",
+      "type": "integer",
+      "default": 20,
+      "min": 1,
+      "description": "采样步数。base 用 20（官方模板 25、官方说明 40–50）；若切回 turbo 用 8。"
+    },
+    "cfg": {
+      "node": "459:458",
+      "field": "cfg",
+      "type": "number",
+      "default": 1.0,
+      "min": 0.0,
+      "description": "CFG 强度。官方路径用 1.0；>1 时负向才生效，但要多算一遍 uncond（约 2× 时间）。"
+    },
+    "filename_prefix": {
+      "node": "461",
+      "field": "filename_prefix",
+      "type": "string",
+      "default": "Qwen_image_2.1",
+      "description": "产物文件名前缀，最终落在远端 素材/output/，并由运行器下载回本机。"
+    }
+  }
+}

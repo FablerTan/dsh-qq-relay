@@ -16,7 +16,8 @@
 > **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现并真机验收（2026-10-19），见 [poke.md](./poke.md)。
 > **P9 入向群文件**：`group_upload` → 下载落盘 → 可选直通，v0.16.0 已实现（2026-10-19），见 [media.md](./media.md) §5.2。
 > **P10** 已落地（v0.17.0）；**P11** 已完成（v0.18.0）；**P13.1 角色预设** 已落地（v0.19.0），
-> 预设管理 + 模型 / 思考层级 / 权限已落地（v0.20.0）。
+> 预设管理 + 模型 / 思考层级 / 权限已落地（v0.20.0）；**P14 画图能力（ComfyUI 探测 + 动态 skill）**
+> 已落地（v0.21.0），见 [comfy.md](./comfy.md)。
 > **P12 环境一键安装 / P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，状态：**规划中**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
@@ -583,6 +584,46 @@
   2. 发送样式：先做「收藏表情」（`image` + `sub_type: 1`）；商城 `mface` 需先协议实测
      `emoji_id / emoji_package_id / key` 是否可复用，再决定是否支持。
   3. 排期：P13.2 发送 → P13.3 学习；与 P12 环境向导的先后待定。
+
+## P14 画图能力：ComfyUI 探测 + 动态 skill（v0.21.0 已实现，2026-10-19）
+
+目标：让 agent 能按群里的要求画图 / 改图，并把结果直接发回群；配置入口在插件面板，不重启 GUI。
+
+### 范围（v0.21.0）
+
+- **`comfy` 配置段**：`enabled`（默认 false）/ `baseUrl`（默认 `http://192.168.1.10:8188`）/
+  `timeoutMs`（默认 30000，3s..120s）/ `skillEnabled`（默认 true），四项都能在配置页「画图」页改。
+- **host 探测 + 动态 skill**（`controller/comfy.js`）：探测 `/system_stats` + `/queue`
+  （60s 周期 + 状态轮询补探）；首次连上且开关允许时 `ctx.skills.register` 注册插件自带的
+  `comfy-image` runtime skill（`source=custom` / `provider=dsh-qq-relay` /
+  `resourceBase=lib/skills/comfy-image`）；探测失败**不注销**（抖动保持），
+  关闭 `enabled` / `skillEnabled` 才注销。
+- **模板渲染**（`model/comfy.js`）：`SKILL.md` 的 `{{COMFY_HOST}}` / `{{SKILL_DIR}}` 在注册前替换，
+  剥 frontmatter，残留占位符拒绝注册；comfy 配置校验 / 脱敏视图。
+- **配置页 + 路由**：「画图」二级页（开关 / 地址 / 超时 / skill 开关 / 测试连接 / 运行状态）+
+  `POST /dsh-qq-relay/api/comfy/test`（只探测不保存）；仅 `comfy` 变化不重建 relay。
+- **三个工作流**：`qwen-t2i`（文生图）/ `qwen-i2i`（参考图编辑）/ `qwen-edit`（另一种编辑流）；
+  产物落 `<群项目>/assets/comfy/output/`，由 `qq_send` 的 `images` 回发群。
+
+### 验收状态（2026-10-19）
+
+- ✅ 单测 275 个全过（新增 9 个 comfy 用例：配置 / 模板渲染 / probe / 注册与抖动保持 /
+  测试连接 / `/api/comfy/test` 异步回归；config / settings / apply 断言同步）。
+- ✅ client 构建通过，`lib/client.js` 已含 ComfyPanel 文案；文档同步（新增
+  [comfy.md](./comfy.md)，README / AGENTS / config / client / architecture / media 同步）。
+- ✅ 真实 ComfyUI 0.39.0（RTX 4070，`192.168.1.10:8188`）：isolated DSH 实例启动后
+  `status.comfy.reachable = true`、`skill.loaded = true`；`POST /api/comfy/test` 用错误地址
+  返回 `ok=true` + `probe.reachable=false`。
+
+### 验收
+
+- 配置页「画图」页开 `enabled`、填地址，点「测试连接」→ 看到版本 / GPU / 队列 / 延迟；
+  错误地址 → `ok=true` + `reachable=false`，不改配置。
+- 保存后约 1 分钟内状态里 `comfy.reachable=true`、`skill.loaded=true`（无需重启 GUI）。
+- QQ 群说「画一张夕阳下的猫」→ agent 触发 skill，先回「正在画…」，产物落在
+  `<群项目>/assets/comfy/output/` 后用 `qq_send images` 发回群。
+- 改图：先发参考图，再说「改成雪景」→ 走 `qwen-i2i`（人物一致性）或 `qwen-edit`（尺寸控制）。
+- 关闭 `enabled` / `skillEnabled` → 下一轮探测后 skill 注销；ComfyUI 抖动 / 重启 → skill 保持注册。
 
 ## 协议级联调验收（2026-10-19，AI 代理执行，非真机）
 

@@ -2,7 +2,7 @@
 
 > 状态：**v0.9.0 入向媒体落盘；v0.9.1 修正扩展名（按真实文件头识别）；
 > v0.12.0 扩展到视频 / 语音入向，并支持出向图片 / 文件；
-> v0.16.0 增加入向群文件（`group_upload`）**。
+> v0.16.0 增加入向群文件（`group_upload`）；v0.21.0 补画图产物经 `qq_send` 的 `images` 回发**。
 > 本文是媒体落盘、聊天记录 / prompt 引用与出向发送的现状记录。
 > 聊天记录与消息拼接见 [chat-context.md](./chat-context.md)，`qq_send` 契约见 [tools.md](./tools.md)。
 >
@@ -17,6 +17,8 @@
   `.qq-relay/media/`，聊天记录与 prompt 引用路径（见 §5.2）。
 - **出向**（v0.12.0）：`qq_send` 可发图片（本地路径 / URL）与上传群文件（本地路径）；
   NapCat 跑在 Docker 里看不到宿主路径，所以本地文件一律读成 base64 走 WS。
+- **画图产物回发**（v0.21.0）：ComfyUI 出图 / 改图的结果落在 `<项目>/assets/comfy/output/`，
+  再由 `qq_send` 的 `images` 发回群（见 §5.3）。
 - 不做：入向媒体转 DSH 附件、视频 / 语音转文字（见 §9 backlog）。
 
 ## 2. 存储布局
@@ -31,6 +33,8 @@
 ```
 
 - 项目目录解析与聊天记录一致（见 chat-context §4）；`.gitignore` 由 `ensureRelayDir` 保证。
+- 画图产物在 `<项目>/assets/comfy/output/`、参考图暂存在 `<项目>/assets/comfy/input/`（v0.21.0）；
+  它们是**普通项目文件，不在 `.qq-relay/` 内**，不参与聊天记录 / 媒体的保留天数与「立即清理」。
 - 文件名：消息媒体用 `<messageId>-<序号>`，序号按**可下载媒体**在消息内的顺序从 0 起；
   群文件用 `<fileId>-<安全文件名><扩展名>`（v0.16.0），见 §5.2。
 - 扩展名以**实际内容**为准（v0.9.1）：文件头 magic bytes（JPEG / PNG / GIF / WEBP / BMP）
@@ -135,6 +139,19 @@
 - **为什么默认接话**：群文件上传没有「@」的机会，上传本身就是一次「给你看这个」的交互；
   群里文件很多时把 files.react 设为 false，降成纯记录。
 - **清理**：群文件与消息媒体落在同一个日期目录，按 chatRetentionDays / 立即清理一起删除。
+
+## 5.3 画图产物经 `qq_send` 的 `images` 回发（v0.21.0）
+
+- **来源**：`comfy-image` skill 用 ComfyUI 出图 / 改图，runner 把产物下载到
+  `<群项目>/assets/comfy/output/`（默认目录，基于会话工作目录）。
+- **回发**：agent 用 `qq_send({ images: ["<本地绝对路径>"], text: "…" })` 发回群；
+  一次最多 4 张、单张 ≤ 10 MiB、必须是支持的图片格式；也可传 http(s) URL（由 NapCat 下载）。
+- **发送路径与 §5.1 完全相同**：本地文件读成 `base64://…` 交给 `send_group_msg` 的 image 段
+  （NapCat 在 Docker 里看不到宿主路径）；离线**不排队**，直接报错让调用方决定重试。
+- **参考图**优先用群里最近收到的图片（`.qq-relay/media/` 下的本地路径），不要让用户重传；
+  改图时 runner 的 `--set image=@<绝对路径>` 会自动上传到远端 ComfyUI 的 input 目录。
+- 一次工作流只出一张；要多张候选就换 seed 多跑几次再挑，本轮最多发 4 张（避免刷屏）。
+- 画图能力与 skill 生命周期见 [comfy.md](./comfy.md)；工具契约见 [tools.md](./tools.md)。
 
 ## 6. 与 jev 的关系
 

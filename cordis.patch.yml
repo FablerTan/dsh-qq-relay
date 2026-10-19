@@ -22,6 +22,9 @@
 # v0.19.0 adds a plugin-provided agent preset (formerly declared statically here) and
 # persona support; v0.20.0 moves presets into `presets.json` (editable in the page)
 # and registers them dynamically at boot, so this patch stays a single plugin row.
+# v0.21.0 adds the optional ComfyUI drawing capability: the host probes the
+# configured service and registers the bundled `comfy-image` skill at runtime
+# (no extra row / preset changes needed).
 - insert:
     - id: dsh-qq-relay
       name: dsh-qq-relay

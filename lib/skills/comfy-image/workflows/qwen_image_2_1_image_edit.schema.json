@@ -1,0 +1,107 @@
+{
+  "title": "Qwen-Image-2.1 图像编辑（turbo，单参考图）",
+  "file": "qwen_image_2_1_image_edit.api.json",
+  "source": "用户从 Web 界面 File → Export Workflow (API) 导出，sha256 ed671814c15cf78b，原样登记未改",
+  "verified": "2026-10-13 实测三跑：原样 6.0s / 864x480；size_mode=selector 9.0s / 1024x1024；换参考图 12.0s",
+  "notes": [
+    "459:468 ComfySwitchNode 决定潜空间来源，语义反直觉：false = 用参考图自身尺寸（此时 13 ResolutionSelector 完全不生效），true = 用 ResolutionSelector 的尺寸；两种情况下参考图都通过 reference_latents 作为条件注入。",
+    "459:474 resolution=0 表示参考图保持自身尺寸（对齐到 32）；调大则把参考图压到约 resolution² 像素，更快但丢细节。",
+    "出图尺寸 = 参考图尺寸对齐到 32（size_mode=reference 时），想固定比例必须切 size_mode=selector。",
+    "472 ImageCompare 是输出节点，compare_view 以 {\"__value__\": [...]} 形式导出，服务端接受，不影响出图。",
+    "想接多张参考图：TextEncodeQwenImage21 的 images 支持 image_1..image_16，但本图只导出了 image_1 一个槽，需要新增加载节点（见 references/workflow-contracts.md）。"
+  ],
+  "params": {
+    "prompt": {
+      "node": "459:474",
+      "field": "prompt",
+      "type": "string",
+      "required": true,
+      "description": "编辑指令。写法建议：先说改什么，再说明什么保持不变。"
+    },
+    "image": {
+      "node": "470",
+      "field": "image",
+      "type": "image",
+      "required": true,
+      "description": "被编辑的参考图。可传 @本机路径（运行器自动上传到远端 素材/input/），或远端 素材/input/ 中已有的文件名。"
+    },
+    "negative_prompt": {
+      "node": "459:474",
+      "field": "negative_prompt",
+      "type": "string",
+      "default": ""
+    },
+    "size_mode": {
+      "node": "459:468",
+      "field": "switch",
+      "type": "enum",
+      "default": "reference",
+      "options": {
+        "reference": false,
+        "selector": true
+      },
+      "description": "reference = 出图尺寸跟随参考图（aspect/megapixels 无效）；selector = 用 ResolutionSelector 指定尺寸。"
+    },
+    "aspect": {
+      "node": "13",
+      "field": "aspect_ratio",
+      "type": "enum",
+      "default": "1:1 (Square)",
+      "options": [
+        "1:1 (Square)",
+        "2:3 (Portrait Photo)",
+        "3:2 (Photo)",
+        "3:4 (Portrait Standard)",
+        "4:3 (Standard)",
+        "9:16 (Portrait Widescreen)",
+        "16:9 (Widescreen)",
+        "21:9 (Ultrawide)"
+      ],
+      "description": "仅 size_mode=selector 时生效。"
+    },
+    "megapixels": {
+      "node": "13",
+      "field": "megapixels",
+      "type": "number",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 16.0,
+      "description": "仅 size_mode=selector 时生效。"
+    },
+    "ref_resolution": {
+      "node": "459:474",
+      "field": "resolution",
+      "type": "integer",
+      "default": 0,
+      "min": 0,
+      "max": 4096,
+      "description": "参考图被压到的目标像素量（约 resolution²）。0 = 保持原尺寸、仅对齐 32。"
+    },
+    "seed": {
+      "node": "459:458",
+      "field": "seed",
+      "type": "integer",
+      "random": true
+    },
+    "steps": {
+      "node": "459:458",
+      "field": "steps",
+      "type": "integer",
+      "default": 8,
+      "min": 1
+    },
+    "cfg": {
+      "node": "459:458",
+      "field": "cfg",
+      "type": "number",
+      "default": 1.0,
+      "min": 0.0
+    },
+    "filename_prefix": {
+      "node": "461",
+      "field": "filename_prefix",
+      "type": "string",
+      "default": "qwen_edit"
+    }
+  }
+}

@@ -9,8 +9,10 @@
 > P7 client 面板增强（闸门每群状态 / 最近消息 / 映射管理）已实现（v0.14.0，见 [client.md](./client.md)）；
 > P8 戳一戳识别与回戳（被戳接话 / 互戳记录 / `qq_poke`）已实现（v0.15.0，见 [poke.md](./poke.md)）；
 > P9 入向群文件（`group_upload` → 下载落盘 → 可选直通）已实现（v0.16.0，见 [media.md §5.2](./media.md)）；
-> P10 配置页迁到插件面板（`plugins.bundle.config`，四个二级页面，样式走宿主 `--dsw-*` token）
-> 已实现（v0.17.0，见 [client.md](./client.md)）**。
+> P10 配置页迁到插件面板（`plugins.bundle.config`，二级页面，样式走宿主 `--dsw-*` token）
+> 已实现（v0.17.0，见 [client.md](./client.md)）；角色预设（v0.19.0/v0.20.0，见 [persona.md](./persona.md)）；
+> **v0.21.0 画图能力（ComfyUI 探测 + 动态注册 `comfy-image` runtime skill）已实现，见
+> [comfy.md](./comfy.md)**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -19,8 +21,8 @@
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
 - **client 半身**在**插件面板的组合包页**里提供配置页（P1.5/P4/P7/P10）：连接状态、配置编辑、
-  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理，按「连接 / 项目 / 行为 / 记录」
-  分二级页面（契约见 [client.md](./client.md)）；审批开关等仍在后续。
+  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理、画图（ComfyUI）配置与状态，按
+  「连接 / 项目 / 行为 / 画图 / 预设 / 记录」分二级页面（契约见 [client.md](./client.md)）；审批开关等仍在后续。
 - 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
   插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
@@ -69,6 +71,7 @@
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 | `agentPreset` | string | `''` | 群会话使用的 DSH agent preset id；空 = 宿主默认。插件自带 `qq-relay`（显示名「QQ 群聊」）。preset 在会话创建时固定，详见 [persona.md](./persona.md) |
 | `persona` | object | `{ enabled: false, text: '' }` | 轻量人设（v0.19.0）：每轮 prompt 头部 `[角色设定：…]`；≤4000 字符，默认关闭 |
+| `comfy` | object | `{ enabled: false, baseUrl: 'http://192.168.1.10:8188', timeoutMs: 30000, skillEnabled: true }` | 画图（v0.21.0）：ComfyUI 探测开关 / 地址 / 探测超时（3s..120s）/ 连上后是否注册 `comfy-image` skill，详见 [comfy.md](./comfy.md) |
 
 - 会话映射 / 闸门状态 / 决策日志落在 `~/.dsh/storages/dsh-qq-relay/`；**聊天日志（P4）落在各群项目下的
   `<项目>/.qq-relay/chat/<群号>/YYYY-MM-DD.jsonl`**（agent 可直接 read；目录内 `.gitignore` 为 `*` 自我忽略）。
@@ -80,12 +83,24 @@
   `ctx.agentPresets.register()` 动态注册成 DSH agent preset，保存后立即重新注册。组合表来自
   `lib/model/preset-template.js`（内置 `standard` 快照），见 [persona.md](./persona.md)。
   每群会话首次派发前应用预设的模型（追加 `model/selection`）与权限（`permissionPresets.set`）。
+- **画图 comfy controller（v0.21.0）**：组合根构造 `createComfyController({ getConfig })` 后
+  `start()` + 启动探测；`skills` 服务晚于插件就绪（或不存在）时，
+  `ctx.inject(['skills'], (skillsCtx) => comfyController.attachSkills(skillsCtx.skills))` 再挂载。
+  控制器周期探测 ComfyUI（`/system_stats` + `/queue`），**首次连上**且配置允许时调用
+  `ctx.skills.register({ name: 'comfy-image', source: 'custom', provider: 'dsh-qq-relay',
+  resourceBase: { kind: 'directory', path: '<插件>/lib/skills/comfy-image' }, content })`
+  注册 runtime skill；探测失败**不注销**（避免目录抖动），显式关闭 `enabled` / `skillEnabled` 才注销。
+  **与 preset 注册是两条独立链路**：preset 走 `ctx.agentPresets.register()`，影响新建会话的
+  提示词 / 组合表；skill 走 `ctx.skills.register()`，影响所有会话的可用技能。两者都不重启 GUI，
+  服务缺失时都软失败（`status.comfy.supported = false` / `presetService.supported = false`）。
 - **配置页覆盖（P1.5）**：插件面板 → dsh-qq-relay 组合包页保存的字段写入
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /
   sessionTitle / replyChunkSize / commandPrefixes / gate.{debounce,fastMinReplyInterval,jevThreshold} /
-  proxyReply.{enabled,targets,silenceWindow} / agentPreset / persona.{enabled,text}` 可覆盖，
-  其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
+  proxyReply.{enabled,targets,silenceWindow} / agentPreset / persona.{enabled,text} /
+  comfy.{enabled,baseUrl,timeoutMs,skillEnabled}` 可覆盖，
+  其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI；仅 `comfy` 变化时不重建
+  relay，只重新探测并决定是否注册 skill。
   `groupWorkspaces` 是整表替换；已映射群改项目后需在配置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
   契约、HTTP 面与安全边界见 [client.md](./client.md)。
 
@@ -100,12 +115,14 @@ lib/
 │   │   ├── api.js            # action 调用封装（send_group_msg 等）与 retcode 处理
 │   │   └── codec.js          # OneBot 事件 / 消息段 → 内部消息模型
 │   ├── runtime.js            # 运行实例：client+api+relay 三件套，支持整份配置热替换
-│   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect / rebind / cleanup / messages / mapping
+│   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect / rebind / cleanup / messages / mapping / presets / comfy test
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
 │   ├── tools.js              # qq_send / qq_poke 工具定义（P3 / v0.15.0：手写 ToolDefinition，零外部依赖）
 │   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
-│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）
+│   ├── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）
+│   └── comfy.js              # 画图（v0.21.0）：探测 ComfyUI / ctx.skills.register 动态注册 / 抖动保持 / 测试连接
+├── skills/comfy-image/       # 插件自带画图 skill（SKILL.md 模板 / scripts / workflows / references），随包发布
 └── model/
     ├── config.js             # 配置默认值与校验
     ├── settings.js           # 配置页覆盖：层序合并、token 脱敏、settings.json 原子读写
@@ -122,18 +139,20 @@ lib/
     ├── commands.js           # QQ 侧命令层纯逻辑（P5）：命令解析 / 角色校验 / 回复文案
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
     ├── jev.js                # jev 分类器（P2.3）：OpenRouter Decisions API / Noul / 阈值 / fail closed
-    └── reply.js              # 回复切分、退避、发送失败分类
+    ├── reply.js              # 回复切分、退避、发送失败分类
+    └── comfy.js              # 画图配置（v0.21.0）：comfy 段校验 / 脱敏视图 / SKILL.md 模板渲染
 ~~~
 
 client 半身（`src/`）只做配置页（MVVM 三层）：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch
 纯逻辑）→ `src/viewmodel/settings.ts`（状态 / 动作 hook、状态文案、二级页面定义）→ `src/view/`
-（`SettingsPage` 外壳、`controls`、`theme` 注入的 `--dsw-*` 样式、`panels/*` 四个二级页面）；
+（`SettingsPage` 外壳、`controls`、`theme` 注入的 `--dsw-*` 样式、`panels/*` 六个二级页面）；
 `src/client.tsx` 只做注册与装配（`plugins.bundle.config`，key = 包名）。host 半身只依赖 lib/model/。
 
 P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增 `controller/{runtime,config-routes,http}.js`
 与 `model/settings.js`；P2.1/P2.3 新增 `controller/gate.js` 与 `model/{gate,jev,gate-log}.js`；
-P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `model/{project,prompt}.js`，
+P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；v0.21.0 新增
+`controller/comfy.js`、`model/comfy.js` 与 `lib/skills/comfy-image/`（画图 runtime skill）；P4 新增 `model/{project,prompt}.js`，
 聊天日志改由群项目路由（`chat-log.js` 的 `rootFor` + `migrateLegacyChatLogs`）；P5 新增
 `model/commands.js`，命令分发与 `createSessionForGroup` / `sendSystemReply` 在 `controller/relay.js`。
 
@@ -195,6 +214,9 @@ ctx.on('agent/error', ...)          # 失败提示
   「同意 / 拒绝」；见 [approval.md](./approval.md)。
 - **戳一戳（v0.15.0）**：入向 `notice.notify.poke` 写聊天记录，戳 bot 时直通起一轮；`qq_poke`
   工具让 agent 回戳白名单群成员（`group_poke`，离线报错不排队）；见 [poke.md](./poke.md)。
+- **画图（v0.21.0）**：skill 由 skills 服务动态注册，agent 在任意会话（含 QQ 群会话）可触发；
+  产物落在群项目 `assets/comfy/output/`，再用 `qq_send` 的 `images` 发回群（见
+  [comfy.md](./comfy.md) / [media.md §5.3](./media.md)）。
 - 失败 / 中断：按配置发简短提示或静默。
 
 ## 5. 会话映射
@@ -223,6 +245,9 @@ ctx.on('agent/error', ...)          # 失败提示
 - **审批**：P3 用文本命令（同意 / 拒绝）实现 QQ 侧审批；v1 先依赖 DSH 现有审批。
 - **提示注入**：群成员文本一律视为不可信输入；工作目录限定；操作留审计日志。
 - **本地接口**：NapCat WS 只监听回环地址；启用 access_token；不暴露公网。
+- **画图服务（v0.21.0）**：ComfyUI **无鉴权**，任何能访问 `comfy.baseUrl` 的人都能提交任务；
+  `POST /prompt` 可提交任意节点图、自定义节点里能跑任意 Python，等于**远端执行权**。
+  只放可信网络、不暴露公网；skill 运行器只允许 schema 白名单参数，不要绕过它直连。
 - **隐私**：聊天日志落在群项目内的 `.qq-relay/`（自忽略、不进 git），默认**永久保留**
   （`chatRetentionDays: 0`）；需要时配天数自动清理，或在配置页「记录」里「立即清理」（媒体按日期目录一起清）。
 决策日志仍在 storage 下按 7 天保留。

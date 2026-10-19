@@ -6,7 +6,7 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.20.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.21.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -16,13 +16,15 @@
 > （闸门每群状态 / 最近消息 / 映射管理）已落地、P8 戳一戳识别与回戳
 > （被戳接话 / 互戳记录 / `qq_poke`）已真机验收、P9 入向群文件
 > （`group_upload` → 下载落盘 → 可选直通）已落地（2026-10-19）、P10 配置页迁到插件面板
-> （`plugins.bundle.config`，四个二级页面，样式走宿主 `--dsw-*` token）已落地（v0.17.0）；
+> （`plugins.bundle.config`，二级页面现为六个，样式走宿主 `--dsw-*` token）已落地（v0.17.0）；
 > v0.18.0 修正触发规则（引用别人消息 / @ 别人不再触发会话）并加**可选代答**
 > （`proxyReply`：@ 名单里的人且 TA 最近没说话时代 TA 回应，默认关闭）；
 > v0.19.0 加**角色预设与轻量人设**（bundle patch 自带 `qq-relay` agent preset，配置页可选
 > preset、prompt 注入 `persona` 与「最终回复自动回发」平台约定）；v0.20.0 把预设收进插件
 > （`presets.json`，配置页「预设」页增删改 + 逐预设模型 / 思考层级 / 权限，动态注册，见
-> [docs/persona.md](./docs/persona.md)）；上级 §0 已仅对本插件解除。
+> [docs/persona.md](./docs/persona.md)）；v0.21.0 加**画图能力**（探测配置的 ComfyUI，连上后动态
+> 注册插件自带的 `comfy-image` runtime skill + 配置页「画图」页，见
+> [docs/comfy.md](./docs/comfy.md)）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
@@ -30,7 +32,9 @@
   落点 = 插件面板里 dsh-qq-relay 组合包页面（`plugins.bundle.config`，key = 包名）；
   现有 `src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）+ `src/viewmodel/settings.ts`
   （状态 / 动作 hook、状态文案、二级页面定义）+ `src/view/`（`SettingsPage.tsx` 外壳、
-  `controls.tsx` 公共控件、`theme.ts` 注入的 `--dsw-*` 主题样式、`panels/{Connection,Project,Behavior,Records}Panel.tsx`）；
+  `controls.tsx` 公共控件、`theme.ts` 注入的 `--dsw-*` 主题样式、
+  `panels/{Connection,Project,Behavior,Comfy,Presets,Records}Panel.tsx`；`ComfyPanel` = 「画图」二级页
+  （v0.21.0：开关 / 地址 / 超时 / skill 开关 / 测试连接 / 运行状态））；
   新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
 - `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**，
   分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发、配置页 HTTP 面）+ `lib/model/`
@@ -59,8 +63,13 @@
   （最近消息查询校验 + 只读视图），面板路由 `messages` / `mapping/delete` / `mapping/clear`
   在 `controller/config-routes.js`，relay 暴露只读 `snapshot()` 供状态快照使用；P8（v0.15.0）在
   `controller/relay.js` 增加戳一戳识别（`handlePoke`：被戳直通 / 互戳记录 / 每群冷却）与出向 `poke`，
-  `controller/tools.js` 增加 `qq_poke`（NapCat `group_poke`），配置段为 `poke`
-- `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页；新增后在 README「文档索引」登记
+  `controller/tools.js` 增加 `qq_poke`（NapCat `group_poke`），配置段为 `poke`；
+  v0.21.0 新增 `controller/comfy.js`（ComfyUI 探测 / `ctx.skills.register` 动态注册 / 探测失败不注销的
+  抖动保持 / 「测试连接」）、`model/comfy.js`（`comfy` 配置校验 / 脱敏视图 / SKILL.md 模板渲染）与
+  `lib/skills/comfy-image/`（插件自带画图 skill：`SKILL.md` 模板、`scripts/comfy_run.py`、
+  `workflows/`、`references/`；配置页「画图」页是 `src/view/panels/ComfyPanel.tsx`），
+  对应 `comfy` 配置段与 `docs/comfy.md`
+- `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页、画图；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 
 > **本项目不使用 openspec**（用户 2026-10-16 决定）：没有 `openspec/`，也没有
@@ -72,7 +81,7 @@
 | 用途 | 位置 | 何时看 |
 |---|---|---|
 | 本插件总览 / 用途 / 用法 / 版本历史 | [README.md](./README.md) | 任何任务第一步 |
-| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / poke / approval / commands / reply / config / persona） | 动功能前对齐方向 |
+| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / poke / approval / commands / reply / config / persona / comfy） | 动功能前对齐方向 |
 | 某行为是哪个版本引入 / 为何如此 | README「版本历史」 | 追历史与动机 |
 | 仓库纪律 / 渲染树选座 / 工程基线 | 上级 [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 跨插件协作、装入 profile、选 slot |
 
