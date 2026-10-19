@@ -18,7 +18,7 @@
 |---|---|
 | 状态行 | 已连接（昵称 / QQ 号）· 连接中（断线自动重连）· 未启动（配置待补全 / 另一个实例持锁，显示 pid） |
 | 配置表单 | `wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` · `workspace`（默认项目）· `sessionTitle` · `replyChunkSize` · `commandPrefixes` |
-| 闸门表单 | `gate.debounce` · `gate.fastMinReplyInterval` · `gate.jevThreshold`（保存即重建闸门，无需重启；`enabled` 等其余 gate 字段仍 patch 只读） |
+| 闸门表单 | `gate.debounce` · `gate.fastMinReplyInterval` · `gate.jevThreshold`（保存即重建闸门，无需重启；`enabled` 等其余 gate 字段仍 patch 只读）。宿主未加载 v0.10.0 时页面回退显示默认值并提示重启，不会显示 0 |
 | 操作 | 「保存并重连」「重新连接」「刷新」，以及未保存修改提示 |
 | 群项目目录 | 可编辑表格：群号 / 会话（标题 + id 或「未创建」）/ 项目目录（留空 = 跟随默认项目）/ 「重新绑定」按钮（P4） |
 | 提示 | host 回来的校验问题（如 `wsUrl 必填`）逐条显示；保存成功/失败有状态提示 |

@@ -305,6 +305,11 @@ export function RelaySettingsSection(): ReactElement {
 
       <h3 style={{ margin: '14px 0 6px', fontSize: '0.95rem' }}>闸门</h3>
       <p style={{ margin: '0 0 8px', color: MUTED, fontSize: '0.82em' }}>
+        {status !== null && !status.config.gateSupported ? (
+          <span style={{ color: '#e0a23a' }}>
+            宿主还是旧版本（未加载 v0.10.0）：下面三个参数暂时不会生效，请重启 dwdev GUI 后再保存。
+          </span>
+        ) : null}
         {status === null || status.gate === null
           ? '闸门状态读取中…'
           : status.gate.enabled

@@ -38,6 +38,8 @@ export interface RelayConfigView {
   chatRetentionDays: number
   /** 闸门参数（设置页可编辑）。 */
   gate: RelayGateConfigView
+  /** host 是否已经返回 gate 配置（旧版 host 为 false，页面应提示重启）。 */
+  gateSupported: boolean
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -165,13 +167,14 @@ function asStatus(value: unknown): RelayStatusView | null {
       chatRetentionDays: typeof config.chatRetentionDays === 'number' ? config.chatRetentionDays : 0,
       gate: isRecord(config.gate)
         ? {
-            debounceMs: typeof config.gate.debounceMs === 'number' ? config.gate.debounceMs : 0,
+            debounceMs: typeof config.gate.debounceMs === 'number' ? config.gate.debounceMs : 5000,
             fastMinReplyIntervalMs: typeof config.gate.fastMinReplyIntervalMs === 'number'
               ? config.gate.fastMinReplyIntervalMs
-              : 0,
-            jevThreshold: typeof config.gate.jevThreshold === 'number' ? config.gate.jevThreshold : 0,
+              : 45000,
+            jevThreshold: typeof config.gate.jevThreshold === 'number' ? config.gate.jevThreshold : 0.7,
           }
-        : { debounceMs: 0, fastMinReplyIntervalMs: 0, jevThreshold: 0 },
+        : { debounceMs: 5000, fastMinReplyIntervalMs: 45000, jevThreshold: 0.7 },
+      gateSupported: isRecord(config.gate),
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)
