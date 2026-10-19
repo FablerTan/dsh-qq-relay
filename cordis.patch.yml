@@ -8,13 +8,15 @@
 #  - host (`lib/index.js`, exports "."): OneBot 11 forward-WS client, message
 #    gate, qq_send tool and approval bridge;
 #  - client (exports "./client" -> `lib/client.js`, served at
-#    /plugins/dsh-qq-relay/client.js): the "QQ 机器人" settings page; the
-#    browser half's module graph order is declared by `dsh.client.inject` in
-#    package.json.
+#    /plugins/dsh-qq-relay/client.js): the configuration page rendered on this
+#    bundle's own page in the Plugins panel (`plugins.bundle.config`, keyed by
+#    this package name); the browser half's module graph order is declared by
+#    `dsh.client.inject` in package.json.
 #
 # v0.8.0: both halves are live — host runs the OneBot relay / gate / qq_send /
-# approval bridge; client registers the "QQ 机器人" settings section
-# (status, config, per-group project dirs, rebind).
+# approval bridge; client renders the bundle's configuration page (status, config,
+# per-group project dirs, rebind). v0.17.0 moved it from `settings.section` to
+# `plugins.bundle.config` and split the form into 连接 / 项目 / 行为 / 记录 sub-pages.
 - insert:
     - id: dsh-qq-relay
       name: dsh-qq-relay

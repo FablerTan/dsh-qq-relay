@@ -1,7 +1,7 @@
-# 配置总表（哪些能改、现在能不能在设置页改、改了怎么生效）
+# 配置总表（哪些能改、现在能不能在配置页改、改了怎么生效）
 
 > 状态：**v0.16.0（2026-10-19）**。本文是**操作参考**：每个配置项的默认值 / 取值范围 /
-> 现在能不能在设置页改 / 改完之后怎么生效，外加一张**写死常量清单**（那些"想调但没暴露"的数）。
+> 现在能不能在配置页改 / 改完之后怎么生效，外加一张**写死常量清单**（那些"想调但没暴露"的数）。
 > 字段为什么这样设计见 [architecture.md §2.1](./architecture.md)；配置层序与 HTTP 契约见
 > [client.md §3–§5](./client.md)；具体行为见各自专题文档。
 
@@ -10,25 +10,25 @@
 ~~~text
 profile 的 cordis.patch.yml（- id: dsh-qq-relay → config:）
   ↓ 只允许覆盖 EDITABLE_KEYS（见 §4）
-settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存并重连」写入）
+settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存并重连」写入）
   ↓ normalizeConfig 校验（失败 → 400，不写盘、不改内存）
 生效配置（relay 实际使用）
 ~~~
 
 - **patch 里的项**：改完要**重启该 profile 的 GUI** 才生效。
-- **设置页里的项**：保存即重建 client + relay（**不重启**）；但保存会立刻断开当前 WS，
+- **配置页里的项**：保存即重建 client + relay（**不重启**）；但保存会立刻断开当前 WS，
   在途回合会被中止且不回发。
 - token 只写不读：页面永远只显示"已配置 / 来源（patch 或 settings）"。
 - 删掉 settings.json 再重启 = 回到 patch 配置；没有"恢复默认"按钮。
 
 ## 2. 全字段表
 
-"设置页"列：**可** = 现在就能在「设置 → QQ 机器人」里改；**—** = 目前只能改 patch 并重启。
-"生效"列指设置页可改项保存后的效果（patch 项一律重启生效）。
+"配置页"列：**可** = 现在就能在「插件面板 → dsh-qq-relay」配置页里改；**—** = 目前只能改 patch 并重启。
+"生效"列指配置页可改项保存后的效果（patch 项一律重启生效）。
 
 ### 2.1 连接与范围
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `wsUrl` | 必填 | `ws://` 或 `wss://` | NapCat 正向 WS 地址 | 可 | 保存后重连 |
 | `accessToken` | 必填 | 非空字符串 | OneBot access_token；patch 里建议 `!!js process.env.QQ_RELAY_TOKEN` | 可（只写） | 保存后重连 |
@@ -38,7 +38,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 
 ### 2.2 目录与会话
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `workspace` | `~/dsh/qq-relay-ws` | 绝对路径或 `~` 开头 | 默认项目目录（会话 cwd + `.qq-relay` 落盘） | 可 | 只影响之后新建的会话 |
 | `groupWorkspaces` | `{}` | 群号 → 绝对路径 | 群级项目目录，优先于 `workspace` | 可（表格整表提交） | 只影响新会话；改已映射群要「重新绑定」 |
@@ -47,7 +47,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 
 ### 2.3 出向与回复
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `replyChunkSize` | `1500` | `100..20000` | 出向文本切分上限（字符） | 可 | 立即 |
 | `commandPrefixes` | `['/dsh']` | 非空字符串数组 | 以此开头的群消息绕过闸门直通 | 可 | 立即 |
@@ -57,7 +57,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 
 ### 2.4 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `commands.enabled` | `true` | 布尔 | 是否启用命令层（关掉后 `/new` 会被当普通消息转给 DSH） | — | 重启 |
 | `commands.bare` | `true` | 布尔 | 接受裸写 `/new`（不只是 `/dsh new`） | — | 重启 |
@@ -65,7 +65,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 
 ### 2.5 戳一戳
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `poke.enabled` | `true` | 布尔 | 是否处理 `notice.notify.poke` | — | 重启 |
 | `poke.react` | `true` | 布尔 | 被戳（目标是 bot）是否直通起一轮 | — | 重启 |
@@ -73,14 +73,14 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 
 ### 2.6 入向群文件
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `files.enabled` | `true` | 布尔 | 是否处理 `group_upload`（取链接 + 下载落盘） | — | 重启 |
 | `files.react` | `true` | 布尔 | 落盘成功后是否直通起一轮（reason「群文件」） | — | 重启 |
 
 ### 2.7 消息闸门
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `gate.enabled` | `false` | 布尔 | 闸门总开关；关 = 只直通 @ / 引用 / 命令 / 戳 / 群文件 | — | 重启 |
 | `gate.mentionBypass` | `true` | 布尔 | @ / 引用 / 命令直通（绕过闸门） | — | 重启 |
@@ -101,7 +101,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 
 ### 2.8 QQ 侧审批
 
-| 字段 | 默认 | 取值 | 作用 | 设置页 | 生效 |
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
 | `approval.enabled` | `true` | 布尔 | 是否把 DSH 的审批请求发到 QQ 群、用文本决定 | — | 重启 |
 | `approval.timeoutMs` | `120000`（2min） | `10s..10m` | 等回复超时（超时即拒绝） | — | 重启 |
@@ -124,14 +124,14 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 | `model/state.js` | `SEEN_LIMIT` / `PENDING_LIMIT` | 500 / 200 | 去重 id 与待评估消息的持久化上限 |
 | `controller/relay.js` | `NAME_CACHE_TTL_MS` | 10min | 群名 / 昵称补查缓存 |
 | `model/jev.js` | `MAX_TRANSCRIPT` / `MAX_TEXT_CHARS` | 60 条 / 500 字 | 交给 jev 的上下文截断 |
-| `model/panel.js` | 最近消息 | 默认 20 / 上限 100 / 窗口 24h | 设置页面板「最近消息」 |
+| `model/panel.js` | 最近消息 | 默认 20 / 上限 100 / 窗口 24h | 配置页「项目」的最近消息 |
 | `controller/config-routes.js` | 请求体上限 | 64 KiB | 配置页 HTTP 请求体 |
 | `model/project.js` | `RELAY_DIR_NAME` | `.qq-relay` | 项目内隐藏目录名（聊天 / 媒体 / 状态），`.gitignore` 为 `*` |
 | `model/commands.js` | 命令别名 | `newchat`/`reset`、`cancel`、`info`、`?`/`菜单` | 命令识别（改不了，除改代码） |
 | `model/approval.js` | 同意 / 拒绝词 | 同意 / 允许 / ok / yes…、拒绝 / no / deny… | 审批文本判定词表 |
 | `model/cleanup.js` | 手动清理区间 | `1..3650` 天 | 「立即清理」允许比自动清理（`0` / `7..3650`）更激进 |
 
-## 4. 设置页覆盖矩阵
+## 4. 配置页覆盖矩阵
 
 - **现在可改（10 个顶层字段 + 3 个 gate 子项）**：`wsUrl`、`accessToken`、`selfId`、`groups`、
   `workspace`、`groupWorkspaces`（表格）、`chatRetentionDays`、`sessionTitle`、`replyChunkSize`、
@@ -144,7 +144,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
   决定**哪些字段能被页面覆盖并写盘**；`model/settings.js` 的 `maskConfig` 决定**页面上能看到哪些值**。
   两处都要加，否则出现"能保存但看不到"或反之。
 
-## 5. 想放进设置页的成本
+## 5. 想放进配置页的成本
 
 新增一个配置项到页面，改动面固定是这几处：
 
@@ -152,10 +152,12 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页「保存�
 2. `lib/model/settings.js` 的 `maskConfig`：把值带进 `status.config`（含默认值兜底）；
 3. `src/model/form.ts`：`RelayFormState` 字段、`formFromConfig`、`buildConfigPatch` 的解析与校验、
    `isFormDirty` 自动跟随；
-4. `src/view/SettingsSection.tsx`：控件（开关 / 时长输入 / 数字 / 多选）；
-5. `src/model/api.ts`：`RelayConfigView` / `RelayConfigPatch` 类型；
-6. 测试：`test/settings.test.js`（白名单 / 脱敏 / 合并）、`test/apply.test.js`（保存 → 重建）；
-7. 文档：`docs/client.md` §2/§3、`docs/architecture.md` §2.1、本文 §4。
+4. `src/viewmodel/settings.ts`：把新动作挂进 `RelaySettingsModel`（如果它需要按钮 / 保存时提交）；
+5. `src/view/`：控件（开关 / 时长输入 / 数字 / 多选）落在对应二级页面
+   （`panels/{Connection,Project,Behavior,Records}Panel.tsx`）或 `controls.tsx`；
+6. `src/model/api.ts`：`RelayConfigView` / `RelayConfigPatch` 类型；
+7. 测试：`test/settings.test.js`（白名单 / 脱敏 / 合并）、`test/apply.test.js`（保存 → 重建）；
+8. 文档：`docs/client.md` §2/§4、`docs/architecture.md` §2.1、本文 §4。
 
 **整段 vs 单字段**：`poke` / `reply` / `files` / `commands` / `approval` 各只有 2–3 个子项，
 建议**整段白名单**（`pickSection(raw, keys)` 浅合并），比逐字段挑更好维护；`gate` 字段多、

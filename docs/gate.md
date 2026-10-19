@@ -2,7 +2,7 @@
 
 > 状态：**定案（2026-10-18，用户确认）；P2.1/P2.2 已落地，P2.3 jev 分类器已接（OpenRouter
 > `typesafe/jev-1.14`）**——调度 / 去抖 / 最小间隔 / 慢路定时 / 状态持久化 / 发送队列 / 决策日志
-> 已实现并有单测；v0.10.0 起去抖、最小间隔、阈值可在设置页调。v0.11.0 起
+> 已实现并有单测；v0.10.0 起去抖、最小间隔、阈值可在配置页调。v0.11.0 起
 > `/new` / `/stop` / `/status` / `/help` 由命令层在直通之前截获（见 [commands.md](./commands.md)），
 > 不进闸门。目标：决定群里什么时候该由 bot 接话，
 > 控制刷屏与模型成本。协议端事实见 [onebot-channel.md](./onebot-channel.md)，
@@ -155,10 +155,10 @@ gate:
   maxBatchMessages: 100
 ~~~
 
-- **设置页可改（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 三个参数在
-  设置 →「QQ 机器人」→「闸门」里编辑，保存后立即重建闸门（无需重启）；`jevThreshold` 由分类器
-  每次判定时读取，同样即时生效。其余 gate 字段仍只读（改 profile patch + 重启）。
-- 时长可写 `500ms` / `3s` / `10m` / `2h`；设置页保存的值叠加在 patch 之上（同名字段覆盖）。
+- **配置页可改（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 三个参数在
+  插件面板 → dsh-qq-relay 组合包页 → 配置页「行为」里编辑，保存后立即重建闸门（无需重启）；
+  `jevThreshold` 由分类器每次判定时读取，同样即时生效。其余 gate 字段仍只读（改 profile patch + 重启）。
+- 时长可写 `500ms` / `3s` / `10m` / `2h`；配置页保存的值叠加在 patch 之上（同名字段覆盖）。
 
 ## 9. 测试要点
 

@@ -8,7 +8,9 @@
 > P4.2 媒体双向（入向视频 / 语音 + 出向图片 / 文件）已实现（v0.12.0，见 [media.md](./media.md)）；
 > P7 client 面板增强（闸门每群状态 / 最近消息 / 映射管理）已实现（v0.14.0，见 [client.md](./client.md)）；
 > P8 戳一戳识别与回戳（被戳接话 / 互戳记录 / `qq_poke`）已实现（v0.15.0，见 [poke.md](./poke.md)）；
-> P9 入向群文件（`group_upload` → 下载落盘 → 可选直通）已实现（v0.16.0，见 [media.md §5.2](./media.md)）**。
+> P9 入向群文件（`group_upload` → 下载落盘 → 可选直通）已实现（v0.16.0，见 [media.md §5.2](./media.md)）；
+> P10 配置页迁到插件面板（`plugins.bundle.config`，四个二级页面，样式走宿主 `--dsw-*` token）
+> 已实现（v0.17.0，见 [client.md](./client.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -16,8 +18,9 @@
 ## 1. 形态与边界
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
-- **client 半身**提供设置页「QQ 机器人」（P1.5/P4/P7）：连接状态、配置编辑、群项目目录编辑
-  与重新绑定、闸门状态 / 最近消息 / 映射管理（契约见 [client.md](./client.md)）；审批开关等仍在后续。
+- **client 半身**在**插件面板的组合包页**里提供配置页（P1.5/P4/P7/P10）：连接状态、配置编辑、
+  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理，按「连接 / 项目 / 行为 / 记录」
+  分二级页面（契约见 [client.md](./client.md)）；审批开关等仍在后续。
 - 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
   插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
@@ -39,11 +42,11 @@
 | 会话映射 | 默认一个 QQ 群对应一个自动创建的 DSH 会话（草案，见第 5 节） |
 | 审批 / 主动推送 / 媒体 / 面板 | 未定，放 P3 |
 
-### 2.1 配置（P1 + P1.5 设置页）
+### 2.1 配置（P1 + P1.5 配置页）
 
 配置由用户在目标 profile 的插件配置里提供（`apply(ctx, config)` 读取）；**token、QQ 号、
 群号都不进仓库**，只写在 profile 配置里。字段的操作参考（默认值 / 范围 / 现在能否在
-设置页改 / 改完怎么生效）集中在 [config.md](./config.md)，下表是设计视角的摘要：
+配置页改 / 改完怎么生效）集中在 [config.md](./config.md)，下表是设计视角的摘要：
 
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -51,9 +54,9 @@
 | `accessToken` | string | 必填 | OneBot token |
 | `selfId` | number | 必填 | bot 小号 QQ 号，连接后用 `get_login_info` 校验 |
 | `groups` | number[] | 必填 | 群白名单，未列出的群直接丢弃 |
-| `workspace` | string | `~/dsh/qq-relay-ws` | 默认项目目录（会话 cwd + 聊天记录落盘位置）；可在设置页改（只影响之后新建的会话） |
+| `workspace` | string | `~/dsh/qq-relay-ws` | 默认项目目录（会话 cwd + 聊天记录落盘位置）；可在配置页改（只影响之后新建的会话） |
 | `groupWorkspaces` | object | `{}` | 群号 → 项目目录；聊天记录写进 `<项目>/.qq-relay/chat/<群号>/`，会话 cwd 同源；优先级高于 `workspace`，低于已钉住的映射（P4，见 [chat-context.md](./chat-context.md)） |
-| `chatRetentionDays` | number | `0` | 聊天记录保留天数；`0` = 永不自动删除（P4 默认）；`7..3650` 时启动与每日清理；设置页可改，另有「立即清理」路由（v0.13.0） |
+| `chatRetentionDays` | number | `0` | 聊天记录保留天数；`0` = 永不自动删除（P4 默认）；`7..3650` 时启动与每日清理；配置页可改，另有「立即清理」路由（v0.13.0） |
 | `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
@@ -70,11 +73,11 @@
   `- id: dsh-qq-relay` + `config:` 整块替换；token 放 `~/.dsh/.env` 的 `DSH_QQ_RELAY_TOKEN`，
   patch 里用 `!!js 'process.env.QQ_RELAY_TOKEN'` 引用（注意：`DSH_` 前缀是 DSH 启动环境的保留名，不能写进 `.env`）。改配置后需重启该 profile 的 GUI。
 - 临时停用整行：`- id: dsh-qq-relay` + `disabled: true`。
-- **设置页覆盖（P1.5）**：设置 →「QQ 机器人」保存的字段写入
+- **配置页覆盖（P1.5）**：插件面板 → dsh-qq-relay 组合包页保存的字段写入
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /
   sessionTitle / replyChunkSize / commandPrefixes` 可覆盖，其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
-  `groupWorkspaces` 是整表替换；已映射群改项目后需在设置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
+  `groupWorkspaces` 是整表替换；已映射群改项目后需在配置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
   契约、HTTP 面与安全边界见 [client.md](./client.md)。
 
 ## 3. 模块分层
@@ -96,11 +99,11 @@ lib/
 │   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）
 └── model/
     ├── config.js             # 配置默认值与校验
-    ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
+    ├── settings.js           # 配置页覆盖：层序合并、token 脱敏、settings.json 原子读写
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL（按群项目路由）/ 读取 / 清理 / 旧日志迁移
     ├── cleanup.js            # 清理（v0.13.0）：立即清理天数校验 + 聊天 / 媒体一次性清理（自动清理共用）
-    ├── panel.js              # 设置页面板（v0.14.0）：最近消息查询校验 + 聊天记录 → 只读消息视图
+    ├── panel.js              # 配置页面板（v0.14.0）：最近消息查询校验 + 聊天记录 → 只读消息视图
     ├── media.js              # 入向图片 / 表情 / 视频 / 语音 / 群文件落盘与清理、媒体类型识别（P4.1 / P4.2 / v0.16.0）
     ├── project.js            # 群项目目录解析、`.qq-relay/` 创建与自忽略 .gitignore（P4）
     ├── prompt.js             # 消息拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针（P4）
@@ -113,9 +116,10 @@ lib/
     └── reply.js              # 回复切分、退避、发送失败分类
 ~~~
 
-client 半身（`src/`）只做设置页：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）
-+ `src/view/SettingsSection.tsx`（React 组件）；`src/client.tsx` 只做注册与装配。
-host 半身只依赖 lib/model/。
+client 半身（`src/`）只做配置页（MVVM 三层）：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch
+纯逻辑）→ `src/viewmodel/settings.ts`（状态 / 动作 hook、状态文案、二级页面定义）→ `src/view/`
+（`SettingsPage` 外壳、`controls`、`theme` 注入的 `--dsw-*` 样式、`panels/*` 四个二级页面）；
+`src/client.tsx` 只做注册与装配（`plugins.bundle.config`，key = 包名）。host 半身只依赖 lib/model/。
 
 P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增 `controller/{runtime,config-routes,http}.js`
@@ -208,7 +212,7 @@ ctx.on('agent/error', ...)          # 失败提示
 - **提示注入**：群成员文本一律视为不可信输入；工作目录限定；操作留审计日志。
 - **本地接口**：NapCat WS 只监听回环地址；启用 access_token；不暴露公网。
 - **隐私**：聊天日志落在群项目内的 `.qq-relay/`（自忽略、不进 git），默认**永久保留**
-  （`chatRetentionDays: 0`）；需要时配天数自动清理，或在设置页「立即清理」（媒体按日期目录一起清）。
+  （`chatRetentionDays: 0`）；需要时配天数自动清理，或在配置页「记录」里「立即清理」（媒体按日期目录一起清）。
 决策日志仍在 storage 下按 7 天保留。
 
 ## 7. 运行前提

@@ -37,7 +37,7 @@ DSH 工具 → approval.request(...)（会话 = 某个 QQ 群映射的会话）
 | `timeoutMs` | `120s` | 等待回复的时间（10s..10m；支持 `90s` / `2m` 或毫秒数字） |
 | `roles` | `['owner','admin']` | 允许审批的群角色（`owner` / `admin` / `member`） |
 
-所有键都只读（不放进设置页的可编辑字段），改 profile patch 后重启 GUI 生效。
+所有键都只读（不放进配置页的可编辑字段），改 profile patch 后重启 GUI 生效。
 
 ## 4. 交互示例
 
@@ -57,7 +57,7 @@ bot：已同意 ✅
 ## 5. 已知代价与限制
 
 - **单应答者链**：本桥用 `prepend` 抢在 GUI 应答者前面；被本桥接管的请求**不会**再弹到 GUI。
-  想用 GUI 审批时，先在设置页把 `approval.enabled` 关掉并重启。
+  想用 GUI 审批时，先在配置页把 `approval.enabled` 关掉并重启。
 - **每群一次一条**：同一群同时只处理一个审批；第二个请求交给 GUI。
 - **离线即失败**：relay 不在线时审批直接 `unavailable`（agent 看到拒绝），不会挂起等重连。
 - **无持久授权**：每次都要重新确认；QQ 侧没有「记住此决定」。

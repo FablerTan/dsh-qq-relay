@@ -6,7 +6,7 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.16.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.17.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -15,14 +15,18 @@
 > P4.3 聊天记录清理（保留天数 + 立即清理）已落地、P7 client 面板增强
 > （闸门每群状态 / 最近消息 / 映射管理）已落地、P8 戳一戳识别与回戳
 > （被戳接话 / 互戳记录 / `qq_poke`）已真机验收、P9 入向群文件
-> （`group_upload` → 下载落盘 → 可选直通）已落地（2026-10-19）；上级 §0 已仅对本插件解除。
+> （`group_upload` → 下载落盘 → 可选直通）已落地（2026-10-19）、P10 配置页迁到插件面板
+> （`plugins.bundle.config`，四个二级页面，样式走宿主 `--dsw-*` token）已落地（v0.17.0）；
+> 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
 - `src/` — client 半身源码（React + TS），组合根 `src/client.tsx`，构建产物 `lib/client.js`；
-  现有 `src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）+ `src/view/SettingsSection.tsx`
-  （设置页「QQ 机器人」）；新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，
-  分层细则见 §2 第 4 条）
+  落点 = 插件面板里 dsh-qq-relay 组合包页面（`plugins.bundle.config`，key = 包名）；
+  现有 `src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）+ `src/viewmodel/settings.ts`
+  （状态 / 动作 hook、状态文案、二级页面定义）+ `src/view/`（`SettingsPage.tsx` 外壳、
+  `controls.tsx` 公共控件、`theme.ts` 注入的 `--dsw-*` 主题样式、`panels/{Connection,Project,Behavior,Records}Panel.tsx`）；
+  新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
 - `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**，
   分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发、配置页 HTTP 面）+ `lib/model/`
   （配置、设置覆盖、会话映射、状态、聊天日志、回复）；P1 实现 `controller/onebot/{client,api,codec}.js`、
@@ -46,7 +50,7 @@
   `controller/relay.js` 增加引用回复 / 处理中占位 / 直通连发合并（`reply` 配置段）；
   P4.3（v0.13.0）新增 `model/cleanup.js`（立即清理天数校验 + 聊天 / 媒体一次性清理，
   自动清理共用），路由 `POST /dsh-qq-relay/api/cleanup` 在 `controller/config-routes.js`，
-  设置页「聊天记录清理」在 `src/view/SettingsSection.tsx`；P7（v0.14.0）新增 `model/panel.js`
+  配置页「记录」二级页在 `src/view/panels/RecordsPanel.tsx`；P7（v0.14.0）新增 `model/panel.js`
   （最近消息查询校验 + 只读视图），面板路由 `messages` / `mapping/delete` / `mapping/clear`
   在 `controller/config-routes.js`，relay 暴露只读 `snapshot()` 供状态快照使用；P8（v0.15.0）在
   `controller/relay.js` 增加戳一戳识别（`handlePoke`：被戳直通 / 互戳记录 / 每群冷却）与出向 `poke`，

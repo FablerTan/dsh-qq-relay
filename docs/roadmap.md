@@ -402,7 +402,37 @@
 - 超过 20 MiB → 只记录 `failed: too-large`，不下载、不接话。
 - `files.react: false` → 只记录不接话；`files.enabled: false` → 完全不处理。
 - 自己用 `qq_send` 上传文件 → 不触发（防自问自答）。
-- 设置页「最近消息」里显示 `[文件]`；host 半身改动，需重启 profile GUI 生效。
+- 配置页「项目」的「最近消息」里显示 `[文件]`；host 半身改动，需重启 profile GUI 生效。
+
+## P10 配置页迁到插件面板 + 二级页面（v0.17.0 已实现，2026-10-19）
+
+目标：配置跟着插件走——放进**插件面板**（左栏「插件」图标）里 dsh-qq-relay 组合包自己的页面，
+和启停开关同页；一屏平铺改成二级页面；视觉跟随宿主主题。契约见 [client.md](./client.md)。
+
+### 范围（v0.17.0）
+
+- 注册落点从 `settings.section` 改为 **`plugins.bundle.config`**（key = 包名 `dsh-qq-relay`）；
+  设置里不再单列「QQ 机器人」。
+- 二级页面：连接 / 项目 / 行为 / 记录；状态行 + 刷新 / 重新连接 / 保存并重连固定在顶部。
+- 样式：`src/view/theme.ts` 注入普通 CSS，全部使用宿主 `--dsw-*` 语义 token
+  （设置卡片 R20、控件 R12、0.5px 发丝线、标准 focus ring），明暗主题 / 字号自动跟随。
+- 结构：client 半身拆 MVVM 四层（`src/model` → `src/viewmodel/settings.ts` → `src/view`）；
+  删除 `SettingsSection.tsx`。仅 client 半身改动。
+
+### 验收状态（2026-10-19）
+
+- ✅ `pnpm build` 成功（`lib/client.js` 更新）；`pnpm check` 全绿；单测 244 不变。
+- ✅ 注册契约冒烟：`apply()` 在缺失 slots 时静默返回、正常时注册
+  `{ name: 'plugins.bundle.config', key: 'dsh-qq-relay' }`。
+- ✅ 四个二级页面 + 页面外壳 SSR 渲染冒烟（正常数据 / 空数据 / 配置问题 / 消息报错四种输入均不抛）。
+- ⏳ 真机验收：刷新 dwdev 页面后按下面清单确认（无需重启 GUI）。
+
+### 验收
+
+- 左栏「插件」→ 我的 / Bundles → dsh-qq-relay：页面里能看到状态行与四个 tab，启停开关在同一页。
+- 连接 / 项目 / 行为 / 记录逐个切换，表单内容与 v0.16.0 等价；在任意页改字段 → 保存并重连成功。
+- 明暗主题各看一遍：卡片 / 输入框 / 按钮 / tab 颜色与发丝线跟宿主一致，无突兀色块。
+- 停用该插件的行 → 配置页随注册消失；重新启用 + 刷新后回来。
 
 ## 风险登记
 
@@ -423,5 +453,5 @@
 1. ✅ QQ 小号 + NapCat（Docker，macOS 用 Colima）已就绪并登录。
 2. ✅ 测试群已建、bot 小号已入群，主号可 @ 它。
 3. ✅ 目标 profile 定为 `dwdev`，已清空为只装本插件（重启该 profile 的 GUI 生效）。
-4. ✅ 插件配置已在 dwdev 的 patch 里填好；P1.5 起也可在设置页改（保存即重连，无需重启）。
+4. ✅ 插件配置已在 dwdev 的 patch 里填好；P1.5 起也可在配置页（插件面板 → dsh-qq-relay）改（保存即重连，无需重启）。
 5. ✅ 上级 AGENTS.md §0 已于 2026-10-19 仅对 `dsh-qq-relay` 解除。

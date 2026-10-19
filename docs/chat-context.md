@@ -7,10 +7,10 @@
 > `lib/model/prompt.js` 统一拼接。真机验收待用户重启 GUI 后确认。
 >
 > 用户决策（2026-10-19）：
-> 1. **每个群都可以有独立项目目录，在设置页自行配置**；
+> 1. **每个群都可以有独立项目目录，在配置页自行配置**；
 > 2. 隐藏目录名用**短的** `.qq-relay/`；
 > 3. **不做跨机同步**（不进 git、不同步网盘）；
-> 4. 聊天记录**默认不自动删除**，清理功能后续再放进设置页；
+> 4. 聊天记录**默认不自动删除**，清理功能在配置页「记录」里（保留天数 + 立即清理）；
 > 5. agent **直接 read 文件**即可，暂不提供 `qq_history` 工具。
 
 ## 1. 目标
@@ -88,7 +88,7 @@ OneBot 事件 → codec.toInternalEvent（segments → text，丢 at / reply 结
 优先级从高到低：
 
 1. `mapping.json[groupId].workspacePath` —— 会话创建时钉住的项目，保证聊天目录与会话 cwd 一致；
-2. `config.groupWorkspaces[groupId]` —— 设置页配置；
+2. `config.groupWorkspaces[groupId]` —— 配置页配置；
 3. `config.workspace` —— 插件默认项目。
 
 config 新增字段：
@@ -104,7 +104,7 @@ dsh-qq-relay:
 
 - `groupWorkspaces`：键为群号字符串（`/^\d+$/`），值为绝对路径（允许 `~`，归一化时展开）；
   非法键 / 非法路径记 problem（沿用 `problems` 机制，不 crash boot）。
-- `chatRetentionDays`：`0`（永不自动删除）或 `7..3650`；v0.13.0 起设置页可改，并提供「立即清理」（§7 / §8）。
+- `chatRetentionDays`：`0`（永不自动删除）或 `7..3650`；v0.13.0 起配置页可改，并提供「立即清理」（§7 / §8）。
 - 会话创建：`sessionController.create({ cwd: projectFor(groupId) })`，并把该项目写入
   `mapping.workspacePath`。
 - 旧 mapping 的 `workspacePath` 为空时按 2 / 3 兜底解析，并在下次创建会话时补齐。
@@ -179,11 +179,11 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 - 当 `> 0`：按天文件删除超期文件；启动后跑一次 + 每日一次（复用现有 prune 定时器）；
   清理按「已知群」循环（白名单 ∪ mapping），不再假设单一根目录。
 - 决策日志 `gate/*.jsonl` 仍按 7 天保留（插件内部诊断数据，与聊天记录分开）。
-- 设置页「聊天记录清理」区块（v0.13.0）：保留天数（0 / 7..3650）+「立即清理」按钮。
+- 配置页「记录」二级页（v0.13.0）：保留天数（0 / 7..3650）+「立即清理」按钮。
   立即清理与自动清理共用 `model/cleanup.js` 的 `pruneChatAndMedia`，**同时**清聊天日文件与媒体日期目录；
   手动清理允许 1..3650（比自动清理更激进），只删文件，不动 mapping / 会话 / 配置。
 
-## 8. 设置页与 HTTP 契约
+## 8. 配置页与 HTTP 契约
 
 「群项目目录」区域（沿用现有映射表样式）：
 
@@ -234,15 +234,15 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
   rebind 路由 400 / 409。
 - `test/relay.test.js`：会话 cwd 用群项目；prompt 带历史指针；聊天记录写进项目目录；媒体下载与路径。
 - `test/media.test.js`：媒体计划解析 / 下载 / 失败 / 归一化 / 清理（详见 [media.md](./media.md) §10）。
-- 真机：设置页配置群项目 → @ 一条 → 项目目录下出现 `.qq-relay/chat/<gid>/<日期>.jsonl`；
+- 真机：配置页配置群项目 → @ 一条 → 项目目录下出现 `.qq-relay/chat/<gid>/<日期>.jsonl`；
   普通消息 prompt 带群名 / 时间 / 历史指针；重启后记录仍在。
 
 ## 12. 分期
 
-- **v0.8.0（已实现，2026-10-19）**：§3–§8 全部（隐藏目录 + 群项目 + prompt 拼接 + 迁移 + 设置页 + 重新绑定）；
+- **v0.8.0（已实现，2026-10-19）**：§3–§8 全部（隐藏目录 + 群项目 + prompt 拼接 + 迁移 + 配置页 + 重新绑定）；
   单测 `test/{project,prompt,migration}.test.js` 等共 144 个通过。
 - **v0.8.1（已实现，2026-10-19）**：聊天日志补全 @ / 引用元信息；无文本消息不进闸门（修正）。
 - **v0.9.0（已实现，2026-10-19）**：入向图片 / 表情落盘到 `.qq-relay/media/`，聊天记录与 prompt 引用相对路径（见 [media.md](./media.md)）。
-- **v0.13.0（已实现，2026-10-19）**：清理功能——设置页保留天数（0 / 7..3650）+「立即清理」
+- **v0.13.0（已实现，2026-10-19）**：清理功能——配置页保留天数（0 / 7..3650）+「立即清理」
   （1..3650，`POST /dsh-qq-relay/api/cleanup`），与自动清理共用 `model/cleanup.js`。
 - **Backlog**：可选 `inbox/` 批次快照、可读 digest、`qq_history` 工具、聊天记录跨机同步、私聊 / 媒体。

@@ -1,8 +1,9 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.16.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
-已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
+当前 **v0.17.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 记录」二级页面）；
+P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
 P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `/stop` / `/status` / `/help`，
@@ -12,7 +13,8 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 （保留天数 + 立即清理，见 [docs/chat-context.md](./docs/chat-context.md) §7）；P7 已落地**client 面板增强**
 （闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）；P8 已落地并真机验收**戳一戳识别与回戳**
 （被戳接话 / 互戳记录 / `qq_poke`，见 [docs/poke.md](./docs/poke.md)）；P9 已落地**入向群文件**
-（`group_upload` → 下载落盘 → 可选直通，见 [docs/media.md](./docs/media.md) §5.2）。设计见
+（`group_upload` → 下载落盘 → 可选直通，见 [docs/media.md](./docs/media.md) §5.2）；P10 已落地
+**配置页迁到插件面板 + 二级页面 + 跟随宿主主题**（v0.17.0，见 [docs/client.md](./docs/client.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -34,7 +36,7 @@ DSH 与 QQ 之间的**双向桥**：
 - 协议端：**真实 QQ 号 + NapCat + OneBot 11 正向 WebSocket**——DSH 单轮可能超过 5 分钟，官方机器人的群聊被动回复窗口（5 分钟）会让长任务结果只能改走主动消息（受配额、可被关闭）；真实 QQ 号可随时发送。官方通道方案保留为备选（[docs/official-bot-channel.md](./docs/official-bot-channel.md)）。
 - 账号：一个 **QQ 小号**登录 NapCat 作 bot，主号操作；**群聊优先**（群 @ 直通 + 群内普通消息经闸门过滤）；单聊放 P3。
 - 消息闸门：**10 分钟快路 + 2 小时慢路 + jev 分类器**，@ 直通、最小发言间隔（见 [docs/gate.md](./docs/gate.md)）。
-- 运行形态：host 半身单进程插件；client 半身提供设置页（不做独立应用）；插件不管理 profile。
+- 运行形态：host 半身单进程插件；client 半身在**插件面板**（左栏「插件」图标）的组合包页里提供配置页（不做独立应用）；插件不管理 profile。
 - 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
 - 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
@@ -77,10 +79,11 @@ dsh-qq-relay/
 │   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
-├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
-│   ├── client.tsx        # 组合根：把设置页注册进 settings.section
+├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ viewmodel（呈现态与动作）→ view（组件）
+│   ├── client.tsx        # 组合根：把配置页注册进 plugins.bundle.config（key = 包名）
 │   ├── model/            # api.ts（HTTP）· form.ts（表单 ↔ patch 纯逻辑）
-│   └── view/             # SettingsSection.tsx（设置页「QQ 机器人」）
+│   ├── viewmodel/        # settings.ts（状态 / 动作 hook、状态文案、二级页面定义）
+│   └── view/             # SettingsPage（外壳 + 状态行 + 二级页面导航）· controls · theme（CSS）· panels/*
 ├── scripts/              # wrap-client（产物包装）· check-syntax · check-docs
 ├── docs/                 # 设计文档（官方通道 / 消息闸门 / 架构 / 路线）
 ├── README.md             # 本文件
@@ -94,8 +97,8 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
-| [docs/client.md](./docs/client.md) | client 半身：设置页「QQ 机器人」、配置层序、HTTP 契约、热更新语义、清理 / 面板（闸门状态 / 最近消息 / 映射管理） | 改设置页 / 调配置保存时 |
-| [docs/config.md](./docs/config.md) | 配置总表：每个字段的默认值 / 范围 / 现在能否在设置页改 / 生效方式 + 写死常量清单 + 加字段的改动面 | 调配置 / 决定哪些进设置页时 |
+| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 项目 / 行为 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
+| [docs/config.md](./docs/config.md) | 配置总表：每个字段的默认值 / 范围 / 现在能否在配置页改 / 生效方式 + 写死常量清单 + 加字段的改动面 | 调配置 / 决定哪些进配置页时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
@@ -117,8 +120,8 @@ dsh plugin --profile <profile> add link:/path/to/dsh-qq-relay
 ```
 
 - 回滚：`dsh plugin --profile <profile> remove dsh-qq-relay`（不影响本仓库）。
-- 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的加载日志；设置页里出现「QQ 机器人」，
-  能看到连接状态与配置表单。
+- 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的加载日志；左栏「插件」面板里找到
+  `dsh-qq-relay` 组合包，它的页面里能看到配置（连接状态 / 表单 / 群项目目录）。
 - 链接现状记录在上级 [PROFILES.md](../../PROFILES.md)。
 
 ## 开发循环
@@ -137,6 +140,26 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.17.0 配置页迁到插件面板：二级页面 + 宿主主题（2026-10-19）
+
+- 注册落点从设置分区 `settings.section` 改到 **`plugins.bundle.config`（key = 包名 `dsh-qq-relay`）**：
+  配置页现在画在**插件面板**（左栏「插件」图标）里 dsh-qq-relay 组合包自己的页面上，
+  紧挨该插件的启停开关；设置里不再单独占一块。
+- 页面从一屏平铺改成**四个二级页面**：连接（协议端 / token / bot 账号 / 群白名单 + 运行状态）、
+  项目（默认目录 / 会话标题 / 群项目目录表 / 重新绑定 / 最近消息）、行为（切分上限 / 直通前缀 /
+  闸门三参数 + 每群实时状态）、记录（保留天数 / 立即清理）。保存 / 重连 / 刷新固定在状态行，
+  任何二级页面都能直接保存。
+- 视觉改为跟随宿主主题：新增 `src/view/theme.ts` 注入一份普通 CSS，控件与卡片全部使用
+  ui-theme 的 `--dsw-*` 语义 token（设置卡片 R20、控件 R12、0.5px 发丝描边、focus ring），
+  明暗主题与字号设置自动跟随，不再写死颜色。
+- client 半身按 MVVM 拆成四层：`src/model/`（HTTP / 表单）→ `src/viewmodel/settings.ts`
+  （状态与动作 hook、状态文案、二级页面定义）→ `src/view/`（`SettingsPage` / `controls` /
+  `theme` / `panels/*`）。删除 `SettingsSection.tsx`。
+- package.json 描述精简为一句（插件页会把它显示在组合包标题下）；版本 0.17.0。
+- 同步 client / architecture / config / gate / chat-context / media / commands / reply /
+  approval / poke / roadmap / README / AGENTS 文档。
+- 仅 client 半身改动：`pnpm build` 后刷新页面即生效（无需重启 GUI）；host 行为不变，单测 244 个不变。
 
 ### v0.16.0 入向群文件（2026-10-19）
 
