@@ -1,9 +1,9 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.5.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
-已落地（2026-10-19）；P2.1 消息闸门骨架已落地（去抖 / 最小间隔 / 慢路 / 状态 / 发送队列，
-**jev 分类器暂未接**，`gate.enabled` 默认关）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+当前 **v0.6.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
+**jev 分类器暂未接**，`gate.enabled` 默认关）；P3 已落地 `qq_send` 主动推送与 QQ 侧审批。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -30,7 +30,7 @@ DSH 与 QQ 之间的**双向桥**：
 
 **已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射只读）、
 消息闸门骨架与收尾（P2.1/P2.2：去抖 / 最小间隔 / 慢路 / 状态持久化 / 决策日志 / 发送队列；jev 未接）、
-DSH → QQ 主动推送工具 `qq_send`（P3 第一项）。
+DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）。
 **仍未定案**：jev 分类器形态、群审批（按钮）、主动推送工具、媒体收发、client 面板增强——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -51,8 +51,9 @@ dsh-qq-relay/
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
 │   │   ├── tools.js      # qq_send 工具定义（手写 ToolDefinition，零外部依赖）
+│   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 决策日志 / 回复切分 / 闸门纯逻辑
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 决策日志 / 回复切分 / 闸门 / 审批纯逻辑
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -77,6 +78,7 @@ dsh-qq-relay/
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送：契约、安全、离线队列、验证 | 改工具 / 排查推送失败时 |
+| [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
 | [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 仓库级纪律、渲染树选座速查 | 跨插件协作、装 profile、选 slot |
 
@@ -108,6 +110,16 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.6.0 QQ 侧审批（2026-10-19）
+
+- 新增审批桥：映射到 QQ 群的会话收到 `approval/request` 时，把【审批请求】发到群里，
+  群主 / 管理员回复「同意 / 拒绝」即完成一次性授权（`allowed-once` / `rejected`），不用切 GUI。
+- 超时（默认 120 秒）按拒绝；请求取消 → `cancelled`；relay 离线 / 发送失败 → `unavailable`（fail closed）；
+  普通成员回复被忽略并提示；同群并发请求交给 GUI。
+- 未映射会话的审批继续走 GUI（`next()`），行为不变；配置 `approval.enabled / timeoutMs / roles` 只读。
+- 复用 relay 出向发送与白名单；审批等待期间的「同意 / 拒绝」消息由入向拦截器优先消费。
+- 新增 [docs/approval.md](./docs/approval.md)；单测 108 个；改的是 host 半身，需重启 profile GUI 生效。
 
 ### v0.5.0 主动推送工具 qq_send（2026-10-19）
 

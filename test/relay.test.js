@@ -89,7 +89,7 @@ function createHarness(t, options = {}) {
   const mapping = createMappingStore(join(dir, 'mapping.json'))
   const state = createStateStore({ dir: join(dir, 'state') })
   const chatLog = createChatLog({ dir: join(dir, 'chat'), retentionDays: 7 })
-  const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog, classifier: options.classifier ?? null })
+  const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog, classifier: options.classifier ?? null, interceptors: options.interceptors ?? [] })
   relay.start()
 
   t.after(() => relay.stop())
@@ -378,4 +378,30 @@ test('relay：sendText 离线进队列，重连后补发', async (t) => {
   client.emit('open')
   await flush()
   assert.deepEqual(calls.sends, [{ groupId: 100, text: '离线通知' }])
+})
+
+test('relay：入向拦截器可以消费群消息（审批回复优先于直通）', async (t) => {
+  const consumed = []
+  const interceptors = [(event) => { consumed.push(event.messageId); return true }]
+  const { relay, calls } = createHarness(t, { interceptors })
+  relay.handleRawEvent(groupEvent({ message_id: 61 }))
+  await flush()
+  assert.deepEqual(consumed, ['61'])
+  assert.equal(calls.prompt.length, 0, '被拦截的 @ 消息不应派发')
+})
+
+test('relay：拦截器返回 false 时消息照常走直通', async (t) => {
+  const interceptors = [() => false]
+  const { relay, calls } = createHarness(t, { interceptors })
+  relay.handleRawEvent(groupEvent({ message_id: 62 }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+})
+
+test('relay：拦截器抛异常不影响后续处理', async (t) => {
+  const interceptors = [() => { throw new Error('boom') }]
+  const { relay, calls } = createHarness(t, { interceptors })
+  relay.handleRawEvent(groupEvent({ message_id: 63 }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
 })

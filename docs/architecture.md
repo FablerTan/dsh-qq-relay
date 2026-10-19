@@ -1,7 +1,7 @@
 # 架构
 
 > 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
-> P2.1/P2.2 消息闸门骨架与收尾已落地（jev 未接）、P3 首项 `qq_send` 主动推送已落地（2026-10-19）**。
+> P2.1/P2.2 消息闸门骨架与收尾已落地（jev 未接）、P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -46,6 +46,7 @@
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
+| `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
 - 会话映射 / 闸门状态 / 聊天日志落在 `~/.dsh/storages/dsh-qq-relay/`。
 - **配置传递**：写在目标 profile 的 `~/.dsh/profiles/<name>/cordis.patch.yml`，用
@@ -73,6 +74,7 @@ lib/
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
 │   ├── tools.js              # qq_send 工具定义（P3：手写 ToolDefinition，零外部依赖）
+│   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
 │   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送
 └── model/
     ├── config.js             # 配置默认值与校验
@@ -81,6 +83,7 @@ lib/
     ├── chat-log.js           # 群消息 JSONL 落盘 / 读取 / 清理
     ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
     ├── gate.js               # 闸门纯逻辑（P2.1）：配置解析 / 决策 fail closed / 批次 / 时间窗
+    ├── approval.js           # 审批纯逻辑（P3）：命令匹配 / 决策角色 / 提示文案
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
     ├── jev.js                # 分类器调用契约（待接模型，P2.2+）
     └── reply.js              # 回复切分、退避、发送失败分类
@@ -97,7 +100,7 @@ P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
-决策日志、断线发送队列、`qq_send` 工具契约与注册，以及
+决策日志、断线发送队列、`qq_send` 工具契约与注册、审批命令匹配与桥接，以及
 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
@@ -136,6 +139,8 @@ ctx.on('agent/error', ...)          # 失败提示
 - 发送不区分被动 / 主动，turn 结束即发；失败按 retcode 退避重试。
 - **主动推送（P3）**：`qq_send` 工具（见 [tools.md](./tools.md)）走同一个发送队列，
   供任意会话发通知；白名单双重校验，离线排队。
+- **QQ 侧审批（P3）**：QQ 会话里的 `approval/request` 由审批桥发到群里，群主 / 管理员回复
+  「同意 / 拒绝」；见 [approval.md](./approval.md)。
 - 失败 / 中断：按配置发简短提示或静默。
 
 ## 5. 会话映射

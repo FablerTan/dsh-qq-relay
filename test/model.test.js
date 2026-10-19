@@ -14,6 +14,7 @@ import { createMappingStore } from '../lib/model/mapping.js'
 import { acquireLock, createStateStore, migrateLegacyState, PENDING_LIMIT, SEEN_LIMIT } from '../lib/model/state.js'
 import { createChatLog, localDateKey } from '../lib/model/chat-log.js'
 import { createGateLog } from '../lib/model/gate-log.js'
+import { APPROVE_WORDS, canDecideApproval, formatApprovalPrompt, matchApprovalDecision, REJECT_WORDS } from '../lib/model/approval.js'
 import { buildReplyChunks, classifySendFailure, nextBackoff, shouldRetryTransport } from '../lib/model/reply.js'
 import {
   buildBatch,
@@ -414,4 +415,59 @@ test('gate-log：坏行与非法记录被容忍', (t) => {
   assert.equal(records.length, 1)
   assert.equal(records[0].trigger, 'fast')
   assert.equal(records[0].batch, 0)
+})
+
+test('approval：文本命令匹配同意 / 拒绝', () => {
+  for (const word of APPROVE_WORDS) {
+    assert.equal(matchApprovalDecision(word), 'allow', word)
+    assert.equal(matchApprovalDecision(' ' + word + '！'), 'allow', word)
+    assert.equal(matchApprovalDecision(word.toUpperCase()), 'allow', word)
+  }
+  for (const word of REJECT_WORDS) {
+    assert.equal(matchApprovalDecision(word), 'deny', word)
+  }
+  // 「不允许」必须先命中拒绝，不能被子串「允许」误判
+  assert.equal(matchApprovalDecision('不允许'), 'deny')
+  assert.equal(matchApprovalDecision('同意一下'), null)
+  assert.equal(matchApprovalDecision(''), null)
+  assert.equal(matchApprovalDecision(null), null)
+})
+
+test('approval：决策者角色校验', () => {
+  assert.equal(canDecideApproval({ sender: { role: 'owner' } }), true)
+  assert.equal(canDecideApproval({ sender: { role: 'admin' } }), true)
+  assert.equal(canDecideApproval({ sender: { role: 'member' } }), false)
+  assert.equal(canDecideApproval({ sender: {} }), false)
+  assert.equal(canDecideApproval(null), false)
+  assert.equal(canDecideApproval({ sender: { role: 'member' } }, ['owner', 'admin', 'member']), true)
+})
+
+test('approval：提示文案含工具 / 原因 / 超时秒数', () => {
+  const text = formatApprovalPrompt({ toolName: 'bash', reason: '需要写入工作区外', timeoutMs: 120000 })
+  assert.match(text, /bash/)
+  assert.match(text, /需要写入工作区外/)
+  assert.match(text, /120 秒/)
+  assert.match(text, /同意/)
+  assert.match(text, /拒绝/)
+  const minimal = formatApprovalPrompt({})
+  assert.match(minimal, /未知工具/)
+})
+
+test('config：approval 段默认与校验', () => {
+  const ok = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.equal(ok.config.approval.enabled, true)
+  assert.equal(ok.config.approval.timeoutMs, 120000)
+  assert.deepEqual(ok.config.approval.roles, ['owner', 'admin'])
+
+  const custom = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1, approval: { enabled: false, timeoutMs: '90s', roles: ['admin'] } })
+  assert.equal(custom.ok, true)
+  assert.equal(custom.config.approval.enabled, false)
+  assert.equal(custom.config.approval.timeoutMs, 90000)
+  assert.deepEqual(custom.config.approval.roles, ['admin'])
+
+  const invalid = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1, approval: { enabled: 'yes', timeoutMs: '1s', roles: ['boss'] } })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('approval.enabled')))
+  assert.ok(invalid.problems.some((p) => p.includes('approval.timeoutMs')))
+  assert.ok(invalid.problems.some((p) => p.includes('approval.roles')))
 })
