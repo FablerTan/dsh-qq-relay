@@ -16,6 +16,10 @@ export interface RelayConfigView {
   selfId: number
   groups: number[]
   workspace: string
+  /** 群号 → 项目目录（设置页可编辑）。 */
+  groupWorkspaces: Record<string, string>
+  /** 聊天记录保留天数；0 = 永不自动删除。 */
+  chatRetentionDays: number
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -51,6 +55,8 @@ export interface RelayConfigPatch {
   selfId?: number
   groups?: number[]
   workspace?: string
+  groupWorkspaces?: Record<string, string>
+  chatRetentionDays?: number
   sessionTitle?: string
   replyChunkSize?: number
   commandPrefixes?: string[]
@@ -71,12 +77,15 @@ export type RelayApiResult<T> =
 export const STATUS_PATH = '/dsh-qq-relay/api/status'
 export const CONFIG_PATH = '/dsh-qq-relay/api/config'
 export const RECONNECT_PATH = '/dsh-qq-relay/api/reconnect'
+/** 重新绑定群项目（P4）：删映射并按当前项目目录重建。 */
+export const REBIND_PATH = '/dsh-qq-relay/api/rebind'
 
 /** 配置页用到的能力面（组合根注入 `fetch` 后得到实例）。 */
 export interface RelaySettingsApi {
   getStatus(): Promise<RelayApiResult<RelayStatusView>>
   saveConfig(patch: RelayConfigPatch): Promise<RelayApiResult<RelayStatusView>>
   reconnect(): Promise<RelayApiResult<RelayStatusView>>
+  rebind(groupId: number): Promise<RelayApiResult<RelayStatusView>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,6 +129,14 @@ function asStatus(value: unknown): RelayStatusView | null {
         ? config.groups.filter((groupId): groupId is number => typeof groupId === 'number')
         : [],
       workspace: typeof config.workspace === 'string' ? config.workspace : '',
+      groupWorkspaces: isRecord(config.groupWorkspaces)
+        ? Object.fromEntries(
+            Object.entries(config.groupWorkspaces)
+              .filter(([key, value]) => /^\d+$/u.test(key) && typeof value === 'string' && value !== '')
+              .map(([key, value]) => [key, value as string]),
+          )
+        : {},
+      chatRetentionDays: typeof config.chatRetentionDays === 'number' ? config.chatRetentionDays : 0,
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)
@@ -185,5 +202,10 @@ export function createRelaySettingsApi(options: { fetch: typeof fetch }): RelayS
       body: JSON.stringify(patch),
     }),
     reconnect: () => request(RECONNECT_PATH, { method: 'POST' }),
+    rebind: (groupId) => request(REBIND_PATH, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ groupId }),
+    }),
   }
 }

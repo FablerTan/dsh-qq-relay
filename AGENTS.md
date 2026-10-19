@@ -6,9 +6,10 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.7.1**：P1 @ 直通
+> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.8.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
-> 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）；上级 §0 已仅对本插件解除。
+> 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
+> `.qq-relay/` + prompt 拼接已落地（2026-10-19）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
@@ -25,7 +26,9 @@
   `model/gate-log.js`（决策日志）；P3 新增 `controller/tools.js`（`qq_send` 工具定义，
   手写 ToolDefinition、不 import `@deepseek-ai/*`）、`controller/approval.js`（QQ 侧审批桥）与
   `model/approval.js`（命令匹配 / 角色 / 文案）；P2.3 新增 `model/jev.js`（OpenRouter
-  Decisions API 分类器，零依赖、全局 fetch、fail closed）
+  Decisions API 分类器，零依赖、全局 fetch、fail closed）；P4 新增 `model/{project,prompt}.js`
+  （群项目目录解析 / `.qq-relay` 隐藏目录 / prompt 拼接），聊天日志改按群项目路由
+  （`model/chat-log.js` 的 `rootFor` + 旧日志迁移）
 - `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 

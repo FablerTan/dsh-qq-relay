@@ -5,7 +5,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -13,6 +13,7 @@ import { normalizeConfig } from '../lib/model/config.js'
 import { createMappingStore } from '../lib/model/mapping.js'
 import { createStateStore } from '../lib/model/state.js'
 import { createChatLog } from '../lib/model/chat-log.js'
+import { chatRootFor, ensureRelayDir, projectDirFor } from '../lib/model/project.js'
 import { createRelay } from '../lib/controller/relay.js'
 
 const flush = async () => {
@@ -88,12 +89,20 @@ function createHarness(t, options = {}) {
 
   const mapping = createMappingStore(join(dir, 'mapping.json'))
   const state = createStateStore({ dir: join(dir, 'state') })
-  const chatLog = createChatLog({ dir: join(dir, 'chat'), retentionDays: 7 })
+  const chatLog = createChatLog({
+    // 与组合根一致：聊天日志落在群项目的 .qq-relay/chat 下
+    rootFor: (groupId) => {
+      const projectDir = projectDirFor({ config, mapping, groupId })
+      ensureRelayDir(projectDir)
+      return chatRootFor(projectDir)
+    },
+    retentionDays: 7,
+  })
   const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog, classifier: options.classifier ?? null, interceptors: options.interceptors ?? [] })
   relay.start()
 
   t.after(() => relay.stop())
-  return { relay, ctx, calls, mapping, state, chatLog, config, client }
+  return { relay, ctx, calls, mapping, state, chatLog, config, client, dir }
 }
 
 function groupEvent(overrides = {}) {
@@ -125,8 +134,8 @@ function textEvent(text, overrides = {}) {
   })
 }
 
-test('relay：@ 消息直通、建会话、prompt 带昵称前缀', async (t) => {
-  const { relay, calls, mapping } = createHarness(t)
+test('relay：@ 消息直通、建会话、prompt 带群名 / 时间 / @ 标记 / 历史指针', async (t) => {
+  const { relay, calls, mapping, config } = createHarness(t)
   relay.handleRawEvent(groupEvent())
   await flush()
 
@@ -134,9 +143,34 @@ test('relay：@ 消息直通、建会话、prompt 带昵称前缀', async (t) =>
   assert.equal(calls.rename[0].title, 'QQ群：测试群')
   assert.deepEqual(calls.attach, ['session-1'])
   assert.equal(calls.prompt.length, 1)
-  assert.equal(calls.prompt[0].content[0].text, '[tester] 你好')
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.startsWith('[QQ群：测试群（100）] '), text)
+  assert.ok(text.includes('新消息 1 条（直通：@）'), text)
+  assert.ok(text.includes('[tester]（@你）你好'), text)
+  assert.ok(text.includes('[历史记录：.qq-relay/chat/100/'), text)
   assert.equal(calls.prompt[0].sessionId, 'session-1')
+  assert.equal(calls.create[0].cwd, config.workspace, '会话 cwd 用群项目目录')
   assert.equal(mapping.get(100).sessionId, 'session-1')
+  assert.equal(mapping.get(100).workspacePath, config.workspace)
+})
+
+test('relay：聊天日志与 .qq-relay 落在群项目目录', async (t) => {
+  const { relay, dir } = createHarness(t)
+  relay.handleRawEvent(groupEvent({
+    message_id: 71,
+    message: [{ type: 'text', data: { text: '记录我' } }],
+    raw_message: '记录我',
+  }))
+  await flush()
+
+  assert.equal(readFileSync(join(dir, '.qq-relay', '.gitignore'), 'utf8'), '*\n')
+  const chatDir = join(dir, '.qq-relay', 'chat', '100')
+  const files = readdirSync(chatDir)
+  assert.equal(files.length, 1)
+  const record = JSON.parse(readFileSync(join(chatDir, files[0]), 'utf8').trim().split('\n')[0])
+  assert.equal(record.text, '记录我')
+  assert.equal(record.groupId, '100')
+  assert.equal(record.messageId, '71')
 })
 
 test('relay：同一条 message_id 只处理一次', async (t) => {
@@ -179,7 +213,9 @@ test('relay：命令前缀直通', async (t) => {
   }))
   await flush()
   assert.equal(calls.prompt.length, 1)
-  assert.equal(calls.prompt[0].content[0].text, '[tester] /dsh 状态')
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('（直通：命令）'), text)
+  assert.ok(text.includes('[tester] /dsh 状态'), text)
 })
 
 test('relay：引用回复直通', async (t) => {
@@ -191,7 +227,9 @@ test('relay：引用回复直通', async (t) => {
   }))
   await flush()
   assert.equal(calls.prompt.length, 1)
-  assert.equal(calls.prompt[0].content[0].text, '[tester] 在吗')
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('（直通：引用）'), text)
+  assert.ok(text.includes('[tester]（引用 42）在吗'), text)
 })
 
 test('relay：turn/end 收集 assistant 文本并回发', async (t) => {
@@ -289,7 +327,11 @@ test('relay：闸门开启后普通消息合并成一次 prompt', async (t) => {
   assert.equal(classifierCalls.length, 1)
   assert.equal(classifierCalls[0].messages.length, 2)
   assert.equal(calls.prompt.length, 1)
-  assert.equal(calls.prompt[0].content[0].text, '[tester] 第一条\n[tester] 第二条')
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.startsWith('[QQ群：测试群（100）] '), text)
+  assert.ok(text.includes('[tester] 第一条\n'), text)
+  assert.ok(text.includes('[tester] 第二条'), text)
+  assert.ok(text.includes('[历史记录：.qq-relay/chat/100/'), text)
   assert.equal(state.get(100).dshBusy, true, '派发后应标记 DSH 忙')
 
   ctx.emit('session/event', { header: { id: 'session-1' } }, {

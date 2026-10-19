@@ -8,7 +8,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -118,7 +118,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     commandPrefixes: ['/dsh'],
   })
 
-  assert.equal(routes.length, 3, '应注册 status / config / reconnect 三条路由')
+  assert.equal(routes.length, 4, '应注册 status / config / reconnect / rebind 四条路由')
 
   const initial = await call(routes, '/dsh-qq-relay/api/status')
   assert.equal(initial.status, 200)
@@ -130,6 +130,8 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.deepEqual(status.config.groups, [100])
   assert.equal(status.config.accessTokenConfigured, true)
   assert.equal(status.config.accessTokenSource, 'profile')
+  assert.deepEqual(status.config.groupWorkspaces, {}, '默认没有群项目覆盖')
+  assert.equal(status.config.chatRetentionDays, 0, '聊天记录默认永久保留')
   assert.equal(JSON.stringify(status).includes('patch-token'), false)
   assert.deepEqual(status.problems, [])
   assert.deepEqual(status.mappings, [])
@@ -173,6 +175,72 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.equal(reconnected.status, 200)
   assert.equal(reconnected.payload.ok, true)
   assert.equal(reconnected.payload.value.started, true)
+
+  // 群项目目录覆盖：保存后 status 可见，settings.json 整表落盘
+  const projectPath = join(home, 'projects', 'proj-200')
+  const projectsSaved = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ groupWorkspaces: { '200': projectPath } }),
+  })
+  assert.equal(projectsSaved.status, 200)
+  assert.deepEqual(projectsSaved.payload.value.config.groupWorkspaces, { '200': projectPath })
+  const storedProjects = JSON.parse(readFileSync(settingsFile, 'utf8'))
+  assert.deepEqual(storedProjects.config.groupWorkspaces, { '200': projectPath })
+
+  // 重新绑定：白名单群成功，未知群 400
+  const rebound = await call(routes, '/dsh-qq-relay/api/rebind', {
+    method: 'POST',
+    body: JSON.stringify({ groupId: 200 }),
+  })
+  assert.equal(rebound.status, 200)
+  assert.equal(rebound.payload.value.started, true)
+
+  const badRebind = await call(routes, '/dsh-qq-relay/api/rebind', {
+    method: 'POST',
+    body: JSON.stringify({ groupId: 999 }),
+  })
+  assert.equal(badRebind.status, 400)
+  assert.equal(badRebind.payload.error.code, 'REBIND_GROUP_INVALID')
+})
+
+test('apply：rebind 删除群映射并重建（下次消息按新项目建会话）', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-rebind-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  // 预置一条旧映射（模拟升级前已绑定的群）
+  const storageDir = join(home, '.dsh', 'storages', 'dsh-qq-relay')
+  mkdirSync(storageDir, { recursive: true })
+  writeFileSync(join(storageDir, 'mapping.json'), JSON.stringify({
+    100: { sessionId: 'session-old', workspacePath: join(home, 'old-project'), title: 'QQ群：旧', createdAt: 1 },
+  }), 'utf8')
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: join(home, 'ws'),
+  })
+
+  const before = await call(routes, '/dsh-qq-relay/api/status')
+  assert.equal(before.payload.value.mappings.length, 1)
+
+  const rebound = await call(routes, '/dsh-qq-relay/api/rebind', {
+    method: 'POST',
+    body: JSON.stringify({ groupId: 100 }),
+  })
+  assert.equal(rebound.status, 200)
+  assert.equal(rebound.payload.value.mappings.length, 0, '映射应被删除')
+  const stored = JSON.parse(readFileSync(join(storageDir, 'mapping.json'), 'utf8'))
+  assert.deepEqual(stored, {})
 })
 
 test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
@@ -195,7 +263,7 @@ test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
     groups: [100],
     workspace: join(home, 'ws'),
   })
-  assert.equal(routes.length, 3)
+  assert.equal(routes.length, 4)
   assert.equal(tools.length, 1)
   const definition = tools[0]
   assert.equal(definition.name, 'qq_send')
@@ -211,4 +279,40 @@ test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
 
   // 非白名单群被拒绝
   await assert.rejects(() => definition.execute({ groupId: 200, text: 'x' }), /不在白名单/)
+})
+
+test('apply：启动时把旧全局聊天日志迁移到群项目 .qq-relay', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-chat-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const project = join(home, 'projects', 'my-app')
+  const storageDir = join(home, '.dsh', 'storages', 'dsh-qq-relay')
+  mkdirSync(join(storageDir, 'chat', '100'), { recursive: true })
+  writeFileSync(join(storageDir, 'chat', '100', '2026-10-19.jsonl'), JSON.stringify({ time: Date.now(), text: '旧消息' }) + '\n', 'utf8')
+  writeFileSync(join(storageDir, 'mapping.json'), JSON.stringify({
+    100: { sessionId: 'session-old', workspacePath: project, title: 'QQ群：旧', createdAt: 1 },
+  }), 'utf8')
+
+  const { ctx, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: project,
+  })
+
+  const migrated = join(project, '.qq-relay', 'chat', '100', '2026-10-19.jsonl')
+  assert.equal(existsSync(migrated), true, '旧聊天日志应迁移到群项目')
+  assert.equal(readFileSync(migrated, 'utf8').includes('旧消息'), true)
+  assert.equal(readFileSync(join(project, '.qq-relay', '.gitignore'), 'utf8'), '*\n')
+  assert.equal(existsSync(join(storageDir, 'chat', '100', '2026-10-19.jsonl')), false, '旧文件应被移走')
+  assert.equal(existsSync(join(storageDir, 'chat-migration.json')), true)
 })

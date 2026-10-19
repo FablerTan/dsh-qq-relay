@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
@@ -17,7 +17,7 @@ import {
   pickEditable,
   resolveConfig,
 } from '../lib/model/settings.js'
-import { createConfigRoutes, CONFIG_PATH, RECONNECT_PATH, STATUS_PATH } from '../lib/controller/config-routes.js'
+import { createConfigRoutes, CONFIG_PATH, REBIND_PATH, RECONNECT_PATH, STATUS_PATH } from '../lib/controller/config-routes.js'
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-settings-'))
@@ -133,6 +133,42 @@ test('settings：maskConfig 不回显 token，并标注来源', () => {
   assert.equal(empty.wsUrl, '')
 })
 
+test('settings：groupWorkspaces / chatRetentionDays 可编辑、校验、整表覆盖', (t) => {
+  const picked = pickEditable({ groupWorkspaces: { '100': '/p' }, chatRetentionDays: 0, accessToken: null })
+  assert.deepEqual(picked, { groupWorkspaces: { '100': '/p' }, chatRetentionDays: 0 })
+
+  const resolved = resolveConfig(PATCH_CONFIG, { groupWorkspaces: { '10002': '~/projects/app' } })
+  assert.equal(resolved.ok, true)
+  assert.equal(resolved.config.groupWorkspaces['10002'], join(homedir(), 'projects', 'app'))
+
+  const replaced = resolveConfig(PATCH_CONFIG, { groupWorkspaces: { '42': '/tmp/x' } })
+  assert.deepEqual(replaced.config.groupWorkspaces, { '42': '/tmp/x' }, '覆盖是整表替换')
+
+  const bad = resolveConfig(PATCH_CONFIG, { groupWorkspaces: { abc: '/tmp/x', '42': 'relative' } })
+  assert.equal(bad.ok, false)
+  assert.ok(bad.problems.some((problem) => problem.includes('groupWorkspaces')))
+
+  assert.equal(resolveConfig(PATCH_CONFIG, { chatRetentionDays: 0 }).config.chatRetentionDays, 0)
+  assert.equal(resolveConfig(PATCH_CONFIG, { chatRetentionDays: 30 }).config.chatRetentionDays, 30)
+  assert.equal(resolveConfig(PATCH_CONFIG, { chatRetentionDays: 3 }).ok, false)
+
+  const dir = tempDir(t)
+  const store = createSettingsStore(join(dir, 'settings.json'))
+  store.save({ groupWorkspaces: { '42': '/tmp/x' }, chatRetentionDays: 30 })
+  assert.deepEqual(store.load(), { groupWorkspaces: { '42': '/tmp/x' }, chatRetentionDays: 30 })
+})
+
+test('settings：maskConfig 暴露群项目目录与保留天数', () => {
+  const resolved = resolveConfig(PATCH_CONFIG, {
+    groupWorkspaces: { '42': '/tmp/proj' },
+    chatRetentionDays: 30,
+  })
+  const view = maskConfig(resolved.config, {})
+  assert.deepEqual(view.groupWorkspaces, { '42': '/tmp/proj' })
+  assert.equal(view.chatRetentionDays, 30)
+  assert.equal(JSON.stringify(view).includes('profile-token'), false)
+})
+
 test('settings：store 原子读写覆盖，坏文件当空覆盖', (t) => {
   const dir = tempDir(t)
   const file = join(dir, 'settings.json')
@@ -235,6 +271,43 @@ test('routes：POST /config 超限返回 413', async () => {
   await configRoute.handler(fakeReq({ method: 'POST', url: CONFIG_PATH, body: '{"a":"0123456789"}' }), res)
   assert.equal(res.statusCode, 413)
   assert.equal(parseResponse(res).error.code, 'CONFIG_BODY_TOO_LARGE')
+})
+
+test('routes：POST /rebind 把 groupId 交给 rebind 并回传结果', async () => {
+  const calls = []
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    rebind: (groupId) => { calls.push(groupId); return { ok: true, value: { rebound: groupId } } },
+  })
+  const route = routes.find((item) => item.path === REBIND_PATH)
+  assert.equal(route.kind, 'exact')
+  const res = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: REBIND_PATH, body: '{"groupId":100}' }), res)
+  assert.deepEqual(calls, [100])
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(parseResponse(res), { ok: true, value: { rebound: 100 } })
+})
+
+test('routes：rebind 未实现 501、非法 JSON 400、非 POST 405', async () => {
+  const missing = createConfigRoutes({ getStatus: () => ({}) })
+  const missingRoute = missing.find((item) => item.path === REBIND_PATH)
+  const missingRes = fakeRes()
+  await missingRoute.handler(fakeReq({ method: 'POST', url: REBIND_PATH, body: '{"groupId":100}' }), missingRes)
+  assert.equal(missingRes.statusCode, 501)
+
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    rebind: () => ({ ok: true, value: {} }),
+  })
+  const route = routes.find((item) => item.path === REBIND_PATH)
+  const badJson = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: REBIND_PATH, body: '{oops' }), badJson)
+  assert.equal(badJson.statusCode, 400)
+  assert.equal(parseResponse(badJson).error.code, 'CONFIG_BAD_JSON')
+
+  const wrongMethod = fakeRes()
+  await route.handler(fakeReq({ method: 'GET', url: REBIND_PATH }), wrongMethod)
+  assert.equal(wrongMethod.statusCode, 405)
 })
 
 test('routes：POST /reconnect 调 reconnect 并回传结果', async () => {

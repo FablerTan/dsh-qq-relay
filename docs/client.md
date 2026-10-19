@@ -1,7 +1,7 @@
 # client 半身与设置页
 
-> 状态：**P1.5 基础配置页已落地（2026-10-19）**。本文是 client 半身的契约文档：
-> 设置页长什么样、配置怎么分层、HTTP 面怎么调、保存后哪些东西立刻生效。
+> 状态：**P1.5 基础配置页已落地（2026-10-19）；P4 群项目目录 + 重新绑定已落地（2026-10-19）**。
+> 本文是 client 半身的契约文档：设置页长什么样、配置怎么分层、HTTP 面怎么调、保存后哪些东西立刻生效。
 > 总体架构见 [architecture.md](./architecture.md)，配置项定义见其 §2.1。
 
 ## 1. 定位
@@ -17,9 +17,9 @@
 | 区块 | 内容 |
 |---|---|
 | 状态行 | 已连接（昵称 / QQ 号）· 连接中（断线自动重连）· 未启动（配置待补全 / 另一个实例持锁，显示 pid） |
-| 配置表单 | `wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` · `workspace` · `sessionTitle` · `replyChunkSize` · `commandPrefixes` |
+| 配置表单 | `wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` · `workspace`（默认项目）· `sessionTitle` · `replyChunkSize` · `commandPrefixes` |
 | 操作 | 「保存并重连」「重新连接」「刷新」，以及未保存修改提示 |
-| 群映射 | 只读表格：群号 → 会话标题 / 会话 id（来自 `mapping.json`） |
+| 群项目目录 | 可编辑表格：群号 / 会话（标题 + id 或「未创建」）/ 项目目录（留空 = 跟随默认项目）/ 「重新绑定」按钮（P4） |
 | 提示 | host 回来的校验问题（如 `wsUrl 必填`）逐条显示；保存成功/失败有状态提示 |
 
 页面每 5 秒静默刷新一次状态（只刷新连接态与映射，不覆盖正在编辑的表单）。
@@ -34,8 +34,10 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 生效配置（relay 实际使用）
 ~~~
 
-- 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / sessionTitle /
-  replyChunkSize / commandPrefixes`；`reconnect` 等保持 patch 只读。
+- 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
+  chatRetentionDays / sessionTitle / replyChunkSize / commandPrefixes`；`reconnect` 等保持 patch 只读。
+  `groupWorkspaces` 由「群项目目录」表格整表提交（空表 = 清空覆盖）；`chatRetentionDays` 本期只有配置、
+  没有表单入口（清理 UI 排 v0.8.1）。
 - **保存即生效**：host 用新配置重建 client + relay（单实例锁不重入），不需要重启 GUI。
 - 校验失败 → 返回 400，**不写盘、不改内存配置**；页面显示 host 的 problems。
 - `settings.json` 是普通 JSON（`{ version, updatedAt, config }`），原子写；手动改它
@@ -58,6 +60,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 | GET / HEAD | `/dsh-qq-relay/api/config` | 同 `status`（配置视图就在 `value.config`） |
 | POST | `/dsh-qq-relay/api/config` | body = 可编辑字段子集；校验、落盘、重建连接后返回新状态 |
 | POST | `/dsh-qq-relay/api/reconnect` | 用当前配置重建连接 |
+| POST | `/dsh-qq-relay/api/rebind` | body `{ groupId }`：删该群会话映射并用当前配置重建 → 下次消息按新项目建会话（P4） |
 
 状态快照字段：
 
@@ -74,6 +77,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
     "selfId": 10001,
     "groups": [10002],
     "workspace": "/Users/<user>/dsh/qq-relay-ws",
+    "groupWorkspaces": { "10002": "/Users/<user>/projects/my-app" },
+    "chatRetentionDays": 0,
     "sessionTitle": "QQ群：{groupName}",
     "replyChunkSize": 1500,
     "commandPrefixes": ["/dsh"],
@@ -85,8 +90,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 }
 ~~~
 
-错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` → 400；
-`CONFIG_BODY_TOO_LARGE` → 413；`RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` → 409；
+错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` / `REBIND_GROUP_INVALID` → 400；
+`CONFIG_BODY_TOO_LARGE` → 413；`RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` → 409；
 其余 → 500。请求体上限 64 KiB。
 
 ## 5. 热更新语义
@@ -95,7 +100,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 |---|---|
 | `wsUrl` / `accessToken` / `selfId` | 保存后立即断开旧连接、用新配置重连 |
 | `groups` / `commandPrefixes` / `replyChunkSize` | 立即对新事件生效 |
-| `workspace` / `sessionTitle` | 只影响**之后新建**的会话；已存在的群映射保持原 workspace / 标题（映射表可查） |
+| `workspace` / `groupWorkspaces` / `sessionTitle` | 只影响**之后新建**的会话；已存在的群映射保持原项目 / 标题（表格可查）。改已映射群的项目后点「重新绑定」才会换会话；旧项目聊天记录不移动 |
 
 - 重连不重入单实例锁：锁属于进程，连接属于运行实例（`controller/runtime.js`）。
 - **保存会立即断开当前 WS**：进行中的 QQ 触发回合会被中止且不回发（配置改动属低频操作，
@@ -126,7 +131,8 @@ src/
 
 ## 8. 已知边界 / 后续
 
-- 页面不管理映射（只读）：清映射 / 重建会话放 P3。
+- 页面可直接改「群项目目录」，并为已映射群提供「重新绑定」；清空全部映射 / 删除会话仍无入口。
+- 聊天记录清理（保留天数 + 立即清理）排 v0.8.1。
 - 不做 i18n（当前中文直出）；随插件一起演进。
 - 没有「恢复 profile 默认值」按钮：删掉 settings.json 后重启即可回到 patch 配置。
 - 闸门相关配置（快路 / 慢路 / jev）待 P2 落地后再加进表单。

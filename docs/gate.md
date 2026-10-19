@@ -108,8 +108,9 @@ dispatch 成功 → lastBotSpeakAt = now；cooldownUntil = now + 2h；清空 pen
 ~~~
 
 - 路径：**~/.dsh/storages/dsh-qq-relay/state/(group_id).json**，写入用临时文件 + rename（原子）。
-- 聊天日志：**~/.dsh/storages/dsh-qq-relay/chat/(group_id)/YYYY-MM-DD.jsonl**，
-  只追加；默认保留 7 天；给 jev 与 DSH prompt 提供上下文。
+- 聊天日志（P4）：**\<群项目\>/.qq-relay/chat/(group_id)/YYYY-MM-DD.jsonl**，只追加；
+  默认**永不自动删除**（`chatRetentionDays: 0`，配了天数才会清理）；给 jev 与 DSH prompt 提供上下文，
+  agent 也可直接 read（见 [chat-context.md](./chat-context.md)）。旧全局 `chat/` 启动时一次性迁移。
 - 单实例锁：**~/.dsh/storages/dsh-qq-relay/lock**，第二个实例拒绝启动。
 
 ## 6. 幂等与并发
@@ -198,11 +199,14 @@ gate:
 - **DSH 忙（P2.2）**：relay 派发批次时置 `dshBusy=true`，本轮 turn/end 后置 false；闸门评估发现
   本群 `dshBusy` 就延后（pending 保留），避免同一群并发起两个 turn。
 - **决策日志（P2.2）**：每次决策落一条 `gate/YYYY-MM-DD.jsonl`（time / groupId / trigger /
-  batch / reply / confidence / reason / costMs / messageIds），**不存正文**；保留 7 天，由组合根
-  启动时和每天清理一次（聊天日志同款保留期一起清）。
+  batch / reply / confidence / reason / costMs / messageIds），**不存正文**；保留 7 天（插件内部诊断数据，
+  与聊天记录的保留策略分开），由组合根启动时和每天清理一次。
 - **上下文与派发分离（v0.7.1）**：分类器看的是聊天日志最近 60 条（含 bot 发言），派发 DSH 的
   prompt 只包含 pending 本批消息；这样 jev 能判断「刚被 @ 过 / 刚回过一句」这类语境，
   又不会把旧消息重复喂给 agent。
+- **prompt 拼接（P4）**：派发文本由 `lib/model/prompt.js` 统一生成——群名 / 群号 / 本地时间 /
+  条数 / 每行显示名与 @、引用标记，末尾给聊天日志目录的相对路径指针；直通与闸门共用。
+  格式与示例见 [chat-context.md §5](./chat-context.md)。
 - **发送队列**：`relay` 内存队列（不落盘，进程重启即丢），断线 / 发送失败入队，`client open`
   时按序补发；超过 30 分钟丢弃并记日志，上限 50 条。失败分类：文本命中频率 / 风控关键词 → 退避重试，
   其余 → 不重试（避免刷错误日志）。
@@ -212,4 +216,5 @@ gate:
 - **单测**：`test/gate.test.js`（假时钟：合并 / 最小间隔 / 慢路 / fail closed / 重启恢复）、
   `test/model.test.js`（配置 / 决策 / 批次 / 发送失败分类 / jev 配置）、
   `test/jev.test.js`（请求构造 / 响应解析 / 阈值 / 各类失败 fail closed）、
-  `test/relay.test.js`（直通不受闸门影响、断线队列补发）。
+  `test/prompt.test.js`（拼接格式 / 标记 / 历史指针）、
+  `test/relay.test.js`（直通不受闸门影响、断线队列补发、prompt 拼接）。

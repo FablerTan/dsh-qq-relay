@@ -15,9 +15,13 @@ import {
 } from '../model/api.js'
 import {
   buildConfigPatch,
+  buildGroupWorkspacesPatch,
   emptyForm,
   formFromConfig,
   isFormDirty,
+  isProjectRowsDirty,
+  projectRowsFromStatus,
+  type GroupProjectRow,
   type RelayFormState,
 } from '../model/form.js'
 
@@ -86,6 +90,7 @@ function errorText(result: RelayApiResult<RelayStatusView>): string {
 export function RelaySettingsSection(): ReactElement {
   const [status, setStatus] = useState<RelayStatusView | null>(null)
   const [form, setForm] = useState<RelayFormState>(emptyForm)
+  const [projectRows, setProjectRows] = useState<GroupProjectRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -93,7 +98,10 @@ export function RelaySettingsSection(): ReactElement {
 
   const applyStatus = useCallback((next: RelayStatusView, syncForm: boolean) => {
     setStatus(next)
-    if (syncForm) setForm(formFromConfig(next.config))
+    if (syncForm) {
+      setForm(formFromConfig(next.config))
+      setProjectRows(projectRowsFromStatus(next))
+    }
   }, [])
 
   /** 拉状态：`syncForm` 时把表单重置为 host 的当前配置。 */
@@ -119,6 +127,12 @@ export function RelaySettingsSection(): ReactElement {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
+  const updateProjectRow = (groupId: number, projectDir: string) => {
+    setProjectRows((previous) => previous.map((row) => (
+      row.groupId === groupId ? { ...row, projectDir } : row
+    )))
+  }
+
   const onSave = useCallback(async () => {
     const patch = buildConfigPatch(form)
     if (!patch.ok) {
@@ -126,10 +140,11 @@ export function RelaySettingsSection(): ReactElement {
       setError(patch.problems.join('；'))
       return
     }
+    const rowsPatch = buildGroupWorkspacesPatch(projectRows)
     setBusy(true)
     setError(null)
     setNotice(null)
-    const result = await api.saveConfig(patch.value)
+    const result = await api.saveConfig({ ...patch.value, groupWorkspaces: rowsPatch })
     setBusy(false)
     if (result.ok) {
       applyStatus(result.value, true)
@@ -137,7 +152,7 @@ export function RelaySettingsSection(): ReactElement {
     } else {
       setError(errorText(result))
     }
-  }, [form, applyStatus])
+  }, [form, projectRows, applyStatus])
 
   const onReconnect = useCallback(async () => {
     setBusy(true)
@@ -153,8 +168,31 @@ export function RelaySettingsSection(): ReactElement {
     }
   }, [applyStatus])
 
+  /** 重新绑定：删该群映射并按当前项目目录重建（旧聊天记录不移动）。 */
+  const onRebind = useCallback(async (groupId: number) => {
+    const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
+    if (typeof confirmFn === 'function') {
+      const approved = confirmFn(
+        '重新绑定群 ' + String(groupId) + '？\n'
+        + '会删除该群现有会话映射，下次消息按当前项目目录新建会话；旧项目里的聊天记录不会移动。',
+      )
+      if (!approved) return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await api.rebind(groupId)
+    setBusy(false)
+    if (result.ok) {
+      applyStatus(result.value, true)
+      setNotice('已重新绑定：下一条消息会按新项目建会话。')
+    } else {
+      setError(errorText(result))
+    }
+  }, [applyStatus])
+
   const current = statusView(status)
-  const dirty = status !== null && isFormDirty(form, status.config)
+  const dirty = status !== null && (isFormDirty(form, status.config) || isProjectRowsDirty(projectRows, status))
   const tokenHint = status === null
     ? '保存后生效'
     : status.config.accessTokenConfigured
@@ -225,7 +263,7 @@ export function RelaySettingsSection(): ReactElement {
         />
       </Field>
 
-      <Field label="会话工作目录" hint="每个群自动创建的 DSH 会话使用的 workspace">
+      <Field label="会话工作目录" hint="未单独配置群项目时，聊天记录与 DSH 会话使用的默认项目目录">
         <input
           value={form.workspace}
           onChange={(event) => updateField('workspace', event.target.value)}
@@ -282,10 +320,15 @@ export function RelaySettingsSection(): ReactElement {
         <p style={{ margin: '0 0 10px', color: '#2e9e5b', fontSize: '0.85em' }} role="status">{notice}</p>
       ) : null}
 
-      <h3 style={{ margin: '16px 0 6px', fontSize: '0.95rem' }}>群 ↔ 会话映射</h3>
-      {status === null || status.mappings.length === 0 ? (
+      <h3 style={{ margin: '16px 0 6px', fontSize: '0.95rem' }}>群项目目录</h3>
+      <p style={{ margin: '0 0 8px', color: MUTED, fontSize: '0.82em' }}>
+        每个群的聊天记录写进该项目的 <code>.qq-relay/chat/&lt;群号&gt;/</code>，DSH 会话也以它为工作目录；
+        留空表示跟随上面的默认工作目录。改目录只影响之后新建的会话——已建会话请点「重新绑定」
+        （旧项目里的聊天记录不会移动）。
+      </p>
+      {status === null || projectRows.length === 0 ? (
         <p style={{ margin: 0, color: MUTED, fontSize: '0.84em' }}>
-          还没有映射：在群里 @ 机器人（或发命令前缀）后会为这个群自动创建会话。
+          还没有群：把群号填进「群白名单」，或在群里 @ 机器人后会自动出现。
         </p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -293,17 +336,45 @@ export function RelaySettingsSection(): ReactElement {
             <thead>
               <tr style={{ textAlign: 'left', color: MUTED }}>
                 <th style={{ padding: '4px 6px', borderBottom: BORDER }}>群号</th>
-                <th style={{ padding: '4px 6px', borderBottom: BORDER }}>会话标题</th>
-                <th style={{ padding: '4px 6px', borderBottom: BORDER }}>会话 id</th>
+                <th style={{ padding: '4px 6px', borderBottom: BORDER }}>会话</th>
+                <th style={{ padding: '4px 6px', borderBottom: BORDER }}>项目目录</th>
+                <th style={{ padding: '4px 6px', borderBottom: BORDER }}>操作</th>
               </tr>
             </thead>
             <tbody>
-              {status.mappings.map((mapping) => (
-                <tr key={mapping.groupId}>
-                  <td style={{ padding: '4px 6px', borderBottom: BORDER }}>{mapping.groupId}</td>
-                  <td style={{ padding: '4px 6px', borderBottom: BORDER }}>{mapping.title !== '' ? mapping.title : '—'}</td>
-                  <td style={{ padding: '4px 6px', borderBottom: BORDER, fontFamily: 'ui-monospace, monospace' }}>
-                    {mapping.sessionId}
+              {projectRows.map((row) => (
+                <tr key={row.groupId}>
+                  <td style={{ padding: '4px 6px', borderBottom: BORDER }}>{row.groupId}</td>
+                  <td style={{ padding: '4px 6px', borderBottom: BORDER }}>
+                    {row.sessionId === '' ? (
+                      <span style={{ color: MUTED }}>未创建</span>
+                    ) : (
+                      <>
+                        <span>{row.sessionTitle !== '' ? row.sessionTitle : '—'}</span>
+                        <span style={{ display: 'block', fontFamily: 'ui-monospace, monospace', fontSize: '0.9em', color: MUTED }}>
+                          {row.sessionId}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                  <td style={{ padding: '4px 6px', borderBottom: BORDER, minWidth: 200 }}>
+                    <input
+                      value={row.projectDir}
+                      onChange={(event) => updateProjectRow(row.groupId, event.target.value)}
+                      placeholder={status.config.workspace}
+                      style={{ ...INPUT_STYLE, fontSize: '0.95em' }}
+                      spellCheck={false}
+                    />
+                  </td>
+                  <td style={{ padding: '4px 6px', borderBottom: BORDER }}>
+                    <button
+                      type="button"
+                      onClick={() => { void onRebind(row.groupId) }}
+                      disabled={busy || row.sessionId === ''}
+                      style={{ ...BUTTON_STYLE, fontSize: '0.82em', padding: '3px 8px' }}
+                    >
+                      重新绑定
+                    </button>
                   </td>
                 </tr>
               ))}

@@ -4,7 +4,7 @@
 > **P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`）；
 > P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）**。
 > **P4 聊天记录与消息拼接**：`.qq-relay/` 隐藏目录 + 群项目目录 + prompt 拼接，
-> 规格已确认（2026-10-19），实现排期 v0.8.0，见 [chat-context.md](./chat-context.md)。
+> v0.8.0 已实现（2026-10-19；真机验收待用户重启 GUI 后确认），见 [chat-context.md](./chat-context.md)。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -132,7 +132,7 @@
 - client 半身面板增强：映射管理、闸门状态、最近消息（基础配置页已在 P1.5 交付，见 [client.md](./client.md)）。
 - 多群资源控制：并发上限、队列、每群配额。
 
-## P4 聊天记录与消息拼接（规格已确认，2026-10-19）
+## P4 聊天记录与消息拼接（v0.8.0 已实现，2026-10-19）
 
 目标：聊天记录落在「群绑定的项目」隐藏目录 `.qq-relay/` 里，agent 可直接读；
 发给 DSH 的 prompt 带上群名 / 时间 / @ 与引用标记 / 历史指针。完整规格见
@@ -146,6 +146,12 @@
 - 旧全局聊天日志一次性迁移（幂等）。
 - 已映射群改项目后「重新绑定」按钮（rebind 路由）。
 - 保留策略：默认不自动删除（`chatRetentionDays: 0`）；清理 UI 留 v0.8.1。
+
+### 验收状态（2026-10-19）
+
+- ✅ 单测：项目解析 / 聊天日志按项目路由 / prompt 拼接 / 迁移幂等 / 配置与 rebind 路由，
+  共 143 个全过；`pnpm check` 全绿。
+- ⏳ 真机验收：需要用户重启 dwdev GUI + 刷新页面后逐项确认。
 
 ### 验收
 

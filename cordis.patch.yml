@@ -5,14 +5,16 @@
 # profile's GUI has to be restarted before the row takes effect.
 #
 # One bare plugin row for both halves:
-#  - host (`lib/index.js`, exports "."): the relay itself — planned: connect a
-#    QQ bot protocol endpoint and bridge QQ messages <-> DSH sessions;
+#  - host (`lib/index.js`, exports "."): OneBot 11 forward-WS client, message
+#    gate, qq_send tool and approval bridge;
 #  - client (exports "./client" -> `lib/client.js`, served at
-#    /plugins/dsh-qq-relay/client.js): planned status / config panel; the
+#    /plugins/dsh-qq-relay/client.js): the "QQ 机器人" settings page; the
 #    browser half's module graph order is declared by `dsh.client.inject` in
 #    package.json.
 #
-# v0.1.0 is an EMPTY SKELETON: neither half registers anything yet.
+# v0.8.0: both halves are live — host runs the OneBot relay / gate / qq_send /
+# approval bridge; client registers the "QQ 机器人" settings section
+# (status, config, per-group project dirs, rebind).
 - insert:
     - id: dsh-qq-relay
       name: dsh-qq-relay

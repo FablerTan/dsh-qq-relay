@@ -1,10 +1,10 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.7.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.8.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
-主动推送与 QQ 侧审批。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -29,11 +29,12 @@ DSH 与 QQ 之间的**双向桥**：
 - 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
 - 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
-**已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射只读）、
+**已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射）、
 消息闸门骨架与收尾（P2.1/P2.2：去抖 / 最小间隔 / 慢路 / 状态持久化 / 决策日志 / 发送队列）、
 jev 分类器（P2.3：OpenRouter `typesafe/jev-1.14`，阈值判定 + fail closed）、
-DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）。
-**仍未定案**：jev 分类器形态、群审批（按钮）、主动推送工具、媒体收发、client 面板增强——先落 `docs/` 再实现。
+DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）、
+群项目目录与聊天记录 `.qq-relay/` + prompt 拼接（P4，见 [chat-context.md](./docs/chat-context.md)）。
+**仍未定案**：群审批（按钮）、媒体收发、client 面板增强、聊天记录清理 UI——先落 `docs/` 再实现。
 
 ## 目录结构
 
@@ -49,13 +50,13 @@ dsh-qq-relay/
 │   ├── controller/
 │   │   ├── onebot/       # codec（事件编解码）· client（WS）· api（action 封装）
 │   │   ├── runtime.js    # relay 运行实例：整份配置热替换（配置页保存后重建连接）
-│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect）
+│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
 │   │   ├── tools.js      # qq_send 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 决策日志 / 回复切分 / 闸门 / jev / 审批
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -113,6 +114,23 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.8.0 群项目目录与消息拼接（2026-10-19）
+
+- 每个群可以绑定自己的**项目目录**（`groupWorkspaces`，设置页「群项目目录」表格可编辑）：
+  会话 cwd 与聊天记录都以它为准；未单独配置时跟随默认 `workspace`。
+- 聊天记录从全局 storage 搬进各群的 `<项目>/.qq-relay/chat/<群号>/YYYY-MM-DD.jsonl`，
+  目录内 `.gitignore` 为 `*`（自我忽略、永不进用户仓库）；**默认不再自动删除**
+  （`chatRetentionDays: 0`，清理 UI 排 v0.8.1）。DSH 会话与 agent 都能直接 read。
+- 发给 DSH 的 prompt 统一由 `lib/model/prompt.js` 拼接：群名 / 群号 / 本地时间 / 条数 /
+  `@你`、`引用 <id>` 标记 / 聊天记录相对路径指针；直通与闸门共用，修掉昵称与 @ 信息丢失。
+- 聊天日志行新增 `groupId` / `card` / `mentionsSelf` / `replyToId`（旧行缺字段自动补默认）。
+- 旧全局聊天日志启动时一次性迁移进各群项目（幂等，目标已存在则跳过，失败只告警）。
+- 设置页新增「重新绑定」：删该群映射并按新项目重建（`POST /dsh-qq-relay/api/rebind`），
+  旧项目里的历史记录不移动。
+- 新增 `model/{project,prompt}.js`、`test/{project,prompt,migration}.test.js`；单测 143 个。
+- 文档：[docs/chat-context.md](./docs/chat-context.md) 规格转实现；architecture / client / gate / roadmap 同步。
+  改的是 host + client 半身，**需重启 profile GUI + 刷新页面**生效。
 
 ### v0.7.1 jev 上下文修正（2026-10-19）
 

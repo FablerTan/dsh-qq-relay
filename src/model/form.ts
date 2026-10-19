@@ -10,7 +10,7 @@
  * 由 host 的 normalizeConfig 负责，错误信息原样显示。
  */
 
-import type { RelayConfigPatch, RelayConfigView } from './api.js'
+import type { RelayConfigPatch, RelayConfigView, RelayStatusView } from './api.js'
 
 /** 受控表单状态：全部字符串，方便 input 直接绑定。 */
 export interface RelayFormState {
@@ -144,4 +144,62 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
 export function isFormDirty(form: RelayFormState, config: RelayConfigView): boolean {
   const base = formFromConfig(config)
   return (Object.keys(base) as (keyof RelayFormState)[]).some((key) => form[key] !== base[key])
+}
+
+/** 群项目目录表格的一行（白名单 ∪ 已映射 ∪ 已配置项目）。 */
+export interface GroupProjectRow {
+  groupId: number
+  sessionId: string
+  sessionTitle: string
+  /** 输入框里的项目目录；空串 = 跟随默认项目。 */
+  projectDir: string
+}
+
+/**
+ * 由状态快照生成「群项目目录」表格行。
+ *
+ * 行集合 = 白名单群 ∪ `groupWorkspaces` 里配置的群 ∪ 已映射群，按群号升序。
+ */
+export function projectRowsFromStatus(status: RelayStatusView): GroupProjectRow[] {
+  const byGroup = new Map<number, GroupProjectRow>()
+  const ensure = (groupId: number): GroupProjectRow => {
+    let row = byGroup.get(groupId)
+    if (row === undefined) {
+      row = { groupId, sessionId: '', sessionTitle: '', projectDir: '' }
+      byGroup.set(groupId, row)
+    }
+    return row
+  }
+  for (const groupId of status.config.groups) ensure(groupId)
+  for (const [key, value] of Object.entries(status.config.groupWorkspaces)) {
+    const groupId = Number(key)
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) continue
+    ensure(groupId).projectDir = value
+  }
+  for (const mapping of status.mappings) {
+    const row = ensure(mapping.groupId)
+    row.sessionId = mapping.sessionId
+    row.sessionTitle = mapping.title
+  }
+  return [...byGroup.values()].sort((left, right) => left.groupId - right.groupId)
+}
+
+/**
+ * 把表格行打成 `groupWorkspaces` 覆盖（整表替换；空行表示跟随默认项目）。
+ * 只做 trim，路径合法性交给 host 的 normalizeConfig。
+ */
+export function buildGroupWorkspacesPatch(rows: GroupProjectRow[]): Record<string, string> {
+  const value: Record<string, string> = {}
+  for (const row of rows) {
+    const projectDir = row.projectDir.trim()
+    if (projectDir === '') continue
+    value[String(row.groupId)] = projectDir
+  }
+  return value
+}
+
+/** 群项目目录表格是否有未保存改动。 */
+export function isProjectRowsDirty(rows: GroupProjectRow[], status: RelayStatusView): boolean {
+  const base = new Map(projectRowsFromStatus(status).map((row) => [row.groupId, row.projectDir]))
+  return rows.some((row) => (base.get(row.groupId) ?? '') !== row.projectDir.trim())
 }
