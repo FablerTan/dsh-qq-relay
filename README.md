@@ -95,6 +95,7 @@ dsh-qq-relay/
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
 | [docs/client.md](./docs/client.md) | client 半身：设置页「QQ 机器人」、配置层序、HTTP 契约、热更新语义、清理 / 面板（闸门状态 / 最近消息 / 映射管理） | 改设置页 / 调配置保存时 |
+| [docs/config.md](./docs/config.md) | 配置总表：每个字段的默认值 / 范围 / 现在能否在设置页改 / 生效方式 + 写死常量清单 + 加字段的改动面 | 调配置 / 决定哪些进设置页时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
