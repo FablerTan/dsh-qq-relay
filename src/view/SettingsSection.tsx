@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import {
   createRelaySettingsApi,
   type RelayApiResult,
+  type RelayPanelMessageView,
   type RelayStatusView,
 } from '../model/api.js'
 import {
@@ -18,6 +19,8 @@ import {
   buildGroupWorkspacesPatch,
   emptyForm,
   formFromConfig,
+  formatAgo,
+  formatClockTime,
   isFormDirty,
   isProjectRowsDirty,
   projectRowsFromStatus,
@@ -86,6 +89,14 @@ function errorText<T>(result: RelayApiResult<T>): string {
   return result.ok ? '' : result.error.message
 }
 
+/** 面板消息里的媒体标记（只读展示，不暴露 URL）。 */
+function mediaLabels(media: RelayPanelMessageView['media']): string[] {
+  const labels: Record<string, string> = { image: '图片', sticker: '表情', face: '表情', video: '视频', voice: '语音' }
+  return media.map((entry) => (entry.status === 'failed'
+    ? '[媒体下载失败]'
+    : '[' + (labels[entry.kind] ?? '媒体') + ']'))
+}
+
 /** 设置页入口组件。 */
 export function RelaySettingsSection(): ReactElement {
   const [status, setStatus] = useState<RelayStatusView | null>(null)
@@ -95,6 +106,11 @@ export function RelaySettingsSection(): ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [messageGroupId, setMessageGroupId] = useState<number | null>(null)
+  const [messages, setMessages] = useState<RelayPanelMessageView[]>([])
+  const [messagesBusy, setMessagesBusy] = useState(false)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
+  const [messagesWindowMs, setMessagesWindowMs] = useState(0)
 
   const applyStatus = useCallback((next: RelayStatusView, syncForm: boolean) => {
     setStatus(next)
@@ -190,6 +206,78 @@ export function RelaySettingsSection(): ReactElement {
       setError(errorText(result))
     }
   }, [applyStatus])
+
+  /** 最近消息：拉某群最近 24 小时（最多 20 条）的只读消息。 */
+  const loadMessages = useCallback(async (groupId: number) => {
+    setMessagesBusy(true)
+    setMessagesError(null)
+    const result = await api.messages(groupId, 20)
+    setMessagesBusy(false)
+    if (result.ok) {
+      setMessages(result.value.messages)
+      setMessagesWindowMs(result.value.windowMs)
+    } else {
+      setMessages([])
+      setMessagesError(errorText(result))
+    }
+  }, [])
+
+  const openMessages = useCallback((groupId: number) => {
+    setMessageGroupId(groupId)
+    void loadMessages(groupId)
+  }, [loadMessages])
+
+  /** 解除单个群绑定：删映射并重建 relay；旧会话保留在 GUI。 */
+  const onDeleteMapping = useCallback(async (groupId: number) => {
+    const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
+    if (typeof confirmFn === 'function') {
+      const approved = confirmFn(
+        '解除群 ' + String(groupId) + ' 的会话绑定？\n'
+        + '旧会话保留在 GUI；下一条群消息会按当前项目目录新建会话。',
+      )
+      if (!approved) return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await api.deleteMapping(groupId)
+    setBusy(false)
+    if (result.ok) {
+      applyStatus(result.value.status, true)
+      setNotice(result.value.mapping.removed
+        ? '已解除群 ' + String(groupId) + ' 的会话绑定。'
+        : '群 ' + String(groupId) + ' 本来没有绑定。')
+      if (messageGroupId === groupId) setMessageGroupId(null)
+    } else {
+      setError(errorText(result))
+    }
+  }, [applyStatus, messageGroupId])
+
+  /** 清空全部映射：一次删掉所有群绑定（旧会话保留在 GUI）。 */
+  const onClearMappings = useCallback(async () => {
+    const count = status === null ? 0 : status.mappings.length
+    if (count === 0) return
+    const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
+    if (typeof confirmFn === 'function') {
+      const approved = confirmFn(
+        '清空全部 ' + String(count) + ' 条群映射？\n'
+        + '旧会话保留在 GUI；之后每个群的下一条消息都会重新建会话。',
+      )
+      if (!approved) return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await api.clearMappings()
+    setBusy(false)
+    if (result.ok) {
+      applyStatus(result.value.status, true)
+      setNotice('已清空 ' + String(result.value.mappings.cleared) + ' 条群映射。')
+      setMessageGroupId(null)
+    } else {
+      setError(errorText(result))
+    }
+  }, [applyStatus, status])
 
   /**
    * 立即清理：用「保留天数」输入框里的值（1..3650）清一次聊天记录 + 媒体。
@@ -382,6 +470,45 @@ export function RelaySettingsSection(): ReactElement {
         />
       </Field>
 
+      {status !== null && status.gate !== null && status.gate.groups.length > 0 ? (
+        <>
+          <p style={{ margin: '2px 0 6px', color: MUTED, fontSize: '0.8em' }}>
+            实时：待评估 {status.gate.pendingMessages} 条 / {status.gate.pendingGroups} 群 · 活动定时器{' '}
+            {status.gate.timers} · 待派发队列 {status.gate.queue} · 待发送 {status.gate.sendQueue}
+          </p>
+          <div style={{ overflowX: 'auto', marginBottom: 10 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8em' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: MUTED }}>
+                  <th style={{ padding: '4px 6px', borderBottom: BORDER }}>群号</th>
+                  <th style={{ padding: '4px 6px', borderBottom: BORDER }}>待评估</th>
+                  <th style={{ padding: '4px 6px', borderBottom: BORDER }}>最近发言</th>
+                  <th style={{ padding: '4px 6px', borderBottom: BORDER }}>冷却</th>
+                  <th style={{ padding: '4px 6px', borderBottom: BORDER }}>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.gate.groups.map((group) => (
+                  <tr key={group.groupId}>
+                    <td style={{ padding: '4px 6px', borderBottom: BORDER }}>{group.groupId}</td>
+                    <td style={{ padding: '4px 6px', borderBottom: BORDER }}>{group.pending}</td>
+                    <td style={{ padding: '4px 6px', borderBottom: BORDER }}>
+                      {formatAgo(group.lastBotSpeakAt) || '未发言'}
+                    </td>
+                    <td style={{ padding: '4px 6px', borderBottom: BORDER }}>
+                      {group.cooldownUntil > Date.now() ? '冷却至 ' + formatClockTime(group.cooldownUntil) : '—'}
+                    </td>
+                    <td style={{ padding: '4px 6px', borderBottom: BORDER }}>
+                      {group.dshBusy ? '忙（有轮次在跑）' : group.evaluating ? '评估中' : '空闲'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 12px', flexWrap: 'wrap' }}>
         <button type="button" onClick={() => { void onSave() }} disabled={busy || loading} style={BUTTON_STYLE}>
           保存并重连
@@ -405,6 +532,19 @@ export function RelaySettingsSection(): ReactElement {
         留空表示跟随上面的默认工作目录。改目录只影响之后新建的会话——已建会话请点「重新绑定」
         （旧项目里的聊天记录不会移动）。
       </p>
+      {status !== null && status.mappings.length > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => { void onClearMappings() }}
+            disabled={busy || loading}
+            style={{ ...BUTTON_STYLE, fontSize: '0.82em', padding: '3px 8px' }}
+          >
+            清空全部映射（{status.mappings.length}）
+          </button>
+          <span style={{ fontSize: '0.8em', color: MUTED }}>只删本机映射，不动 GUI 里的旧会话。</span>
+        </div>
+      ) : null}
       {status === null || projectRows.length === 0 ? (
         <p style={{ margin: 0, color: MUTED, fontSize: '0.84em' }}>
           还没有群：把群号填进「群白名单」，或在群里 @ 机器人后会自动出现。
@@ -446,14 +586,32 @@ export function RelaySettingsSection(): ReactElement {
                     />
                   </td>
                   <td style={{ padding: '4px 6px', borderBottom: BORDER }}>
-                    <button
-                      type="button"
-                      onClick={() => { void onRebind(row.groupId) }}
-                      disabled={busy || row.sessionId === ''}
-                      style={{ ...BUTTON_STYLE, fontSize: '0.82em', padding: '3px 8px' }}
-                    >
-                      重新绑定
-                    </button>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => { void onRebind(row.groupId) }}
+                        disabled={busy || row.sessionId === ''}
+                        style={{ ...BUTTON_STYLE, fontSize: '0.82em', padding: '3px 8px' }}
+                      >
+                        重新绑定
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { openMessages(row.groupId) }}
+                        disabled={busy || loading}
+                        style={{ ...BUTTON_STYLE, fontSize: '0.82em', padding: '3px 8px' }}
+                      >
+                        消息
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void onDeleteMapping(row.groupId) }}
+                        disabled={busy || row.sessionId === ''}
+                        style={{ ...BUTTON_STYLE, fontSize: '0.82em', padding: '3px 8px' }}
+                      >
+                        解除绑定
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -461,6 +619,57 @@ export function RelaySettingsSection(): ReactElement {
           </table>
         </div>
       )}
+
+      {messageGroupId !== null ? (
+        <div style={{ marginTop: 12, borderTop: BORDER, paddingTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <h4 style={{ margin: 0, fontSize: '0.9rem' }}>最近消息 · 群 {messageGroupId}</h4>
+            <span style={{ color: MUTED, fontSize: '0.8em' }}>
+              最近 {Math.max(1, Math.round(messagesWindowMs / 3600000))} 小时 · 最多 20 条
+            </span>
+            <button
+              type="button"
+              onClick={() => { void loadMessages(messageGroupId) }}
+              disabled={messagesBusy}
+              style={{ ...BUTTON_STYLE, fontSize: '0.8em', padding: '3px 8px' }}
+            >
+              刷新
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMessageGroupId(null) }}
+              disabled={messagesBusy}
+              style={{ ...BUTTON_STYLE, fontSize: '0.8em', padding: '3px 8px' }}
+            >
+              关闭
+            </button>
+          </div>
+          {messagesBusy ? (
+            <p style={{ margin: '6px 0 0', color: MUTED, fontSize: '0.82em' }}>读取中…</p>
+          ) : messagesError !== null ? (
+            <p style={{ margin: '6px 0 0', color: '#e05a4f', fontSize: '0.82em' }} role="alert">{messagesError}</p>
+          ) : messages.length === 0 ? (
+            <p style={{ margin: '6px 0 0', color: MUTED, fontSize: '0.82em' }}>最近 24 小时没有消息。</p>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, fontSize: '0.82em' }}>
+              {messages.map((message) => (
+                <li
+                  key={(message.messageId || String(message.time)) + ':' + String(message.time)}
+                  style={{ padding: '4px 0', borderBottom: BORDER }}
+                >
+                  <div style={{ color: MUTED, fontSize: '0.92em' }}>
+                    {formatClockTime(message.time)} · {message.name}
+                    {message.mentionsSelf ? '（@你）' : ''}
+                    {message.replyToId !== '' ? '（引用 ' + message.replyToId + '）' : ''}
+                    {mediaLabels(message.media).length > 0 ? ' ' + mediaLabels(message.media).join(' ') : ''}
+                  </div>
+                  {message.text !== '' ? <div style={{ whiteSpace: 'pre-wrap' }}>{message.text}</div> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
 
       <h3 style={{ margin: '16px 0 6px', fontSize: '0.95rem' }}>聊天记录清理</h3>
       <p style={{ margin: '0 0 8px', color: MUTED, fontSize: '0.82em' }}>

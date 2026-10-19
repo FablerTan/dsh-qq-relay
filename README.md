@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.13.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.14.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
@@ -9,7 +9,8 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 见 [docs/commands.md](./docs/commands.md)）；P6 已落地**回复体验**（引用触发消息 / 处理中占位 /
 直通连发合并，见 [docs/reply.md](./docs/reply.md)）；P4.2 已落地**媒体双向**（入向视频 / 语音落盘，
 `qq_send` 出向图片 / 文件，见 [docs/media.md](./docs/media.md)）；P4.3 已落地**聊天记录清理**
-（保留天数 + 立即清理，见 [docs/chat-context.md](./docs/chat-context.md) §7）。设计见
+（保留天数 + 立即清理，见 [docs/chat-context.md](./docs/chat-context.md) §7）；P7 已落地**client 面板增强**
+（闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -45,8 +46,9 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 见 [commands.md](./docs/commands.md)）、回复体验（P6：引用触发消息 / 8 秒「处理中」占位 /
 400ms 连发合并，见 [reply.md](./docs/reply.md)）、媒体双向（P4.2：入向视频 / 语音落盘，
 `qq_send` 出向图片 / 文件，见 [media.md](./docs/media.md)）、聊天记录清理（P4.3：保留天数 +
-立即清理，见 [chat-context.md](./docs/chat-context.md) §7）。
-**仍未定案**：群审批（按钮）、client 面板增强（映射管理 / 闸门状态 / 最近消息）、入向群文件——先落 `docs/` 再实现。
+立即清理，见 [chat-context.md](./docs/chat-context.md) §7）、client 面板增强（P7：闸门每群状态 / 最近消息 /
+映射增删，见 [client.md](./docs/client.md)）。
+**仍未定案**：群审批（按钮）、入向群文件——先落 `docs/` 再实现。
 
 ## 目录结构
 
@@ -62,13 +64,13 @@ dsh-qq-relay/
 │   ├── controller/
 │   │   ├── onebot/       # codec（事件编解码）· client（WS）· api（action 封装）
 │   │   ├── runtime.js    # relay 运行实例：整份配置热替换（配置页保存后重建连接）
-│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup）
+│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
 │   │   ├── tools.js      # qq_send 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -88,7 +90,7 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
-| [docs/client.md](./docs/client.md) | client 半身：设置页「QQ 机器人」、配置层序、HTTP 契约、热更新语义、聊天记录清理 UI | 改设置页 / 调配置保存时 |
+| [docs/client.md](./docs/client.md) | client 半身：设置页「QQ 机器人」、配置层序、HTTP 契约、热更新语义、清理 / 面板（闸门状态 / 最近消息 / 映射管理） | 改设置页 / 调配置保存时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
@@ -129,6 +131,19 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.14.0 client 面板增强：闸门状态 / 最近消息 / 映射管理（2026-10-19）
+
+- 闸门区块新增**每群实时状态表**：待评估条数、最近发言 / 最近回复、冷却、DSH 忙 / 评估中，
+  外加全局计数（待评估消息 / 群、活动定时器、派发队列、发送队列）；随状态轮询每 5 秒刷新。
+- 群项目目录表新增「消息」：按群查看**最近 24 小时**聊天记录（最多 20 条，只读视图：时间 /
+  显示名 / @ 与引用标记 / 媒体标记），走新路由 `GET /dsh-qq-relay/api/messages?groupId=&limit=`。
+- 映射管理补齐：行内「解除绑定」与表头「清空全部映射」，都只删本机映射、保留 GUI 里的旧会话；
+  下条群消息按当前项目目录重新建会话。路由 `POST /api/mapping/delete`、`POST /api/mapping/clear`。
+- 新增 `lib/model/panel.js`（最近消息查询校验 + 面板消息收敛），relay 暴露只读 `snapshot()`
+  把待评估 / 定时器 / 队列计数带进状态快照。
+- 单测 215 个（新增面板纯逻辑 3 + 路由 4 + apply 集成 2）；`pnpm check` 全绿。
+  host + client 半身改动，需重启 profile GUI + 刷新页面生效。
 
 ### v0.13.0 聊天记录清理：保留天数 + 立即清理（2026-10-19）
 

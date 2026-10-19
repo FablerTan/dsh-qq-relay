@@ -127,7 +127,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     commandPrefixes: ['/dsh'],
   })
 
-  assert.equal(routes.length, 5, '应注册 status / config / reconnect / rebind / cleanup 五条路由')
+  assert.equal(routes.length, 8, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条路由')
 
   const initial = await call(routes, '/dsh-qq-relay/api/status')
   assert.equal(initial.status, 200)
@@ -341,6 +341,118 @@ test('apply：立即清理按 body 的保留天数删除过期聊天与媒体', 
   assert.equal(invalid.payload.error.code, 'CLEANUP_DAYS_INVALID')
 })
 
+test('apply：面板数据——闸门每群状态 / 最近消息 / 解除绑定', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-panel-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const now = Date.now()
+  const project = join(home, 'projects', 'my-app')
+  const storageDir = join(home, '.dsh', 'storages', 'dsh-qq-relay')
+  mkdirSync(storageDir, { recursive: true })
+  writeFileSync(join(storageDir, 'mapping.json'), JSON.stringify({
+    100: { sessionId: 'session-old', workspacePath: project, title: 'QQ群：旧', createdAt: 1 },
+  }), 'utf8')
+
+  const chatDir = join(project, '.qq-relay', 'chat', '100')
+  mkdirSync(chatDir, { recursive: true })
+  writeFileSync(join(chatDir, dateKey(now) + '.jsonl'), [
+    JSON.stringify({ time: now - 2000, messageId: 'm1', userId: '1', nickname: 'tester', card: 'tester', text: '第一条' }),
+    JSON.stringify({ time: now - 1000, messageId: 'm2', userId: '2', nickname: '另一位', text: '第二条', mentionsSelf: true }),
+    '',
+  ].join('\n'), 'utf8')
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: project,
+  })
+
+  // 闸门状态：每群一行 + 全局计数（WS 未连上，队列为 0）
+  const status = await call(routes, '/dsh-qq-relay/api/status')
+  assert.equal(status.status, 200)
+  const gate = status.payload.value.gate
+  assert.equal(typeof gate.pendingMessages, 'number')
+  assert.equal(gate.pendingMessages, 0)
+  assert.equal(gate.queue, 0)
+  assert.equal(Array.isArray(gate.groups), true)
+  assert.equal(gate.groups.length, 1)
+  assert.equal(gate.groups[0].groupId, 100)
+  assert.equal(gate.groups[0].pending, 0)
+  assert.equal(gate.groups[0].dshBusy, false)
+
+  // 最近消息：只读视图（显示名 / @ 标记），按时间升序
+  const messages = await call(routes, '/dsh-qq-relay/api/messages', {
+    method: 'GET',
+    url: '/dsh-qq-relay/api/messages?groupId=100&limit=10',
+  })
+  assert.equal(messages.status, 200)
+  assert.deepEqual(messages.payload.value.messages.map((message) => message.messageId), ['m1', 'm2'])
+  assert.equal(messages.payload.value.messages[0].name, 'tester')
+  assert.equal(messages.payload.value.messages[1].mentionsSelf, true)
+
+  // 未知群 / 非法群号被拒绝
+  const badGroup = await call(routes, '/dsh-qq-relay/api/messages', {
+    method: 'GET',
+    url: '/dsh-qq-relay/api/messages?groupId=200',
+  })
+  assert.equal(badGroup.status, 400)
+  assert.equal(badGroup.payload.error.code, 'MESSAGES_GROUP_INVALID')
+
+  // 解除绑定：映射删除、状态里的 mappings 变空、下条消息会重新建会话
+  const deleted = await call(routes, '/dsh-qq-relay/api/mapping/delete', {
+    method: 'POST',
+    body: JSON.stringify({ groupId: 100 }),
+  })
+  assert.equal(deleted.status, 200)
+  assert.deepEqual(deleted.payload.value.mapping, { groupId: 100, removed: true })
+  assert.deepEqual(deleted.payload.value.status.mappings, [])
+  assert.deepEqual(JSON.parse(readFileSync(join(storageDir, 'mapping.json'), 'utf8')), {})
+})
+
+test('apply：清空全部映射', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-clear-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const storageDir = join(home, '.dsh', 'storages', 'dsh-qq-relay')
+  mkdirSync(storageDir, { recursive: true })
+  writeFileSync(join(storageDir, 'mapping.json'), JSON.stringify({
+    100: { sessionId: 'session-a', workspacePath: join(home, 'ws'), title: 'A', createdAt: 1 },
+    200: { sessionId: 'session-b', workspacePath: join(home, 'ws'), title: 'B', createdAt: 2 },
+  }), 'utf8')
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: join(home, 'ws'),
+  })
+
+  const cleared = await call(routes, '/dsh-qq-relay/api/mapping/clear', { method: 'POST' })
+  assert.equal(cleared.status, 200)
+  assert.deepEqual(cleared.payload.value.mappings, { cleared: 2 })
+  assert.deepEqual(cleared.payload.value.status.mappings, [])
+  assert.deepEqual(JSON.parse(readFileSync(join(storageDir, 'mapping.json'), 'utf8')), {})
+})
+
 test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-tool-'))
   const previousHome = process.env.HOME
@@ -361,7 +473,7 @@ test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
     groups: [100],
     workspace: join(home, 'ws'),
   })
-  assert.equal(routes.length, 5)
+  assert.equal(routes.length, 8)
   assert.equal(tools.length, 1)
   const definition = tools[0]
   assert.equal(definition.name, 'qq_send')

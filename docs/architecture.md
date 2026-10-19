@@ -82,7 +82,7 @@ lib/
 │   │   ├── api.js            # action 调用封装（send_group_msg 等）与 retcode 处理
 │   │   └── codec.js          # OneBot 事件 / 消息段 → 内部消息模型
 │   ├── runtime.js            # 运行实例：client+api+relay 三件套，支持整份配置热替换
-│   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect / rebind / cleanup
+│   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect / rebind / cleanup / messages / mapping
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
 │   ├── tools.js              # qq_send 工具定义（P3：手写 ToolDefinition，零外部依赖）
@@ -94,6 +94,7 @@ lib/
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL（按群项目路由）/ 读取 / 清理 / 旧日志迁移
     ├── cleanup.js            # 清理（v0.13.0）：立即清理天数校验 + 聊天 / 媒体一次性清理（自动清理共用）
+    ├── panel.js              # 设置页面板（v0.14.0）：最近消息查询校验 + 聊天记录 → 只读消息视图
     ├── media.js              # 入向图片 / 表情 / 视频 / 语音落盘与清理、媒体类型识别（P4.1 / P4.2）
     ├── project.js            # 群项目目录解析、`.qq-relay/` 创建与自忽略 .gitignore（P4）
     ├── prompt.js             # 消息拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针（P4）
@@ -118,7 +119,7 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 `model/commands.js`，命令分发与 `createSessionForGroup` / `sendSystemReply` 在 `controller/relay.js`。
 
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
-单实例锁、聊天日志读写清理、立即清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
+单实例锁、聊天日志读写清理、立即清理、面板最近消息、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
 决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` 工具契约与注册、审批命令匹配与桥接、
 群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。

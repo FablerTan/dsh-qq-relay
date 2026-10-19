@@ -17,6 +17,18 @@ export interface RelayGateConfigView {
   jevThreshold: number
 }
 
+/** 每群闸门状态（v0.14.0 面板；来自 state 文件，只读）。 */
+export interface RelayGateGroupStatusView {
+  groupId: number
+  pending: number
+  lastBotSpeakAt: number
+  lastReplyAt: number
+  lastUserMessageAt: number
+  cooldownUntil: number
+  evaluating: boolean
+  dshBusy: boolean
+}
+
 /** 闸门运行状态（只读提示用）。 */
 export interface RelayGateStatusView {
   enabled: boolean
@@ -24,6 +36,13 @@ export interface RelayGateStatusView {
   model: string
   threshold: number
   slowTimer: number
+  /** 实时计数（v0.14.0；旧 host 缺字段时为 0）。 */
+  pendingMessages: number
+  pendingGroups: number
+  timers: number
+  queue: number
+  sendQueue: number
+  groups: RelayGateGroupStatusView[]
 }
 
 /** host 侧的配置视图（token 永不出现，只有是否已配置与来源）。 */
@@ -84,6 +103,43 @@ export interface RelayCleanupValue {
   status: RelayStatusView
 }
 
+/** 最近消息（v0.14.0 面板）：聊天记录里的一条只读消息。 */
+export interface RelayPanelMessageMediaView {
+  kind: string
+  status: string
+  path: string
+}
+
+export interface RelayPanelMessageView {
+  messageId: string
+  time: number
+  name: string
+  text: string
+  mentionsSelf: boolean
+  replyToId: string
+  media: RelayPanelMessageMediaView[]
+}
+
+/** `GET /messages` 的 value。 */
+export interface RelayMessagesValue {
+  groupId: number
+  limit: number
+  windowMs: number
+  messages: RelayPanelMessageView[]
+}
+
+/** 解除单个群绑定的 value。 */
+export interface RelayMappingDeleteValue {
+  mapping: { groupId: number; removed: boolean }
+  status: RelayStatusView
+}
+
+/** 清空全部映射的 value。 */
+export interface RelayMappingsClearValue {
+  mappings: { cleared: number }
+  status: RelayStatusView
+}
+
 /** 保存时提交的可编辑字段（未改的字段不出现）。 */
 export interface RelayConfigPatch {
   wsUrl?: string
@@ -123,6 +179,12 @@ export const RECONNECT_PATH = '/dsh-qq-relay/api/reconnect'
 export const REBIND_PATH = '/dsh-qq-relay/api/rebind'
 /** 立即清理聊天记录 / 媒体（v0.13.0）。 */
 export const CLEANUP_PATH = '/dsh-qq-relay/api/cleanup'
+/** 最近消息（v0.14.0）：群号走 query，例如 ?groupId=100&limit=20。 */
+export const MESSAGES_PATH = '/dsh-qq-relay/api/messages'
+/** 解除单个群映射（v0.14.0）。 */
+export const MAPPING_DELETE_PATH = '/dsh-qq-relay/api/mapping/delete'
+/** 解除全部群映射（v0.14.0）。 */
+export const MAPPING_CLEAR_PATH = '/dsh-qq-relay/api/mapping/clear'
 
 /** 配置页用到的能力面（组合根注入 `fetch` 后得到实例）。 */
 export interface RelaySettingsApi {
@@ -131,10 +193,48 @@ export interface RelaySettingsApi {
   reconnect(): Promise<RelayApiResult<RelayStatusView>>
   rebind(groupId: number): Promise<RelayApiResult<RelayStatusView>>
   cleanup(days: number): Promise<RelayApiResult<RelayCleanupValue>>
+  messages(groupId: number, limit?: number): Promise<RelayApiResult<RelayMessagesValue>>
+  deleteMapping(groupId: number): Promise<RelayApiResult<RelayMappingDeleteValue>>
+  clearMappings(): Promise<RelayApiResult<RelayMappingsClearValue>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** 每群闸门状态数组兜底（旧 host 没有这个字段 → 空数组）。 */
+function asGateGroups(value: unknown): RelayGateGroupStatusView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    groupId: typeof entry.groupId === 'number' ? entry.groupId : 0,
+    pending: typeof entry.pending === 'number' ? entry.pending : 0,
+    lastBotSpeakAt: typeof entry.lastBotSpeakAt === 'number' ? entry.lastBotSpeakAt : 0,
+    lastReplyAt: typeof entry.lastReplyAt === 'number' ? entry.lastReplyAt : 0,
+    lastUserMessageAt: typeof entry.lastUserMessageAt === 'number' ? entry.lastUserMessageAt : 0,
+    cooldownUntil: typeof entry.cooldownUntil === 'number' ? entry.cooldownUntil : 0,
+    evaluating: entry.evaluating === true,
+    dshBusy: entry.dshBusy === true,
+  }))
+}
+
+/** 最近消息数组兜底。 */
+function asPanelMessages(value: unknown): RelayPanelMessageView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    messageId: typeof entry.messageId === 'string' ? entry.messageId : '',
+    time: typeof entry.time === 'number' ? entry.time : 0,
+    name: typeof entry.name === 'string' ? entry.name : '',
+    text: typeof entry.text === 'string' ? entry.text : '',
+    mentionsSelf: entry.mentionsSelf === true,
+    replyToId: typeof entry.replyToId === 'string' ? entry.replyToId : '',
+    media: Array.isArray(entry.media)
+      ? entry.media.filter(isRecord).map((media) => ({
+          kind: typeof media.kind === 'string' ? media.kind : '',
+          status: typeof media.status === 'string' ? media.status : '',
+          path: typeof media.path === 'string' ? media.path : '',
+        }))
+      : [],
+  }))
 }
 
 /**
@@ -207,6 +307,12 @@ function asStatus(value: unknown): RelayStatusView | null {
           model: typeof value.gate.model === 'string' ? value.gate.model : '',
           threshold: typeof value.gate.threshold === 'number' ? value.gate.threshold : 0,
           slowTimer: typeof value.gate.slowTimer === 'number' ? value.gate.slowTimer : 0,
+          pendingMessages: typeof value.gate.pendingMessages === 'number' ? value.gate.pendingMessages : 0,
+          pendingGroups: typeof value.gate.pendingGroups === 'number' ? value.gate.pendingGroups : 0,
+          timers: typeof value.gate.timers === 'number' ? value.gate.timers : 0,
+          queue: typeof value.gate.queue === 'number' ? value.gate.queue : 0,
+          sendQueue: typeof value.gate.sendQueue === 'number' ? value.gate.sendQueue : 0,
+          groups: asGateGroups(value.gate.groups),
         }
       : null,
     mappings: mappings.map((entry) => ({
@@ -301,6 +407,55 @@ export function createRelaySettingsApi(options: { fetch: typeof fetch }): RelayS
             media: typeof cleanup.media === 'number' ? cleanup.media : 0,
             at: typeof cleanup.at === 'number' ? cleanup.at : 0,
           },
+          status,
+        },
+      }
+    },
+    async messages(groupId, limit) {
+      const params = new URLSearchParams({ groupId: String(groupId) })
+      if (typeof limit === 'number' && Number.isFinite(limit)) params.set('limit', String(limit))
+      const result = await requestEnvelope(fetchImpl, MESSAGES_PATH + '?' + params.toString())
+      if (!result.ok) return result
+      if (!isRecord(result.value)) return badPayload<RelayMessagesValue>()
+      return {
+        ok: true,
+        value: {
+          groupId: typeof result.value.groupId === 'number' ? result.value.groupId : groupId,
+          limit: typeof result.value.limit === 'number' ? result.value.limit : 0,
+          windowMs: typeof result.value.windowMs === 'number' ? result.value.windowMs : 0,
+          messages: asPanelMessages(result.value.messages),
+        },
+      }
+    },
+    async deleteMapping(groupId) {
+      const result = await requestEnvelope(fetchImpl, MAPPING_DELETE_PATH, jsonPost({ groupId }))
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asStatus(value.status) : null
+      const mapping = isRecord(value) && isRecord(value.mapping) ? value.mapping : null
+      if (status === null || mapping === null) return badPayload<RelayMappingDeleteValue>()
+      return {
+        ok: true,
+        value: {
+          mapping: {
+            groupId: typeof mapping.groupId === 'number' ? mapping.groupId : groupId,
+            removed: mapping.removed === true,
+          },
+          status,
+        },
+      }
+    },
+    async clearMappings() {
+      const result = await requestEnvelope(fetchImpl, MAPPING_CLEAR_PATH, { method: 'POST' })
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asStatus(value.status) : null
+      const mappings = isRecord(value) && isRecord(value.mappings) ? value.mappings : null
+      if (status === null || mappings === null) return badPayload<RelayMappingsClearValue>()
+      return {
+        ok: true,
+        value: {
+          mappings: { cleared: typeof mappings.cleared === 'number' ? mappings.cleared : 0 },
           status,
         },
       }

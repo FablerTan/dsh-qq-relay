@@ -6,13 +6,14 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.13.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.14.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
 > 已落地、P6 回复体验（引用触发消息 / 处理中占位 / 直通连发合并）已落地、
 > P4.2 媒体双向（入向视频 / 语音落盘 + `qq_send` 出向图片 / 文件）已落地、
-> P4.3 聊天记录清理（保留天数 + 立即清理）已落地（2026-10-19）；上级 §0 已仅对本插件解除。
+> P4.3 聊天记录清理（保留天数 + 立即清理）已落地、P7 client 面板增强
+> （闸门每群状态 / 最近消息 / 映射管理）已落地（2026-10-19）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
@@ -41,7 +42,9 @@
   `controller/relay.js` 增加引用回复 / 处理中占位 / 直通连发合并（`reply` 配置段）；
   P4.3（v0.13.0）新增 `model/cleanup.js`（立即清理天数校验 + 聊天 / 媒体一次性清理，
   自动清理共用），路由 `POST /dsh-qq-relay/api/cleanup` 在 `controller/config-routes.js`，
-  设置页「聊天记录清理」在 `src/view/SettingsSection.tsx`
+  设置页「聊天记录清理」在 `src/view/SettingsSection.tsx`；P7（v0.14.0）新增 `model/panel.js`
+  （最近消息查询校验 + 只读视图），面板路由 `messages` / `mapping/delete` / `mapping/clear`
+  在 `controller/config-routes.js`，relay 暴露只读 `snapshot()` 供状态快照使用
 - `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 

@@ -182,6 +182,10 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 - 新路由 `POST /dsh-qq-relay/api/cleanup`（v0.13.0），body `{ days }`（1..3650），统一信封：
   - 成功：`{ cleanup: { days, chat, media, at }, status }`（删除计数 + 最新状态快照）；
   - 错误码：`CLEANUP_DAYS_INVALID`（400，天数非法）、`CLEANUP_NOT_CONFIGURED`（409，配置无效无法解析项目目录）。
+- 新路由 `GET /dsh-qq-relay/api/messages?groupId=&limit=`（v0.14.0）：读该群**最近 24 小时**聊天记录
+  （默认 20、上限 100 条），返回 `{ groupId, limit, windowMs, messages }`；消息字段收敛为
+  时间 / 显示名 / 文本 / `mentionsSelf` / `replyToId` / `media[{ kind, status, path }]`。
+  页面「最近消息」面板即由它驱动；错误码 `MESSAGES_GROUP_INVALID`（400）、`MESSAGES_NOT_CONFIGURED`（409）。
 
 ## 9. 失败与容错
 
@@ -203,6 +207,7 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 - `test/prompt.test.js`：闸门 / 直通格式、@ 与引用标记、时间、群名缺省、空批次。
 - `test/model.test.js`（扩充）：`rootFor` 多项目、新字段默认值、按群 prune、迁移幂等。
 - `test/cleanup.test.js`（v0.13.0）：保留天数校验、聊天日文件 + 媒体日期目录一次性清理。
+- `test/panel.test.js`（v0.14.0）：最近消息查询校验、聊天记录 → 面板消息收敛。
 - `test/settings.test.js`：`groupWorkspaces` / `chatRetentionDays` 的 pick / mask / merge / 校验；
   rebind 路由 400 / 409。
 - `test/relay.test.js`：会话 cwd 用群项目；prompt 带历史指针；聊天记录写进项目目录；媒体下载与路径。

@@ -78,6 +78,24 @@ export function formatDurationMs(ms: number): string {
   return String(ms) + 'ms'
 }
 
+/** 时间点 → 人读相对时间（0 / 非法 → 空串）。 */
+export function formatAgo(at: number, now: number = Date.now()): string {
+  if (!Number.isFinite(at) || at <= 0) return ''
+  const diff = Math.max(0, now - at)
+  if (diff < 60 * 1000) return '刚刚'
+  if (diff < 60 * 60 * 1000) return Math.floor(diff / (60 * 1000)) + ' 分钟前'
+  if (diff < 24 * 60 * 60 * 1000) return Math.floor(diff / (60 * 60 * 1000)) + ' 小时前'
+  return Math.floor(diff / (24 * 60 * 60 * 1000)) + ' 天前'
+}
+
+/** 时间点 → 本地 HH:mm:ss（0 / 非法 → '--:--:--'）。 */
+export function formatClockTime(at: number): string {
+  if (!Number.isFinite(at) || at <= 0) return '--:--:--'
+  const date = new Date(at)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds())
+}
+
 /** 人读时长 → 毫秒（支持 500ms / 3s / 10m / 2h）；非法返回 null。 */
 export function parseDurationMs(text: string): number | null {
   const match = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/iu.exec(text.trim())

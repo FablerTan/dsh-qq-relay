@@ -20,7 +20,9 @@
 | 配置表单 | `wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` · `workspace`（默认项目）· `sessionTitle` · `replyChunkSize` · `commandPrefixes` |
 | 闸门表单 | `gate.debounce` · `gate.fastMinReplyInterval` · `gate.jevThreshold`（保存即重建闸门，无需重启；`enabled` 等其余 gate 字段仍 patch 只读）。宿主未加载 v0.10.0 时页面回退显示默认值并提示重启，不会显示 0 |
 | 操作 | 「保存并重连」「重新连接」「刷新」，以及未保存修改提示 |
-| 群项目目录 | 可编辑表格：群号 / 会话（标题 + id 或「未创建」）/ 项目目录（留空 = 跟随默认项目）/ 「重新绑定」按钮（P4） |
+| 闸门状态（v0.14.0） | 每群一行：待评估条数 / 最近发言 / 冷却 / DSH 忙；上方一行全局计数（待评估消息 / 群、活动定时器、派发队列、发送队列）。随状态轮询 5 秒刷新 |
+| 群项目目录 | 可编辑表格：群号 / 会话（标题 + id 或「未创建」）/ 项目目录（留空 = 跟随默认项目）/ 「重新绑定」「消息」「解除绑定」；表头「清空全部映射」 |
+| 最近消息（v0.14.0） | 点某行「消息」展开：该群最近 24 小时聊天记录（最多 20 条），只读显示时间 / 显示名 / @ 与引用标记 / 媒体标记；可「刷新」「关闭」 |
 | 聊天记录清理 | 保留天数（0 = 永不自动删除；7..3650 = 自动清理）+「立即清理」按钮（用当前天数，1..3650；删除聊天日文件与媒体日期目录，不改配置） |
 | 提示 | host 回来的校验问题（如 `wsUrl 必填`）逐条显示；保存成功/失败有状态提示 |
 
@@ -65,6 +67,9 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 | POST | `/dsh-qq-relay/api/reconnect` | 用当前配置重建连接 |
 | POST | `/dsh-qq-relay/api/rebind` | body `{ groupId }`：删该群会话映射并用当前配置重建 → 下次消息按新项目建会话（P4） |
 | POST | `/dsh-qq-relay/api/cleanup` | body `{ days }`（1..3650）：立即清理超过该天数的聊天日文件与媒体日期目录，返回 `{ cleanup: { days, chat, media, at }, status }`（v0.13.0） |
+| GET / HEAD | `/dsh-qq-relay/api/messages?groupId=&limit=` | 最近 24 小时聊天记录（默认 20、上限 100 条），返回 `{ groupId, limit, windowMs, messages }`（v0.14.0） |
+| POST | `/dsh-qq-relay/api/mapping/delete` | body `{ groupId }`：解除该群会话绑定并重建 relay，返回 `{ mapping: { groupId, removed }, status }`（v0.14.0） |
+| POST | `/dsh-qq-relay/api/mapping/clear` | 解除全部群映射并重建 relay，返回 `{ mappings: { cleared }, status }`（v0.14.0） |
 
 状态快照字段：
 
@@ -90,15 +95,23 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
     "accessTokenConfigured": true,
     "accessTokenSource": "profile"
   },
-  "gate": { "enabled": true, "classifier": "jev", "model": "typesafe/jev-1.14", "threshold": 0.7, "slowTimer": 7200000 },
+  "gate": {
+    "enabled": true, "classifier": "jev", "model": "typesafe/jev-1.14", "threshold": 0.7, "slowTimer": 7200000,
+    "pendingMessages": 2, "pendingGroups": 1, "timers": 1, "queue": 0, "sendQueue": 0,
+    "groups": [{
+      "groupId": 10002, "pending": 2, "lastBotSpeakAt": 0, "lastReplyAt": 0,
+      "lastUserMessageAt": 0, "cooldownUntil": 0, "evaluating": false, "dshBusy": false
+    }]
+  },
   "mappings": [{ "groupId": 10002, "sessionId": "session-…", "title": "QQ群：…", "workspacePath": "…", "createdAt": 0 }]
 }
 ~~~
 
 错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` / `REBIND_GROUP_INVALID` /
-`CLEANUP_DAYS_INVALID` → 400；`CONFIG_BODY_TOO_LARGE` → 413；
-`RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` / `CLEANUP_NOT_CONFIGURED` → 409；
-其余 → 500。请求体上限 64 KiB。
+`CLEANUP_DAYS_INVALID` / `MESSAGES_GROUP_INVALID` / `MAPPING_GROUP_INVALID` → 400；
+`CONFIG_BODY_TOO_LARGE` → 413；
+`RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` / `CLEANUP_NOT_CONFIGURED` /
+`MESSAGES_NOT_CONFIGURED` / `MAPPING_NOT_STARTED` → 409；其余 → 500。请求体上限 64 KiB。
 
 ## 5. 热更新语义
 
@@ -110,6 +123,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 | `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` | **立即生效**：保存后重建闸门，阈值由分类器每次判定时读取 |
 | `chatRetentionDays` | 立即写入配置；下一次自动清理（重启后 / 每日）按新值执行。「立即清理」只清一次，不改配置 |
 | 立即清理 | 只删文件（聊天日文件 / 媒体日期目录），不动映射、会话与配置；删除后不可恢复 |
+| 解除绑定 / 清空全部映射 | 删本机映射并重建 relay（清掉 relay 内的会话缓存）；GUI 里的旧会话保留，下条消息按当前项目目录重新建会话 |
 
 - 重连不重入单实例锁：锁属于进程，连接属于运行实例（`controller/runtime.js`）。
 - **保存会立即断开当前 WS**：进行中的 QQ 触发回合会被中止且不回发（配置改动属低频操作，
@@ -140,7 +154,11 @@ src/
 
 ## 8. 已知边界 / 后续
 
-- 页面可直接改「群项目目录」，并为已映射群提供「重新绑定」；清空全部映射 / 删除会话仍无入口。
+- 页面可直接改「群项目目录」，并提供「重新绑定」「解除绑定」「清空全部映射」（v0.14.0）；
+  **删除 GUI 里的旧会话**仍无入口（本插件不管理 DSH 会话生命周期）。
+- 「最近消息」只看**最近 24 小时**（按天分文件，回看窗口太大没意义）；最多 20 条、只读，
+  不含 raw CQ 码与 seen / pending 等内部状态。
+- 「闸门状态」表来自 state 文件 + relay 的只读快照；页面每 5 秒轮询状态，不在页面上实时推送。
 - 聊天记录清理已交付（v0.13.0）：「立即清理」用**当前输入框里的天数**（1..3650），因此可以比自动清理
   （0 / 7..3650）更激进；两个区间不同是有意的——自动清理有最低 7 天的保护，手动清理允许 1 天。
 - 「立即清理」只清已解析出项目目录的群（白名单 ∪ 映射 ∪ 群项目配置）；旧全局 chat/ 目录由启动迁移处理。

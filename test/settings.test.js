@@ -17,7 +17,17 @@ import {
   pickEditable,
   resolveConfig,
 } from '../lib/model/settings.js'
-import { createConfigRoutes, CLEANUP_PATH, CONFIG_PATH, REBIND_PATH, RECONNECT_PATH, STATUS_PATH } from '../lib/controller/config-routes.js'
+import {
+  createConfigRoutes,
+  CLEANUP_PATH,
+  CONFIG_PATH,
+  MAPPING_CLEAR_PATH,
+  MAPPING_DELETE_PATH,
+  MESSAGES_PATH,
+  REBIND_PATH,
+  RECONNECT_PATH,
+  STATUS_PATH,
+} from '../lib/controller/config-routes.js'
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-settings-'))
@@ -396,6 +406,96 @@ test('routes：cleanup 未实现 501、模型层 400、非法 JSON 400、非 POS
     .handler(fakeReq({ method: 'POST', url: CLEANUP_PATH, body: '{"days":123456}' }), tooLarge)
   assert.equal(tooLarge.statusCode, 413)
   assert.equal(parseResponse(tooLarge).error.code, 'CONFIG_BODY_TOO_LARGE')
+})
+
+test('routes：GET /messages 解析 query 并交给 getMessages', async () => {
+  const calls = []
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    getMessages: (query) => {
+      calls.push(query)
+      return { ok: true, value: { groupId: 100, limit: 5, windowMs: 0, messages: [] } }
+    },
+  })
+  const route = routes.find((item) => item.path === MESSAGES_PATH)
+  assert.equal(route.kind, 'exact')
+  const res = fakeRes()
+  await route.handler(fakeReq({ method: 'GET', url: MESSAGES_PATH + '?groupId=100&limit=5' }), res)
+  assert.deepEqual(calls, [{ groupId: '100', limit: '5' }])
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(parseResponse(res).value.messages, [])
+})
+
+test('routes：messages 未实现 501、模型层 400、非 GET 405', async () => {
+  const missing = createConfigRoutes({ getStatus: () => ({}) })
+  const missingRes = fakeRes()
+  await missing.find((item) => item.path === MESSAGES_PATH)
+    .handler(fakeReq({ method: 'GET', url: MESSAGES_PATH + '?groupId=100' }), missingRes)
+  assert.equal(missingRes.statusCode, 501)
+
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    getMessages: () => ({ ok: false, code: 'MESSAGES_GROUP_INVALID', message: '群 100 不在白名单' }),
+  })
+  const route = routes.find((item) => item.path === MESSAGES_PATH)
+  const invalid = fakeRes()
+  await route.handler(fakeReq({ method: 'GET', url: MESSAGES_PATH + '?groupId=100' }), invalid)
+  assert.equal(invalid.statusCode, 400)
+  assert.equal(parseResponse(invalid).error.code, 'MESSAGES_GROUP_INVALID')
+
+  const wrongMethod = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: MESSAGES_PATH }), wrongMethod)
+  assert.equal(wrongMethod.statusCode, 405)
+})
+
+test('routes：mapping delete / clear 调用对应回调并回传结果', async () => {
+  const deleted = []
+  let cleared = 0
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    deleteMapping: (groupId) => {
+      deleted.push(groupId)
+      return { ok: true, value: { mapping: { groupId, removed: true }, status: {} } }
+    },
+    clearMappings: () => {
+      cleared += 1
+      return { ok: true, value: { mappings: { cleared: 3 }, status: {} } }
+    },
+  })
+  const deleteRoute = routes.find((item) => item.path === MAPPING_DELETE_PATH)
+  const deleteRes = fakeRes()
+  await deleteRoute.handler(fakeReq({ method: 'POST', url: MAPPING_DELETE_PATH, body: '{"groupId":100}' }), deleteRes)
+  assert.deepEqual(deleted, [100])
+  assert.equal(deleteRes.statusCode, 200)
+
+  const clearRoute = routes.find((item) => item.path === MAPPING_CLEAR_PATH)
+  const clearRes = fakeRes()
+  await clearRoute.handler(fakeReq({ method: 'POST', url: MAPPING_CLEAR_PATH }), clearRes)
+  assert.equal(cleared, 1)
+  assert.equal(clearRes.statusCode, 200)
+  assert.deepEqual(parseResponse(clearRes).value.mappings, { cleared: 3 })
+})
+
+test('routes：mapping delete 未实现 501、非法 JSON 400、非 POST 405', async () => {
+  const missing = createConfigRoutes({ getStatus: () => ({}) })
+  const missingRes = fakeRes()
+  await missing.find((item) => item.path === MAPPING_DELETE_PATH)
+    .handler(fakeReq({ method: 'POST', url: MAPPING_DELETE_PATH, body: '{"groupId":100}' }), missingRes)
+  assert.equal(missingRes.statusCode, 501)
+
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    deleteMapping: () => ({ ok: true, value: {} }),
+  })
+  const route = routes.find((item) => item.path === MAPPING_DELETE_PATH)
+  const badJson = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: MAPPING_DELETE_PATH, body: '{oops' }), badJson)
+  assert.equal(badJson.statusCode, 400)
+  assert.equal(parseResponse(badJson).error.code, 'CONFIG_BAD_JSON')
+
+  const wrongMethod = fakeRes()
+  await route.handler(fakeReq({ method: 'GET', url: MAPPING_DELETE_PATH }), wrongMethod)
+  assert.equal(wrongMethod.statusCode, 405)
 })
 
 test('routes：POST /reconnect 调 reconnect 并回传结果', async () => {
