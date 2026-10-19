@@ -1,7 +1,8 @@
 # 架构
 
 > 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
-> P2.1/P2.2 消息闸门骨架与收尾已落地（jev 未接）、P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）**。
+> P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter）、P3 `qq_send` 主动推送与
+> QQ 侧审批已落地（2026-10-19）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -45,7 +46,7 @@
 | `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
-| `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
+| `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
 - 会话映射 / 闸门状态 / 聊天日志落在 `~/.dsh/storages/dsh-qq-relay/`。
@@ -85,7 +86,7 @@ lib/
     ├── gate.js               # 闸门纯逻辑（P2.1）：配置解析 / 决策 fail closed / 批次 / 时间窗
     ├── approval.js           # 审批纯逻辑（P3）：命令匹配 / 决策角色 / 提示文案
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
-    ├── jev.js                # 分类器调用契约（待接模型，P2.2+）
+    ├── jev.js                # jev 分类器（P2.3）：OpenRouter Decisions API / Noul / 阈值 / fail closed
     └── reply.js              # 回复切分、退避、发送失败分类
 ~~~
 
@@ -100,7 +101,7 @@ P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
-决策日志、断线发送队列、`qq_send` 工具契约与注册、审批命令匹配与桥接，以及
+决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` 工具契约与注册、审批命令匹配与桥接，以及
 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
@@ -181,7 +182,7 @@ ctx.on('agent/error', ...)          # 失败提示
 
 ## 8. 未决
 
-- jev 的部署形态与模型（ctx.llm / 外部 endpoint / 本地）。
+- ~~jev 的部署形态与模型~~ 已定：OpenRouter Decisions API + `typesafe/jev-1.14`（P2.3）；阈值调优待真实群聊数据。
 - 审批文本命令的具体交互与超时策略。
 - 单聊（private）是否与群共享同一会话映射体系。
 - 媒体收发（入向图片 / 文件转 DSH 附件、出向图片 / 文件）。

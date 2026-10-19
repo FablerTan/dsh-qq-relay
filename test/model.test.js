@@ -471,3 +471,36 @@ test('config：approval 段默认与校验', () => {
   assert.ok(invalid.problems.some((p) => p.includes('approval.timeoutMs')))
   assert.ok(invalid.problems.some((p) => p.includes('approval.roles')))
 })
+
+test('config：gate 的 jev 分类器配置（默认与校验）', () => {
+  const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.equal(defaults.config.gate.model, 'typesafe/jev-1.14')
+  assert.equal(defaults.config.gate.jevEndpoint, 'https://openrouter.ai/api/alpha/decisions')
+  assert.equal(defaults.config.gate.jevApiKeyEnv, 'OPENROUTER_API_KEY')
+  assert.equal(defaults.config.gate.jevThreshold, 0.7)
+  assert.equal(defaults.config.gate.classifierTimeoutMs, 8000)
+
+  const custom = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    gate: { model: 'typesafe/jev-1.14', jevThreshold: 0.55, jevEndpoint: 'https://proxy.example.com/decisions', jevApiKeyEnv: 'MY_JEV_KEY', classifierTimeoutMs: '10s' },
+  })
+  assert.equal(custom.ok, true)
+  assert.equal(custom.config.gate.jevThreshold, 0.55)
+  assert.equal(custom.config.gate.jevEndpoint, 'https://proxy.example.com/decisions')
+  assert.equal(custom.config.gate.jevApiKeyEnv, 'MY_JEV_KEY')
+  assert.equal(custom.config.gate.classifierTimeoutMs, 10000)
+
+  const invalid = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    gate: { model: '', jevThreshold: 1.5, jevEndpoint: 'http://x', jevApiKeyEnv: 'bad-key' },
+  })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('gate.model')))
+  assert.ok(invalid.problems.some((p) => p.includes('gate.jevThreshold')))
+  assert.ok(invalid.problems.some((p) => p.includes('gate.jevEndpoint')))
+  assert.ok(invalid.problems.some((p) => p.includes('gate.jevApiKeyEnv')))
+})

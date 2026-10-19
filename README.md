@@ -1,9 +1,10 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.6.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.7.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
-**jev 分类器暂未接**，`gate.enabled` 默认关）；P3 已落地 `qq_send` 主动推送与 QQ 侧审批。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
+主动推送与 QQ 侧审批。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -29,7 +30,8 @@ DSH 与 QQ 之间的**双向桥**：
 - 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
 **已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射只读）、
-消息闸门骨架与收尾（P2.1/P2.2：去抖 / 最小间隔 / 慢路 / 状态持久化 / 决策日志 / 发送队列；jev 未接）、
+消息闸门骨架与收尾（P2.1/P2.2：去抖 / 最小间隔 / 慢路 / 状态持久化 / 决策日志 / 发送队列）、
+jev 分类器（P2.3：OpenRouter `typesafe/jev-1.14`，阈值判定 + fail closed）、
 DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）。
 **仍未定案**：jev 分类器形态、群审批（按钮）、主动推送工具、媒体收发、client 面板增强——先落 `docs/` 再实现。
 
@@ -53,7 +55,7 @@ dsh-qq-relay/
 │   │   ├── tools.js      # qq_send 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 决策日志 / 回复切分 / 闸门 / 审批纯逻辑
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 决策日志 / 回复切分 / 闸门 / jev / 审批
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -110,6 +112,18 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.7.0 jev 分类器接入（2026-10-19）
+
+- 接入 TypeSafe 的 System One 决策模型 jev（OpenRouter Decisions API，默认 `typesafe/jev-1.14`）：
+  把「最近一批群消息 + 群名 + 触发路径」作为 `state`，问一个 Noul 问题（要不要接话），
+  按 `jevThreshold`（默认 0.7）判定，返回带概率的决策并写入决策日志。
+- 完全 fail closed：网络 / 超时（默认 8s）/ 非 2xx / 响应不合规都按「不接话」处理。
+- key 从环境变量读取（`gate.jevApiKeyEnv`，默认 `OPENROUTER_API_KEY`）；缺 key 只告警并按
+  fail closed 运行，不影响 @ / 引用 / 命令直通。
+- 新增 `lib/model/jev.js`（请求构造 / 响应解析 / 分类器，零依赖、全局 fetch）；
+  gate 配置新增 `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；单测 119 个。
+- 文档：[gate.md §4 / §8](./docs/gate.md) 已更新；改的是 host 半身，需重启 profile GUI 生效。
 
 ### v0.6.0 QQ 侧审批（2026-10-19）
 

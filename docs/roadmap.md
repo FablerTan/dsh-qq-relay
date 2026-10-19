@@ -1,7 +1,7 @@
 # 路线图
 
 > 状态：P0 已完成（2026-10-18）；P1「@ 直通」已真机验收；P1.5 基础配置页已落地（2026-10-19）；
-> **P2.1/P2.2 消息闸门骨架与收尾已落地（2026-10-19，jev 分类器未接——用户决定先不接模型）；
+> **P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`）；
 > P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
@@ -94,9 +94,11 @@
 - ✅ 发送队列：断线或发送失败排队，重连后按序补发；风控限流退避、明确失败不重试；上限 50 条 / 30 分钟。
 - ✅ 群成员昵称 / 角色：直接取事件自带的 `sender.card || sender.nickname` / `sender.role`，
   不额外调 `get_group_member_info`（事件缺字段时才需要补查）。
-- ⏳ **jev 分类器接模型**：形态未定（ctx.llm / 外部 endpoint / 本地），用户 2026-10-19 决定先不接；
-  当前 `gate.enabled` 默认 false，开启且未注入分类器时普通消息永远不接话（fail closed）。
-- ⏳ 真机验证：需先接分类器并 `gate.enabled: true`，再按下面验收清单跑。
+- ✅ **jev 分类器接模型（P2.3）**：OpenRouter Decisions API + `typesafe/jev-1.14`（Noul 概率 →
+  阈值 0.7 判定），key 走 `OPENROUTER_API_KEY` 环境变量；超时 / 网络 / 格式错误一律 fail closed。
+  见 [gate.md §4](./gate.md)。
+- ⏳ 真机验证：`gate.enabled: true` + key 就绪后按下面验收清单跑（快路合并 / 慢路定时 / 冷却 / 频控）。
+- ⏳ 阈值调优：先用 0.7，按 `gate/*.jsonl` 决策日志再调。
 
 ### 范围
 

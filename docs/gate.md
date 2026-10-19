@@ -69,18 +69,22 @@
 dispatch 成功 → lastBotSpeakAt = now；cooldownUntil = now + 2h；清空 pending
 ~~~
 
-## 4. jev 契约
+## 4. jev 契约（已实现，P2.3）
 
-- **模型**：专用分类器，名字 jev；部署形态待定（DSH ctx.llm 内的便宜模型，或外部 endpoint）。
-- **输入**：最近一批消息（含机器人自己的发言）、触发来源（fast / slow / mention）、群标识；
-  按条数与字符数截断（默认最多 100 条）。
-- **输出**：
-
-~~~json
-{"reply": true, "confidence": 0.82, "reason": "用户在问 bot 刚才说的命令", "targetMsgIds": ["..."]}
-~~~
-
-- **失败策略**：超时 / 报错 / 输出不合规 → 一律 reply=false（fail closed），只记日志。
+- **模型**：TypeSafe 的 System One 决策模型 **jev**，经 OpenRouter Decisions API 调用
+  （`POST https://openrouter.ai/api/alpha/decisions`），默认 `typesafe/jev-1.14`。
+  jev 不是对话模型：它返回带概率的类型化答案（Noul = 是 / 否问题），不返回文本或推理。
+- **输入（`state`）**：群名、触发来源（`fast` / `slow`）、bot 标签、最近 60 条消息的
+  `{ speaker, role, text }`（每条正文截到 500 字符）；`questions.reply` 是一个 Noul 问题：
+  「现在要不要在这个群里发一条消息」，`criteria.true / false` 说明边界（有人对它说话 /
+  需要接话 vs 普通闲聊 / 回复会打扰）。
+- **输出**：响应 `answers.reply.noul` 是「是」的概率（0..1）；按 `gate.jevThreshold`
+  （默认 0.7）判定是否接话，决策形状 `{ reply, confidence: 概率, reason, targetMsgIds: [] }`。
+- **失败策略**：网络错误 / 超时（默认 8s）/ HTTP 非 2xx / 响应缺 `answers.reply.noul`
+  或概率越界 → 一律 reply=false（fail closed），原因记 `jev-unavailable` /
+  `jev-http-error` / `jev-invalid-response`，只写日志。
+- **凭证**：API key 从环境变量读取（默认 `OPENROUTER_API_KEY`，见 `gate.jevApiKeyEnv`）；
+  key 为空时不构造分类器，闸门按 fail closed 运行（只接 @ / 引用 / 命令）。
 - **决策日志**：时间、批次、输入摘要、输出、耗时；用于调阈值和回放。
 
 ## 5. 状态与持久化
@@ -137,9 +141,11 @@ gate:
   debounce: 5s               # 快路批合并窗口
   slowTimer: 2h              # 慢路定时器
   slowWindow: 2h             # jev 查看的消息范围
-  model: jev                 # 分类器模型
-  jevEndpoint: ""            # 空 = 使用 DSH ctx.llm
-  ackWhileRunning: false     # 是否先回「处理中」（默认关闭）
+  model: typesafe/jev-1.14   # jev 模型 id
+  jevEndpoint: https://openrouter.ai/api/alpha/decisions
+  jevApiKeyEnv: OPENROUTER_API_KEY   # 从环境变量取 key
+  jevThreshold: 0.7          # Noul 概率 >= 该值才接话
+  classifierTimeoutMs: 8s    # 单次 jev 请求超时
   retentionDays: 7
   maxBatchMessages: 100
 ~~~
@@ -159,7 +165,7 @@ gate:
 
 ## 10. 待定
 
-- jev 的部署形态与模型选择（本地 / 远程 / ctx.llm）。
+- ~~jev 的部署形态与模型选择~~ 已定：OpenRouter Decisions API + `typesafe/jev-1.14`（P2.3）。
 - 慢路评估游标：按「最近 2 小时」还是「距上次评估以来」。
 - 是否对 @ 直通增加「处理中」即时回执（默认关闭）。
 - 队列保留时限与丢弃策略。
@@ -172,15 +178,18 @@ gate:
   状态 `lib/model/state.js`；决策日志 `lib/model/gate-log.js`。
 - **配置键**（`config.gate`，见 architecture §2.1）：`enabled`（默认 false）、`mentionBypass`、
   `fastWindow`（10m）、`fastMinReplyInterval`（45s）、`debounce`（5s）、`slowTimer`（2h）、
-  `slowWindow`（2h）、`maxBatchMessages`（100）、`classifierTimeoutMs`（1.5s）。
+  `slowWindow`（2h）、`maxBatchMessages`（100）、`classifierTimeoutMs`（8s）、`model`、
+  `jevEndpoint`、`jevApiKeyEnv`、`jevThreshold`。
   时长字段接受 `500ms` / `45s` / `10m` / `2h` 或毫秒数字，内部统一为毫秒；未知键 / 非法值直接
   进 `problems`（配置整体 fail closed）。
 - **分类器接口**：`createRelay({ classifier })` 注入
   `{ classify({ groupId, groupName, trigger, messages }) } → { reply, confidence, reason, targetMsgIds }`，
   `trigger` 为 `fast` / `slow`。缺省 `createNullClassifier()` 永远返回
   `reply: false, reason: 'classifier-not-configured'`；超时或抛错按 `reply: false` 处理，且每次都写
-  一条决策日志（批次条数 / reply / confidence / reason / 耗时）。接模型时只需产出该接口的实现，
-  不用改调度器。
+  一条决策日志（批次条数 / reply / confidence / reason / 耗时）。
+- **jev 实现（P2.3）**：`lib/model/jev.js` 提供 `createJevClassifier`（OpenRouter Decisions API，
+  全局 `fetch`，零依赖）；组合根在 `gate.enabled === true` 且 `process.env[jevApiKeyEnv]` 非空时
+  构造，缺 key 只打警告并退化为 fail closed。请求 / 解析 / 阈值 / 超时的单测在 `test/jev.test.js`。
 - **状态与恢复**：每群一个 `state/<group_id>.json`；pending 随消息增量落盘，重启后重新装载；
   但**不重建慢路定时器**——重启后第一条消息才会重新起 2 小时计时（避免一启动就说话）。
 - **慢路时间窗（P2.2）**：慢路评估只取 `time >= now - slowWindow` 的 pending，更早的丢弃
@@ -195,7 +204,8 @@ gate:
   其余 → 不重试（避免刷错误日志）。
 - **成员昵称**：直接用 OneBot 事件自带的 `sender.card || sender.nickname` 与 `sender.role`，
   不额外调 `get_group_member_info`（事件缺字段时才需要补查，暂未实现）。
-- **尚未实现**：jev 分类器接模型（P2.3，形态待定）；真正的「群成员信息补查」与多群资源配额。
+- **尚未实现**：真正的「群成员信息补查」、多群资源配额；jev 阈值调优（先用 0.7，按决策日志再调）。
 - **单测**：`test/gate.test.js`（假时钟：合并 / 最小间隔 / 慢路 / fail closed / 重启恢复）、
-  `test/model.test.js`（配置 / 决策 / 批次 / 发送失败分类）、`test/relay.test.js`（直通不受闸门
-  影响、断线队列补发）。
+  `test/model.test.js`（配置 / 决策 / 批次 / 发送失败分类 / jev 配置）、
+  `test/jev.test.js`（请求构造 / 响应解析 / 阈值 / 各类失败 fail closed）、
+  `test/relay.test.js`（直通不受闸门影响、断线队列补发）。
