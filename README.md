@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.9.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.9.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
@@ -117,6 +117,13 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### v0.9.1 媒体扩展名修正（2026-10-19）
+
+- 修掉「CQ file 后缀与实际图片格式不符」导致的落盘扩展名错误（真实案例：JPEG 被存成 `.png`，
+  读图工具按扩展名拒读）：保存时先按文件头 magic bytes（JPEG / PNG / GIF / WEBP / BMP）识别，
+  再退回 `content-type`、CQ file / URL 后缀、`.bin`。
+- v0.9.0 写入的旧文件不会自动重命名；确认是同一张图的话可手工删掉错误后缀的副本。
+- 单测 158 个；host 半身改动，需重启 profile GUI 生效。
 ### v0.9.0 入向媒体落盘（2026-10-19）
 
 - 入向 CQ 图片 / 贴纸 / 商城表情下载到群项目 `.qq-relay/media/<群号>/<日期>/<messageId>-<序号>.<ext>`，

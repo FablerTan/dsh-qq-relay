@@ -1,7 +1,8 @@
 # 媒体落盘与聊天记录链接（规格）
 
-> 状态：**v0.9.0 已实现（2026-10-19）**。本文是入向媒体（图片 / 表情）落盘与聊天记录、
-> prompt 引用的现状记录。聊天记录与消息拼接见 [chat-context.md](./chat-context.md)。
+> 状态：**v0.9.0 已实现（2026-10-19）；v0.9.1 修正扩展名（按真实图片头识别）**。
+> 本文是入向媒体（图片 / 表情）落盘与聊天记录、prompt 引用的现状记录。
+> 聊天记录与消息拼接见 [chat-context.md](./chat-context.md)。
 >
 > 用户决策（2026-10-19）：**下载到本地，聊天记录链接到对应位置**。
 
@@ -22,7 +23,9 @@
 
 - 项目目录解析与聊天记录一致（见 chat-context §4）；`.gitignore` 由 `ensureRelayDir` 保证。
 - 文件名：`<messageId>-<序号>`，序号按**可下载媒体**在消息内的顺序从 0 起。
-- 扩展名：优先 CQ `file` 字段的扩展名 → URL pathname → 响应 `content-type` → `.bin`。
+- 扩展名以**实际内容**为准（v0.9.1）：文件头 magic bytes（JPEG / PNG / GIF / WEBP / BMP）
+  → 响应 `content-type` → CQ `file` / URL 后缀 → `.bin`。QQ 图片的 CQ 文件名常与实际格式不符
+  （真实案例：JPEG 被命名成 `.png`，读图工具按扩展名拒读）。
 
 ## 3. 下载规则
 
@@ -33,6 +36,7 @@
 | 超时 | 10 秒（AbortController） |
 | 单文件上限 | 20 MiB |
 | 单消息媒体数 | 最多 10 个 |
+| 扩展名 | 图片头 magic bytes → `content-type` → CQ file / URL 后缀 → `.bin`（v0.9.1） |
 | 失败处理 | 不阻断消息流；聊天记录写 `status: "failed"`，prompt 显示 `[媒体下载失败]` |
 | 幂等 | 同一条消息只会处理一次（`state.markSeen` 在下载前），无需去重 |
 
@@ -61,6 +65,8 @@
 - `failed`：只有 `reason`（`invalid-url` / `unsupported-protocol` / `http-<code>` / `too-large` / `empty` / `timeout` / `network`）；
 - `metadata`：face 或没有 url 的媒体（如部分商城表情），保留 `file` / `summary` / `text`；
 - 原始 CQ 码仍保留在 `raw` 字段，作为兜底审计。
+- v0.9.0 写入的旧文件可能带着错误扩展名（按 CQ 文件名）；v0.9.1 不会自动重命名历史文件，
+  确认内容相同的话可手工删掉错误后缀的那份。
 
 ## 5. prompt 拼接
 
@@ -108,6 +114,7 @@
 ## 10. 测试
 
 - `test/media.test.js`：媒体计划解析（image / sticker / face / mface）、扩展名与路径、下载成功、
-  HTTP 失败 / 网络失败 / 超时 / 超大 / 非 http、face 元信息、日志归一化、按日期清理。
+  HTTP 失败 / 网络失败 / 超时 / 超大 / 非 http、face 元信息、日志归一化、按日期清理、
+  以及 v0.9.1 的 magic bytes 扩展名识别（CQ 后缀错 / content-type 不匹配时以真实内容为准）。
 - `test/relay.test.js`：图片消息落盘 + 聊天记录带路径；@ 带图（无文本）prompt 带图片标记。
 - `test/prompt.test.js`：媒体标记与纯媒体行。

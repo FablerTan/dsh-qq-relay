@@ -17,10 +17,13 @@ import {
   planMedia,
   pruneMedia,
   sanitizeStem,
+  sniffImageExt,
 } from '../lib/model/media.js'
 import { RELAY_DIR_NAME } from '../lib/model/project.js'
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 2])
+const WEBP = Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2, 3])
 const T = new Date(2026, 9, 19, 10, 0, 0).getTime()
 
 function tempDir(t) {
@@ -110,17 +113,44 @@ test('media：下载成功写文件、建 .gitignore、记录相对路径', asyn
   assert.equal(calls[0].url, 'https://example.com/a.png')
 })
 
-test('media：扩展名来自 content-type（URL 无扩展名时）', async (t) => {
-  const dir = tempDir(t)
-  const project = join(dir, 'proj')
-  const fetchImpl = async () => okResponse(PNG, { contentType: 'image/webp' })
-  const records = await attachMedia({
+test('media：扩展名按真实内容（magic bytes）优先，不信 CQ file 后缀', async (t) => {
+  const project = join(tempDir(t), 'proj')
+
+  // QQ 常见：CQ file 说是 .png，实际字节是 JPEG
+  const wrongName = await attachMedia({
     projectDir: project, groupId: 100, messageId: 7, timeMs: T,
-    media: [{ kind: 'sticker', url: 'https://example.com/download' }],
-    fetchImpl,
+    media: [{ kind: 'image', file: '97883368.png', url: 'https://example.com/97883368.png' }],
+    fetchImpl: async () => okResponse(JPEG, { contentType: 'image/jpeg' }),
   })
-  assert.equal(records[0].path, '.qq-relay/media/100/2026-10-19/7-0.webp')
-  assert.equal(records[0].kind, 'sticker')
+  assert.equal(wrongName[0].path, '.qq-relay/media/100/2026-10-19/7-0.jpg')
+  assert.equal(wrongName[0].contentType, 'image/jpeg')
+
+  // URL 没有扩展名：用响应头之外的字节判断（WEBP）
+  const webp = await attachMedia({
+    projectDir: project, groupId: 100, messageId: 8, timeMs: T,
+    media: [{ kind: 'sticker', url: 'https://example.com/download' }],
+    fetchImpl: async () => okResponse(WEBP, { contentType: 'application/octet-stream' }),
+  })
+  assert.equal(webp[0].path, '.qq-relay/media/100/2026-10-19/8-0.webp')
+
+  // 字节无法识别时退回 content-type
+  const unknownBytes = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+  const byType = await attachMedia({
+    projectDir: project, groupId: 100, messageId: 9, timeMs: T,
+    media: [{ kind: 'image', url: 'https://example.com/blob' }],
+    fetchImpl: async () => okResponse(unknownBytes, { contentType: 'image/png' }),
+  })
+  assert.equal(byType[0].path, '.qq-relay/media/100/2026-10-19/9-0.png')
+})
+
+test('media：sniffImageExt 识别常见图片头', () => {
+  assert.equal(sniffImageExt(JPEG), '.jpg')
+  assert.equal(sniffImageExt(PNG), '.png')
+  assert.equal(sniffImageExt(WEBP), '.webp')
+  assert.equal(sniffImageExt(Buffer.from([0x47, 0x49, 0x46, 0x38, 0, 0, 0, 0, 0, 0, 0, 0])), '.gif')
+  assert.equal(sniffImageExt(Buffer.from([0x42, 0x4d, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])), '.bmp')
+  assert.equal(sniffImageExt(Buffer.from('not an image!')), '')
+  assert.equal(sniffImageExt(Buffer.from([1, 2, 3])), '')
 })
 
 test('media：HTTP 失败 / 网络失败 / 超时 / 超大 / 非 http 都记 failed', async (t) => {
