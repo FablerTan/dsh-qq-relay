@@ -209,9 +209,10 @@ ctx.on('agent/error', ...)          # 失败提示
 ## 8. 未决
 
 - ~~jev 的部署形态与模型~~ 已定：OpenRouter Decisions API + `typesafe/jev-1.14`（P2.3）；阈值调优待真实群聊数据。
-- 审批文本命令的具体交互与超时策略。
+- ~~审批文本命令的具体交互与超时策略~~ 已落地（P3，见 [approval.md](./approval.md)）。
 - 单聊（private）是否与群共享同一会话映射体系。
-- 媒体收发（入向图片 / 文件转 DSH 附件、出向图片 / 文件）。
+- 媒体：入向视频 / 语音与出向图片 / 文件已落地（v0.12.0，见 [media.md](./media.md)）；
+  仍缺入向群文件（`group_upload` notice）、入向媒体转 DSH 附件、视频 / 语音转文字。
 - ~~DSH → QQ 主动推送工具~~ 已落地为 `qq_send`（见 [tools.md](./tools.md)）。
 - client 面板增强：映射管理、审批开关、闸门可视化（基础配置页已在 P1.5 落地，见 [client.md](./client.md)）。
 - 多群并发时的资源上限与队列策略。
