@@ -154,12 +154,18 @@ test('relay：@ 消息直通、建会话、prompt 带群名 / 时间 / @ 标记 
   assert.equal(mapping.get(100).workspacePath, config.workspace)
 })
 
-test('relay：聊天日志与 .qq-relay 落在群项目目录', async (t) => {
+test('relay：聊天日志与 .qq-relay 落在群项目目录（含 @ / 引用元信息）', async (t) => {
   const { relay, dir } = createHarness(t)
   relay.handleRawEvent(groupEvent({
     message_id: 71,
     message: [{ type: 'text', data: { text: '记录我' } }],
     raw_message: '记录我',
+  }))
+  relay.handleRawEvent(groupEvent({ message_id: 72 }))
+  relay.handleRawEvent(groupEvent({
+    message_id: 73,
+    message: [{ type: 'reply', data: { id: '42' } }, { type: 'text', data: { text: '引用我' } }],
+    raw_message: '[CQ:reply,id=42] 引用我',
   }))
   await flush()
 
@@ -167,10 +173,22 @@ test('relay：聊天日志与 .qq-relay 落在群项目目录', async (t) => {
   const chatDir = join(dir, '.qq-relay', 'chat', '100')
   const files = readdirSync(chatDir)
   assert.equal(files.length, 1)
-  const record = JSON.parse(readFileSync(join(chatDir, files[0]), 'utf8').trim().split('\n')[0])
-  assert.equal(record.text, '记录我')
-  assert.equal(record.groupId, '100')
-  assert.equal(record.messageId, '71')
+  const records = readFileSync(join(chatDir, files[0]), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.equal(records.length, 3)
+  assert.deepEqual(records.map((record) => record.messageId).sort(), ['71', '72', '73'])
+  assert.equal(records.every((record) => record.groupId === '100'), true, '每条记录都带 groupId')
+
+  const plain = records.find((record) => record.messageId === '71')
+  assert.equal(plain.text, '记录我')
+  assert.equal(plain.mentionsSelf, false)
+
+  const mention = records.find((record) => record.messageId === '72')
+  assert.equal(mention.mentionsSelf, true, '日志要保留 @ 元信息')
+  assert.equal(mention.replyToId, null)
+
+  const quote = records.find((record) => record.messageId === '73')
+  assert.equal(quote.replyToId, '42', '日志要保留引用元信息')
+  assert.equal(quote.mentionsSelf, false)
 })
 
 test('relay：同一条 message_id 只处理一次', async (t) => {

@@ -111,6 +111,16 @@ test('gate：关闭时普通消息不触发任何调度', async (t) => {
   assert.equal(dispatched.length, 0)
 })
 
+test('gate：空文本消息（表情 / 图片）不进 pending、不调分类器', async (t) => {
+  const { gate, classifierCalls, dispatched, clock, state } = createHarness(t)
+  gate.ingest(groupMessage({ text: '' }))
+  gate.ingest(groupMessage({ text: '   ' }))
+  await clock.advance(3 * 60 * 60 * 1000)
+  assert.equal(classifierCalls.length, 0)
+  assert.equal(dispatched.length, 0)
+  assert.deepEqual(state.get(100).pending, [])
+})
+
 test('gate：快路 3 条消息合并为一次分类与一次派发', async (t) => {
   const { gate, state, classifierCalls, dispatched, clock, gateLog } = createHarness(t)
   state.update(100, { lastBotSpeakAt: clock.now() - 1000 })

@@ -1,6 +1,6 @@
 # 聊天记录与消息拼接（规格）
 
-> 状态：**已实现（v0.8.0，2026-10-19）**；本文既是规格也是现状记录。
+> 状态：**已实现（v0.8.0，2026-10-19；v0.8.1 修正日志元信息与空文本消息）**；本文既是规格也是现状记录。
 > 聊天记录落在「群绑定的项目」隐藏目录里、DSH 会话可读；发给 DSH 的 prompt 由
 > `lib/model/prompt.js` 统一拼接。真机验收待用户重启 GUI 后确认。
 >
@@ -68,6 +68,8 @@ OneBot 事件 → codec.toInternalEvent（segments → text，丢 at / reply 结
 - 在 v0.7.1 字段（`time / messageId / userId / nickname / role / text / raw`）之上新增
   `groupId`、`card`、`mentionsSelf`、`replyToId`。
 - 读取端对缺字段补默认值（`''` / `false` / `null`），旧行照常可读。
+- 纯图片 / 表情等没有文本的消息只写日志（`text` 为空），**不进闸门、不调分类器**；`text` 写入前 trim。
+- 纯图片 / 表情等没有文本的消息只写日志（`text` 为空），**不进闸门、不调分类器**；`text` 写入前 trim。
 - `raw` 仍是 OneBot `raw_message`（含 CQ 码），调试 / 回放用。
 - bot 自己的发言继续以 `role: "bot"`、`nickname: "bot"` 写入（jev 上下文依赖）。
 
@@ -149,7 +151,7 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 - 当 `> 0`：按天文件删除超期文件；启动后跑一次 + 每日一次（复用现有 prune 定时器）；
   清理按「已知群」循环（白名单 ∪ mapping），不再假设单一根目录。
 - 决策日志 `gate/*.jsonl` 仍按 7 天保留（插件内部诊断数据，与聊天记录分开）。
-- 设置页的清理 UI（保留天数 + 立即清理）留到 v0.8.1。
+- 设置页的清理 UI（保留天数 + 立即清理）留到 v0.8.2。
 
 ## 8. 设置页与 HTTP 契约
 
@@ -198,6 +200,7 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 ## 12. 分期
 
 - **v0.8.0（已实现，2026-10-19）**：§3–§8 全部（隐藏目录 + 群项目 + prompt 拼接 + 迁移 + 设置页 + 重新绑定）；
-  单测 `test/{project,prompt,migration}.test.js` 等共 143 个通过。
-- **v0.8.1**：清理功能（保留天数 UI + 立即清理）；可选 `inbox/` 批次快照、可读 digest。
+  单测 `test/{project,prompt,migration}.test.js` 等共 144 个通过。
+- **v0.8.1（已实现，2026-10-19）**：聊天日志补全 @ / 引用元信息；无文本消息不进闸门（修正）。
+- **v0.8.2**：清理功能（保留天数 UI + 立即清理）；可选 `inbox/` 批次快照、可读 digest。
 - **Backlog**：`qq_history` 工具、聊天记录跨机同步、私聊 / 媒体。

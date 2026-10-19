@@ -99,6 +99,12 @@ test('codec：@ 群消息规范化', () => {
   assert.equal(event.replyToId, null)
   assert.deepEqual(bypassReason(event, { commandPrefixes: ['/dsh'] }), { bypass: true, reason: 'mention' })
   assert.equal(dedupeKey(event), '10002:8582504')
+  const record = toChatLogRecord(event)
+  assert.equal(record.mentionsSelf, true)
+  assert.equal(record.replyToId, null)
+  assert.equal(record.groupId, '10002')
+  assert.equal(record.card, '')
+  assert.equal(record.text, '测试')
 })
 
 test('codec：普通群消息不直通，聊天记录字段正确', () => {
@@ -108,11 +114,15 @@ test('codec：普通群消息不直通，聊天记录字段正确', () => {
   assert.deepEqual(bypassReason(event, { commandPrefixes: ['/dsh'] }), { bypass: false, reason: null })
   assert.deepEqual(toChatLogRecord(event), {
     time: 1792340798 * 1000,
+    groupId: '10002',
     messageId: '645195019',
     userId: '10003',
     nickname: 'tester',
+    card: '',
     role: 'owner',
     text: '111',
+    mentionsSelf: false,
+    replyToId: null,
     raw: '111',
   })
 })

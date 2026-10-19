@@ -37,7 +37,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 - 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
   chatRetentionDays / sessionTitle / replyChunkSize / commandPrefixes`；`reconnect` 等保持 patch 只读。
   `groupWorkspaces` 由「群项目目录」表格整表提交（空表 = 清空覆盖）；`chatRetentionDays` 本期只有配置、
-  没有表单入口（清理 UI 排 v0.8.1）。
+  没有表单入口（清理 UI 排 v0.8.2）。
 - **保存即生效**：host 用新配置重建 client + relay（单实例锁不重入），不需要重启 GUI。
 - 校验失败 → 返回 400，**不写盘、不改内存配置**；页面显示 host 的 problems。
 - `settings.json` 是普通 JSON（`{ version, updatedAt, config }`），原子写；手动改它
@@ -132,7 +132,7 @@ src/
 ## 8. 已知边界 / 后续
 
 - 页面可直接改「群项目目录」，并为已映射群提供「重新绑定」；清空全部映射 / 删除会话仍无入口。
-- 聊天记录清理（保留天数 + 立即清理）排 v0.8.1。
+- 聊天记录清理（保留天数 + 立即清理）排 v0.8.2。
 - 不做 i18n（当前中文直出）；随插件一起演进。
 - 没有「恢复 profile 默认值」按钮：删掉 settings.json 后重启即可回到 patch 配置。
 - 闸门相关配置（快路 / 慢路 / jev）待 P2 落地后再加进表单。

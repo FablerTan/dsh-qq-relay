@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.8.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.8.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
@@ -115,13 +115,21 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### v0.8.1 聊天日志元信息与空文本修正（2026-10-19）
+
+- 修掉聊天日志丢元信息的问题：`codec.toChatLogRecord` 现在写入 `groupId` / `card` /
+  `mentionsSelf` / `replyToId`，@ 与引用在日志里不再退化为 `false` / `null`；`text` 写入前 trim。
+- 纯图片 / 表情等无文本消息：只写聊天日志，**不再进闸门、不调分类器**（此前会进 pending 并白调一次 jev）。
+- 排查证据：13:38 的两条 @ 均在 1–4 秒内回复；未回复的是 13:38:59 的无文本表情消息（闸门判 0.52 不接话）。
+- 单测 144 个；host 半身改动，需重启 profile GUI 生效。
+
 ### v0.8.0 群项目目录与消息拼接（2026-10-19）
 
 - 每个群可以绑定自己的**项目目录**（`groupWorkspaces`，设置页「群项目目录」表格可编辑）：
   会话 cwd 与聊天记录都以它为准；未单独配置时跟随默认 `workspace`。
 - 聊天记录从全局 storage 搬进各群的 `<项目>/.qq-relay/chat/<群号>/YYYY-MM-DD.jsonl`，
   目录内 `.gitignore` 为 `*`（自我忽略、永不进用户仓库）；**默认不再自动删除**
-  （`chatRetentionDays: 0`，清理 UI 排 v0.8.1）。DSH 会话与 agent 都能直接 read。
+  （`chatRetentionDays: 0`，清理 UI 排 v0.8.2）。DSH 会话与 agent 都能直接 read。
 - 发给 DSH 的 prompt 统一由 `lib/model/prompt.js` 拼接：群名 / 群号 / 本地时间 / 条数 /
   `@你`、`引用 <id>` 标记 / 聊天记录相对路径指针；直通与闸门共用，修掉昵称与 @ 信息丢失。
 - 聊天日志行新增 `groupId` / `card` / `mentionsSelf` / `replyToId`（旧行缺字段自动补默认）。
