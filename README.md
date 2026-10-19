@@ -1,13 +1,14 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.11.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.12.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
 P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `/stop` / `/status` / `/help`，
 见 [docs/commands.md](./docs/commands.md)）；P6 已落地**回复体验**（引用触发消息 / 处理中占位 /
-直通连发合并，见 [docs/reply.md](./docs/reply.md)）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+直通连发合并，见 [docs/reply.md](./docs/reply.md)）；P4.2 已落地**媒体双向**（入向视频 / 语音落盘，
+`qq_send` 出向图片 / 文件，见 [docs/media.md](./docs/media.md)）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -40,8 +41,9 @@ DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群�
 入向图片 / 表情落盘与路径引用（P4.1，见 [media.md](./docs/media.md)）、
 QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/help`，群主 / 管理员可用，
 见 [commands.md](./docs/commands.md)）、回复体验（P6：引用触发消息 / 8 秒「处理中」占位 /
-400ms 连发合并，见 [reply.md](./docs/reply.md)）。
-**仍未定案**：群审批（按钮）、媒体收发、client 面板增强、聊天记录清理 UI——先落 `docs/` 再实现。
+400ms 连发合并，见 [reply.md](./docs/reply.md)）、媒体双向（P4.2：入向视频 / 语音落盘，
+`qq_send` 出向图片 / 文件，见 [media.md](./docs/media.md)）。
+**仍未定案**：群审批（按钮）、client 面板增强、聊天记录清理 UI、入向群文件——先落 `docs/` 再实现。
 
 ## 目录结构
 
@@ -88,7 +90,7 @@ dsh-qq-relay/
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
-| [docs/media.md](./docs/media.md) | 入向媒体落盘：图片 / 表情下载到 `.qq-relay/media/`、聊天记录与 prompt 里的路径 | 改媒体 / 排查图片下载时 |
+| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 | 改媒体 / 排查媒体收发时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送：契约、安全、离线队列、验证 | 改工具 / 排查推送失败时 |
@@ -124,6 +126,20 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.12.0 媒体双向：入向视频 / 语音 + 出向图片 / 文件（2026-10-19）
+
+- 入向扩展：视频（mp4 / avi / webm / flv）与语音（amr / silk / mp3 / ogg / wav）同图片一样落盘到
+  `.qq-relay/media/`，聊天记录 `media[]` 与 prompt 标记（`[视频：…]` / `[语音：…]`）沿用同一套；
+  扩展名同样按**文件头 magic bytes** 识别，不信 CQ 文件名。
+- 出向媒体：`qq_send` 新增 `images`（最多 4 张，本地绝对路径或 http(s) URL）与
+  `file` / `fileName`（本地文件上传到群文件）；文本 / 图片 / 文件可一次调用混发。
+- 为什么走 base64：NapCat 在 Docker 里看不到宿主路径；本地文件读成 `base64://` 交给
+  `send_group_msg`（图片）与 `upload_group_file`（文件），NapCat 端解码。
+- 校验：图片 ≤ 10 MiB 且必须是支持的图片格式；文件 ≤ 30 MiB；离线时出向媒体**直接报错不排队**；
+  失败信息对模型可读。
+- 新增 `test/tools.test.js` 媒体用例、relay 出向媒体用例、media 视频 / 语音用例；单测 201 个。
+  host 半身改动，需重启 profile GUI 生效。
 
 ### v0.11.1 回复体验：引用 / 处理中 / 连发合并（2026-10-19）
 

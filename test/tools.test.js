@@ -1,6 +1,6 @@
 /**
  * qq_send 工具定义单测（node:test，零依赖）：参数校验、群解析、白名单、
- * 输出 schema / render，以及 execute 的透传语义。
+ * 输出 schema / render，以及 execute 的透传语义（文本 / 图片 / 文件，v0.12.0）。
  *
  * 工具注册本身（ctx.tools.register）在 apply.test.js 里用假 tools 服务覆盖。
  */
@@ -10,13 +10,23 @@ import assert from 'node:assert/strict'
 
 import { createQqSendTool, QQ_SEND_TOOL_NAME } from '../lib/controller/tools.js'
 
-function createHarness(groups = [100], result = { chunks: 1, queued: false, messageIds: ['m1'] }) {
-  const calls = []
+const TEXT_RESULT = { chunks: 1, queued: false, messageIds: ['m1'] }
+
+function createHarness(groups = [100], options = {}) {
+  const calls = { texts: [], images: [], files: [] }
   const tool = createQqSendTool({
     getGroups: () => groups,
     sendText: async (groupId, text) => {
-      calls.push({ groupId, text })
-      return { groupId, ...result }
+      calls.texts.push({ groupId, text })
+      return { ...(options.textResult ?? TEXT_RESULT), groupId }
+    },
+    sendImage: async (groupId, source) => {
+      calls.images.push({ groupId, source })
+      return { groupId, chunks: 1, queued: false, messageIds: ['img' + String(calls.images.length)] }
+    },
+    sendFile: async (groupId, filePath, name) => {
+      calls.files.push({ groupId, filePath, name })
+      return { groupId, fileName: name === '' ? 'report.pdf' : name, fileId: 'f1' }
     },
   })
   return { tool, calls }
@@ -29,26 +39,62 @@ test('qq_send：定义形状（name / description / 参数 / 输出 schema）', 
   assert.equal(tool.name, QQ_SEND_TOOL_NAME)
   assert.equal(tool.name, 'qq_send')
   assert.equal(tool.description.includes('QQ'), true)
+  assert.equal(tool.description.includes('image'), true)
   assert.equal(tool.parameters.type, 'object')
-  assert.deepEqual(tool.parameters.required, ['text'])
+  assert.deepEqual(tool.parameters.required, [])
   assert.equal(tool.parameters.additionalProperties, false)
-  assert.deepEqual(Object.keys(tool.output.schema.properties).sort(), ['chunks', 'groupId', 'messageIds', 'queued'])
+  assert.deepEqual(Object.keys(tool.parameters.properties).sort(), ['file', 'fileName', 'groupId', 'images', 'text'])
+  assert.deepEqual(Object.keys(tool.output.schema.properties).sort(), ['chunks', 'groupId', 'media', 'messageIds', 'queued'])
   assert.deepEqual(tool.output.schema.required.slice().sort(), ['chunks', 'groupId', 'messageIds', 'queued'])
   assert.equal(typeof tool.output.render, 'function')
   assert.equal(typeof tool.execute, 'function')
 })
 
-test('qq_send：显式 groupId 透传，返回发送结果', async () => {
+test('qq_send：纯文本透传，返回发送结果', async () => {
   const { tool, calls } = createHarness([100, 200])
   const value = await tool.execute({ groupId: 200, text: '  任务完成  ' }, exec)
-  assert.deepEqual(calls, [{ groupId: 200, text: '任务完成' }])
+  assert.deepEqual(calls.texts, [{ groupId: 200, text: '任务完成' }])
   assert.deepEqual(value, { groupId: 200, chunks: 1, queued: false, messageIds: ['m1'] })
+})
+
+test('qq_send：文本 + 图片 + 文件，输出 media 摘要', async () => {
+  const { tool, calls } = createHarness([100])
+  const value = await tool.execute({
+    text: '看下这两个文件',
+    images: ['/tmp/a.png', 'https://example.com/b.jpg'],
+    file: '/tmp/report.pdf',
+    fileName: '日报.pdf',
+  }, exec)
+  assert.deepEqual(calls.texts, [{ groupId: 100, text: '看下这两个文件' }])
+  assert.deepEqual(calls.images, [
+    { groupId: 100, source: '/tmp/a.png' },
+    { groupId: 100, source: 'https://example.com/b.jpg' },
+  ])
+  assert.deepEqual(calls.files, [{ groupId: 100, filePath: '/tmp/report.pdf', name: '日报.pdf' }])
+  assert.equal(value.chunks, 1)
+  assert.deepEqual(value.messageIds, ['m1', 'img1', 'img2'])
+  assert.deepEqual(value.media, { images: 2, file: '日报.pdf' })
+
+  const rendered = tool.output.render({}, value).map((block) => block.text).join('')
+  assert.match(rendered, /2 张图片/)
+  assert.match(rendered, /日报\.pdf/)
+})
+
+test('qq_send：只发图片也可以（没有 text）', async () => {
+  const { tool, calls } = createHarness([100])
+  const value = await tool.execute({ images: ['/tmp/chart.png'] }, exec)
+  assert.equal(calls.texts.length, 0)
+  assert.equal(value.chunks, 0)
+  assert.deepEqual(value.media, { images: 1, file: '' })
+  const rendered = tool.output.render({}, value).map((block) => block.text).join('')
+  assert.match(rendered, /已发送到群 100/)
+  assert.match(rendered, /1 张图片/)
 })
 
 test('qq_send：唯一群时可省略 groupId', async () => {
   const { tool, calls } = createHarness([100])
   const value = await tool.execute({ text: 'hi' }, exec)
-  assert.deepEqual(calls, [{ groupId: 100, text: 'hi' }])
+  assert.deepEqual(calls.texts, [{ groupId: 100, text: 'hi' }])
   assert.equal(value.groupId, 100)
 })
 
@@ -65,16 +111,17 @@ test('qq_send：没有白名单 / 群不在白名单时报错', async () => {
   await assert.rejects(() => tool.execute({ groupId: 999, text: 'hi' }, exec), /不在白名单/)
 })
 
-test('qq_send：空文本 / 超长文本 / 非法 groupId 被拒绝', async () => {
+test('qq_send：空内容 / 超长文本 / 图片过多 / 非法 groupId 被拒绝', async () => {
   const { tool } = createHarness([100])
-  await assert.rejects(() => tool.execute({ text: '   ' }, exec), /不能为空/)
+  await assert.rejects(() => tool.execute({ text: '   ' }, exec), /至少要有一个/)
+  await assert.rejects(() => tool.execute({}, exec), /至少要有一个/)
   await assert.rejects(() => tool.execute({ text: 'x'.repeat(20001) }, exec), /过长/)
+  await assert.rejects(() => tool.execute({ images: ['1', '2', '3', '4', '5'] }, exec), /最多 4/)
   await assert.rejects(() => tool.execute({ groupId: 1.5, text: 'hi' }, exec), /正整数/)
-  await assert.rejects(() => tool.execute({}, exec), /不能为空/)
 })
 
 test('qq_send：离线排队时 queued=true，render 说明补发', async () => {
-  const { tool } = createHarness([100], { chunks: 2, queued: true, messageIds: [] })
+  const { tool } = createHarness([100], { textResult: { chunks: 2, queued: true, messageIds: [] } })
   const value = await tool.execute({ text: '离线通知' }, exec)
   assert.equal(value.queued, true)
   const queuedText = tool.output.render({}, value).map((block) => block.text).join('')
@@ -85,9 +132,18 @@ test('qq_send：离线排队时 queued=true，render 说明补发', async () => 
   assert.match(okText, /m9/)
 })
 
+test('qq_send：缺 sendImage / sendFile 时给出可读错误', async () => {
+  const tool = createQqSendTool({
+    getGroups: () => [100],
+    sendText: async () => ({ groupId: 100, chunks: 1, queued: false, messageIds: [] }),
+  })
+  await assert.rejects(() => tool.execute({ images: ['/tmp/a.png'] }, exec), /不支持发送图片/)
+  await assert.rejects(() => tool.execute({ file: '/tmp/a.pdf' }, exec), /不支持上传文件/)
+})
+
 test('qq_send：exec.signal 已中止时直接失败', async () => {
   const { tool, calls } = createHarness([100])
   const signal = { throwIfAborted() { throw new Error('aborted') } }
   await assert.rejects(() => tool.execute({ text: 'hi' }, { signal }), /aborted/)
-  assert.equal(calls.length, 0)
+  assert.equal(calls.texts.length, 0)
 })

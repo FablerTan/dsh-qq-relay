@@ -101,6 +101,40 @@ test('prompt：媒体标记（图片 / 表情 / face / 失败）与纯媒体行'
     messages: [{ text: '图呢', time: T, nickname: 'TS', media: [{ kind: 'image', status: 'failed', reason: 'timeout' }] }],
   })
   assert.ok(failed.includes('[媒体下载失败] 图呢'), failed)
+
+  const videoAndVoice = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{
+      text: '',
+      time: T,
+      nickname: 'TS',
+      media: [
+        { kind: 'video', status: 'saved', path: '.qq-relay/media/100/v.mp4' },
+        { kind: 'voice', status: 'saved', path: '.qq-relay/media/100/r.amr' },
+      ],
+    }],
+  })
+  assert.ok(videoAndVoice.includes('[视频：.qq-relay/media/100/v.mp4]'), videoAndVoice)
+  assert.ok(videoAndVoice.includes('[语音：.qq-relay/media/100/r.amr]'), videoAndVoice)
+
+  const metadataOnly = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{
+      text: '听一下',
+      time: T,
+      nickname: 'TS',
+      media: [
+        { kind: 'video', status: 'metadata', file: 'v.mp4' },
+        { kind: 'voice', status: 'metadata', file: 'r.amr' },
+      ],
+    }],
+  })
+  assert.ok(metadataOnly.includes('[视频（未下载）]'), metadataOnly)
+  assert.ok(metadataOnly.includes('[语音（未下载）]'), metadataOnly)
 })
 
 test('prompt：群名缺省 / 显示名回退 / 空批次', () => {

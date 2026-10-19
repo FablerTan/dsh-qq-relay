@@ -1,16 +1,20 @@
 # 媒体落盘与聊天记录链接（规格）
 
-> 状态：**v0.9.0 已实现（2026-10-19）；v0.9.1 修正扩展名（按真实图片头识别）**。
-> 本文是入向媒体（图片 / 表情）落盘与聊天记录、prompt 引用的现状记录。
-> 聊天记录与消息拼接见 [chat-context.md](./chat-context.md)。
+> 状态：**v0.9.0 入向媒体落盘；v0.9.1 修正扩展名（按真实文件头识别）；
+> v0.12.0 扩展到视频 / 语音入向，并支持出向图片 / 文件**。
+> 本文是媒体落盘、聊天记录 / prompt 引用与出向发送的现状记录。
+> 聊天记录与消息拼接见 [chat-context.md](./chat-context.md)，`qq_send` 契约见 [tools.md](./tools.md)。
 >
 > 用户决策（2026-10-19）：**下载到本地，聊天记录链接到对应位置**。
 
 ## 1. 范围
 
 - 入向 CQ **图片**（含 `sub_type=1` 的动画表情 / 贴纸）与 **商城表情**：下载文件到群项目内。
+- 入向 **视频 / 语音**（v0.12.0）：同样下载到 `.qq-relay/media/`，聊天记录与 prompt 引用路径。
 - 入向 **face（QQ 内置表情，如 /失眠）**：没有可下载文件，只记元信息与表情文本。
-- 不做：视频 / 语音 / 群文件 / 出向媒体上传 / 媒体入向转 DSH 附件（见 §9 backlog）。
+- **出向**（v0.12.0）：`qq_send` 可发图片（本地路径 / URL）与上传群文件（本地路径）；
+  NapCat 跑在 Docker 里看不到宿主路径，所以本地文件一律读成 base64 走 WS。
+- 不做：入向群文件（`group_upload` notice）、入向媒体转 DSH 附件、视频 / 语音转文字（见 §9 backlog）。
 
 ## 2. 存储布局
 
@@ -36,7 +40,8 @@
 | 超时 | 10 秒（AbortController） |
 | 单文件上限 | 20 MiB |
 | 单消息媒体数 | 最多 10 个 |
-| 扩展名 | 图片头 magic bytes → `content-type` → CQ file / URL 后缀 → `.bin`（v0.9.1） |
+| 扩展名 | 文件头 magic bytes（图片 / 视频 / 语音）→ `content-type` → CQ file / URL 后缀 → `.bin` |
+| 支持的入向类型 | 图片（jpeg / png / gif / webp / bmp / avif）· 视频（mp4 / avi / webm / flv）· 语音（amr / silk / mp3 / ogg / wav） |
 | 失败处理 | 不阻断消息流；聊天记录写 `status: "failed"`，prompt 显示 `[媒体下载失败]` |
 | 幂等 | 同一条消息只会处理一次（`state.markSeen` 在下载前），无需去重 |
 
@@ -50,7 +55,7 @@
 
 ```json
 {
-  "kind": "image | sticker | face",
+  "kind": "image | sticker | face | video | voice",
   "status": "saved | failed | metadata",
   "path": ".qq-relay/media/10002/2026-10-19/310093866-0.jpg",
   "bytes": 133634,
@@ -79,10 +84,26 @@
 ```
 
 - 图片 / 贴纸：`[图片：<相对路径>]` / `[表情：<相对路径>]`；
+- 视频 / 语音：`[视频：<相对路径>]` / `[语音：<相对路径>]`；
 - face：`[表情 <faceText>]`（没有文本时 `[表情]`）；
 - 失败：`[媒体下载失败]`；
 - **纯媒体消息（无文本）也可以生成 prompt**（此前会被当作空消息跳过）——@ 带图时会真正转给 DSH；
 - 闸门仍只收有文本的消息（纯图片 / 表情不进 pending、不调分类器）。
+
+## 5.1 出向媒体（v0.12.0）
+
+- 入口：`qq_send` 工具（`text` / `images` / `file` / `fileName`，见 [tools.md](./tools.md)）。
+- **图片**（`images`，最多 4 张）：
+  - 本地绝对路径：校验存在 / 普通文件 / ≤ 10 MiB / 文件头是支持的图片格式，然后读成
+    `base64://…` 交给 `send_group_msg` 的 image 段；
+  - `http(s)://` URL：直接交给 NapCat 下载（不经过宿主）。
+- **文件**（`file`，1 个）：本地绝对路径，≤ 30 MiB，读成 `base64://…` 交给
+  `upload_group_file`（NapCat 解码后上传到群文件）；显示名默认取路径 basename，可用 `fileName` 覆盖。
+- 为什么必须 base64：NapCat 跑在 Docker（只挂载了 QQ 数据 / 配置 / 插件目录），**看不到宿主路径**；
+  NapCat 的资源解析器支持 `base64://`，因此本地文件必须先转 base64。
+- 离线语义：出向媒体**不排队**（队列只存文本）；离线时直接报错，让调用方决定稍后重试。
+- 发送成功记一次 `markSpoken`（图片算 bot 发过言，刷新闸门窗口）；文件上传不改变闸门状态。
+- 失败语义：文件不存在 / 非图片 / 超限 / 白名单外 / NapCat 明确失败都会抛出可读错误，工具层可见。
 
 ## 6. 与 jev 的关系
 
@@ -105,16 +126,18 @@
 
 ## 9. 未做（backlog）
 
-- 视频 / 语音 / 群文件；
-- 出向媒体（QQ 发图）；
-- 入向媒体转 DSH 附件（让模型直接“看图”而不只是拿到路径）；
-- 媒体大小 / 类型 / 开关的配置项；
-- 按消息 id 去重与失败重试（当前依赖 seen 去重，失败不重试）。
+- 入向群文件（`group_upload` notice）：目前只处理消息段里的媒体，群文件上传通知被忽略；
+- 入向媒体转 DSH 附件（当前 agent 直接 read 路径即可看图片；视频 / 语音要自己解析）；
+- 媒体大小 / 类型 / 开关的配置项（当前是常量：入向 20 MiB / 上限 10 个，出向图片 10 MiB / 文件 30 MiB）；
+- 按消息 id 去重与失败重试（当前依赖 seen 去重，失败不重试）；
+- 私聊媒体。
 
 ## 10. 测试
 
 - `test/media.test.js`：媒体计划解析（image / sticker / face / mface）、扩展名与路径、下载成功、
   HTTP 失败 / 网络失败 / 超时 / 超大 / 非 http、face 元信息、日志归一化、按日期清理、
   以及 v0.9.1 的 magic bytes 扩展名识别（CQ 后缀错 / content-type 不匹配时以真实内容为准）。
-- `test/relay.test.js`：图片消息落盘 + 聊天记录带路径；@ 带图（无文本）prompt 带图片标记。
-- `test/prompt.test.js`：媒体标记与纯媒体行。
+- `test/relay.test.js`：图片消息落盘 + 聊天记录带路径；@ 带图（无文本）prompt 带图片标记；
+  v0.12.0 出向 `sendImage` / `sendFile`（本地转 base64 / URL / 大小与格式校验 / 离线报错 / 白名单）。
+- `test/prompt.test.js`：媒体标记（图片 / 表情 / 视频 / 语音 / 失败）与纯媒体行。
+- `test/tools.test.js`：`qq_send` 的文本 / 图片 / 文件参数与输出摘要。

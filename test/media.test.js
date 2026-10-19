@@ -18,6 +18,7 @@ import {
   pruneMedia,
   sanitizeStem,
   sniffImageExt,
+  sniffMediaExt,
 } from '../lib/model/media.js'
 import { RELAY_DIR_NAME } from '../lib/model/project.js'
 
@@ -243,4 +244,73 @@ test('media：pruneMedia 按日期目录清理（days<=0 不清理）', (t) => {
   assert.equal(existsSync(join(groupDir, '2026-10-01')), false)
   assert.equal(existsSync(join(groupDir, '2026-10-19')), true)
   assert.equal(pruneMedia({ groupIds: [101], projectDirFor, nowMs: T, days: 7 }), 0)
+})
+test('media：planMedia 解析 video / record（v0.12.0）', () => {
+  const media = planMedia([
+    { type: 'video', data: { url: 'https://x/v.mp4', file: 'v.mp4', file_size: 1024 } },
+    { type: 'record', data: { url: 'https://x/r.amr', file: 'r.amr', file_size: 32 } },
+  ])
+  assert.deepEqual(media.map((item) => item.kind), ['video', 'voice'])
+  assert.equal(media[0].url, 'https://x/v.mp4')
+  assert.equal(media[0].bytes, 1024)
+  assert.equal(media[1].file, 'r.amr')
+})
+
+test('media：sniffMediaExt 识别视频 / 语音头，图片优先', () => {
+  const mp4 = Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32])
+  const avi = Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x41, 0x56, 0x49, 0x20])
+  const wav = Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45])
+  const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0])
+  const flv = Buffer.from('FLV\x01\x05\x00\x00')
+  const amr = Buffer.from('#!AMR\n')
+  const silk = Buffer.from([0x02, 0x23, 0x21, 0x53, 0x49, 0x4c, 0x4b, 0x5f, 0x56, 0x33])
+  const mp3 = Buffer.from('ID3\x04\x00')
+  const ogg = Buffer.from('OggS\x00\x02')
+
+  assert.equal(sniffMediaExt(mp4), '.mp4')
+  assert.equal(sniffMediaExt(avi), '.avi')
+  assert.equal(sniffMediaExt(wav), '.wav')
+  assert.equal(sniffMediaExt(webm), '.webm')
+  assert.equal(sniffMediaExt(flv), '.flv')
+  assert.equal(sniffMediaExt(amr), '.amr')
+  assert.equal(sniffMediaExt(silk), '.silk')
+  assert.equal(sniffMediaExt(mp3), '.mp3')
+  assert.equal(sniffMediaExt(ogg), '.ogg')
+  assert.equal(sniffMediaExt(PNG), '.png', '图片仍然优先识别')
+  assert.equal(sniffMediaExt(Buffer.from([1, 2, 3])), '')
+})
+
+test('media：视频 / 语音落盘按真实内容定扩展名', async (t) => {
+  const project = join(tempDir(t), 'proj')
+  const mp4 = Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32, 1, 2])
+  const amr = Buffer.from('#!AMR\n\x01\x02\x03', 'latin1')
+
+  const video = await attachMedia({
+    projectDir: project, groupId: 100, messageId: 21, timeMs: T,
+    media: [{ kind: 'video', file: 'clip.bin', url: 'https://example.com/clip.bin' }],
+    fetchImpl: async () => okResponse(mp4, { contentType: 'application/octet-stream' }),
+  })
+  assert.equal(video[0].kind, 'video')
+  assert.equal(video[0].status, 'saved')
+  assert.equal(video[0].path, '.qq-relay/media/100/2026-10-19/21-0.mp4')
+
+  const voice = await attachMedia({
+    projectDir: project, groupId: 100, messageId: 22, timeMs: T,
+    media: [{ kind: 'voice', file: 'voice.bin', url: 'https://example.com/voice.bin' }],
+    fetchImpl: async () => okResponse(amr, { contentType: 'application/octet-stream' }),
+  })
+  assert.equal(voice[0].kind, 'voice')
+  assert.equal(voice[0].path, '.qq-relay/media/100/2026-10-19/22-0.amr')
+})
+
+test('media：normalizeMediaRecords 保留 video / voice', () => {
+  const out = normalizeMediaRecords([
+    { kind: 'video', status: 'saved', path: '.qq-relay/media/100/v.mp4', bytes: 10 },
+    { kind: 'voice', status: 'failed', reason: 'timeout' },
+    { kind: 'weird', status: 'saved', path: '.qq-relay/media/100/x.bin' },
+  ])
+  assert.equal(out[0].kind, 'video')
+  assert.equal(out[1].kind, 'voice')
+  assert.equal(out[1].status, 'failed')
+  assert.equal(out[2].kind, 'image', '未知 kind 回退成 image')
 })

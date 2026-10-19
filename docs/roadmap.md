@@ -134,8 +134,8 @@
 - ✅ 审批：文本命令（同意 / 拒绝），超时按拒绝（2026-10-19 已实现，见 [approval.md](./approval.md)；
   真机验证待用户重启 dwdev 后在 QQ 群里触发需要审批的操作确认）。
 - 私聊（private）：与群共享映射体系还是独立会话，待定。
-- 媒体：入向图片 / 表情已落盘（v0.9.0，见 [media.md](./media.md)）；仍缺视频 / 语音 / 群文件、
-  入向转 DSH 附件、出向图片 / 文件上传发送。
+- 媒体：入向图片 / 表情（v0.9.0）与视频 / 语音、出向图片 / 文件（v0.12.0）已落地，
+  见 [media.md](./media.md)；仍缺入向群文件、入向转 DSH 附件。
 - ✅ DSH → QQ 主动推送工具 `qq_send`（2026-10-19 已实现，契约见 [tools.md](./tools.md)；
   真机验证待用户重启 dwdev 后在任意会话调用确认）。
 - client 半身面板增强：映射管理、闸门状态、最近消息（基础配置页已在 P1.5 交付，见 [client.md](./client.md)）。
@@ -195,6 +195,33 @@
 - @ 带图（无文字）→ DSH prompt 里出现 `[图片：.qq-relay/media/...]`。
 - 图片下载失败 → 聊天记录 `status: "failed"`，prompt 显示 `[媒体下载失败]`，消息不丢。
 - 单测与 `pnpm check` 全绿。
+
+## P4.2 媒体双向（v0.12.0 已实现，2026-10-19）
+
+目标：把媒体能力补成双向——群里发的视频 / 语音也能落盘给 agent，agent 生成的图片 / 文件也能发回群。
+规格见 [media.md](./media.md) §5.1。
+
+### 范围（v0.12.0）
+
+- 入向：视频（mp4 / avi / webm / flv）与语音（amr / silk / mp3 / ogg / wav）落盘，扩展名按 magic bytes；
+  聊天记录 `media[].kind` 增加 `video` / `voice`，prompt 标记 `[视频：…]` / `[语音：…]`。
+- 出向：`qq_send` 新增 `images`（≤4 张，本地绝对路径或 URL）与 `file` / `fileName`（群文件上传）；
+  本地文件读成 base64 经 NapCat 发送（NapCat 在 Docker 里看不到宿主路径）。
+- 校验与语义：图片 ≤10 MiB 且必须是支持的格式、文件 ≤30 MiB；离线时出向媒体直接报错不排队。
+
+### 验收状态（2026-10-19）
+
+- ✅ 单测：media 视频 / 语音解析与落盘、prompt 标记、relay 出向媒体、`qq_send` 媒体参数，共 201 个全过。
+- ⏳ 真机验收：重启 dwdev GUI 后按下面清单确认。
+
+### 验收
+
+- 群里发一段视频 / 语音 → `.qq-relay/media/<群号>/<日期>/` 出现文件，聊天记录与 prompt 引用路径。
+- 工作区放一张图片 → `qq_send({ images: ['/abs/a.png'] })` → 群里收到图片。
+- 工作区放一个 pdf → `qq_send({ file: '/abs/a.pdf', fileName: '报告.pdf' })` → 群文件里出现「报告.pdf」。
+- 发一个非图片文件当 images → 工具返回「不是支持的图片格式」，不会发出。
+- 离线时发图 / 发文件 → 工具返回离线错误（不是 queued）。
+- 单测与 `pnpm check` 全绿；重启 profile GUI 后生效。
 
 ## P5 QQ 侧命令层（v0.11.0 已实现，2026-10-19）
 

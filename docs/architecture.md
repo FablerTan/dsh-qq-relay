@@ -4,7 +4,8 @@
 > P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter）、P3 `qq_send` 主动推送与
 > QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）与 P4.1 入向媒体落盘已实现（2026-10-19）；
 > P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）已实现（v0.11.0，见 [commands.md](./commands.md)）；
-> P6 回复体验（引用触发消息 / 处理中占位 / 直通连发合并）已实现（v0.11.1，见 [reply.md](./reply.md)）**。
+> P6 回复体验（引用触发消息 / 处理中占位 / 直通连发合并）已实现（v0.11.1，见 [reply.md](./reply.md)）；
+> P4.2 媒体双向（入向视频 / 语音 + 出向图片 / 文件）已实现（v0.12.0，见 [media.md](./media.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -92,7 +93,7 @@ lib/
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL（按群项目路由）/ 读取 / 清理 / 旧日志迁移
-    ├── media.js              # 入向图片 / 表情下载到 .qq-relay/media/ 与清理（P4.1）
+    ├── media.js              # 入向图片 / 表情 / 视频 / 语音落盘与清理、媒体类型识别（P4.1 / P4.2）
     ├── project.js            # 群项目目录解析、`.qq-relay/` 创建与自忽略 .gitignore（P4）
     ├── prompt.js             # 消息拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针（P4）
     ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
@@ -161,6 +162,8 @@ ctx.on('agent/error', ...)          # 失败提示
   「收到，处理中…」（不刷新闸门窗口）；见 [reply.md](./reply.md)。
 - **主动推送（P3）**：`qq_send` 工具（见 [tools.md](./tools.md)）走同一个发送队列，
   供任意会话发通知；白名单双重校验，离线排队。
+- **出向媒体（P4.2）**：`qq_send` 的 `images` / `file` 由 relay 校验本地文件（大小 / 图片格式）后
+  转 base64，经 `send_group_msg`（image 段）与 `upload_group_file` 发送；离线不排队，见 [media.md §5.1](./media.md)。
 - **QQ 侧审批（P3）**：QQ 会话里的 `approval/request` 由审批桥发到群里，群主 / 管理员回复
   「同意 / 拒绝」；见 [approval.md](./approval.md)。
 - 失败 / 中断：按配置发简短提示或静默。
