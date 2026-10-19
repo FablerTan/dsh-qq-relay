@@ -115,7 +115,7 @@ OneBot 11 事件为 JSON。关键事件：
 | message | message_type = group / private，含 group_id、user_id、message_id、message[]、raw_message、sender | 主路径 |
 | message_sent | 机器人自己发出的消息 | **必须忽略**，防回环 |
 | meta_event | lifecycle（connect / enable / disable）、heartbeat | 连接状态与心跳 |
-| notice | group_upload、group_increase / decrease、group_recall 等 | P3 可用 |
+| notice | group_upload、group_increase / decrease、group_recall、notify.poke 等 | 戳一戳已识别（v0.15.0）；其余 P3 可用 |
 | request | 加好友 / 加群请求、群邀请 | 忽略或 P3 |
 
 群消息关键字段：
@@ -137,6 +137,14 @@ OneBot 11 事件为 JSON。关键事件：
 - **message_id 不是全局唯一、也不单调**，幂等键用 `(group_id, message_id)`。
 - `reportSelfMessage=false` 时，自己发的消息**不会**产生事件；`send_group_msg` 返回的
   `message_id` 必须由插件自行记录（防回环、引用匹配都靠它）。
+
+戳一戳事件（v0.15.0 起识别，行为见 [poke.md](./poke.md)）：
+
+- `post_type: notice`、`notice_type: notify`、`sub_type: poke`、`group_id`、
+  `user_id`（戳者）、`target_id`（被戳者）、`time`；**不带** `message_id` / 昵称 / 群名；
+- 昵称 / 群名由插件补查 `get_group_member_info` / `get_group_info`（缓存 10 分钟），
+  查不到时退化 QQ 号 / `群 <id>`；
+- 去重键用 `(group_id, time, user_id, target_id)`。
 
 ## 6. 调用 API
 
@@ -169,6 +177,8 @@ OneBot 11 事件为 JSON。关键事件：
 | get_group_info | 群名等 |
 | get_group_member_info / get_group_member_list | 成员昵称 / 角色 |
 | get_group_msg_history | 断线后补上下文（可选） |
+| group_poke | 群戳一戳（NapCat 扩展：`group_id` + `user_id`，无响应数据） |
+| send_poke | 群 / 私聊戳一戳（NapCat 扩展，按是否传 `group_id` 分流） |
 
 - message 为消息段数组：text、image、file、record、at、reply、face 等。
 - 长文本按 QQ 实际限制切分为多条（上限待实测），避免单条过大被拒。
@@ -224,6 +234,7 @@ OneBot 11 事件为 JSON。关键事件：
 | 真机：NapCat 重启后 WS 自动重连、重连后消息正常 | ✅ |
 | 真机：重连后不重建会话（mapping 复用） | ✅ |
 | 真机：容器重启需重新扫码 | ✅（已知代价） |
+| 群戳一戳事件 / `group_poke`（v0.15.0） | ✅ `group_poke` 返回 ok；poke 事件字段与文档一致（bot 戳群友实测） |
 | 长文本切分上限 / 图片 / 文件 / 风控退避 | 待验证 |
 
 ## 参考

@@ -531,3 +531,30 @@ test('config：gate 的 jev 分类器默认与校验', () => {
   assert.ok(invalid.problems.some((p) => p.includes('gate.jevEndpoint')))
   assert.ok(invalid.problems.some((p) => p.includes('gate.jevApiKeyEnv')))
 })
+
+test('config：poke 段默认与校验（v0.15.0）', () => {
+  const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.deepEqual(defaults.config.poke, { enabled: true, react: true, cooldownMs: 10000 })
+
+  const custom = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    poke: { enabled: false, react: false, cooldownMs: '30s' },
+  })
+  assert.equal(custom.ok, true)
+  assert.equal(custom.config.poke.enabled, false)
+  assert.equal(custom.config.poke.react, false)
+  assert.equal(custom.config.poke.cooldownMs, 30000)
+
+  const invalid = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    poke: { enabled: 'yes', react: 1, cooldownMs: '20m' },
+  })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('poke.enabled')))
+  assert.ok(invalid.problems.some((p) => p.includes('poke.react')))
+  assert.ok(invalid.problems.some((p) => p.includes('poke.cooldownMs')))
+})

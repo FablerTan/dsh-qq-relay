@@ -13,6 +13,7 @@
 > 见 [reply.md](./reply.md)。
 > **P4.3 聊天记录清理**：保留天数 UI + 立即清理，v0.13.0 已实现（2026-10-19），见 [chat-context.md](./chat-context.md) §7。
 > **P7 client 面板增强**：闸门每群状态 / 最近消息 / 映射管理，v0.14.0 已实现（2026-10-19），见 [client.md](./client.md)。
+> **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现（2026-10-19），见 [poke.md](./poke.md)。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -339,6 +340,38 @@
 - 行内「解除绑定」确认后映射消失、GUI 里旧会话仍在；再在群里发消息 → 新建会话。
 - 表头「清空全部映射」确认后映射表清空；状态行 / 配置不受影响。
 - 单测与 `pnpm check` 全绿；host + client 半身改动，需重启 profile GUI + 刷新页面生效。
+
+## P8 戳一戳识别与回戳（v0.15.0 已实现，2026-10-19）
+
+目标：识别 QQ 群「戳一戳」——被戳时 agent 能回应，群友互戳进入聊天上下文；agent 可选择回戳。
+规格与事件契约见 [poke.md](./poke.md)。
+
+### 范围（v0.15.0）
+
+- codec 识别 `notice.notify.poke`（`user_id` 戳者 / `target_id` 被戳者 / `group_id`），
+  合成去重键 `poke:<time>:<user>:<target>`（戳事件没有 message_id）。
+- 白名单群写聊天记录（`戳了你一下` / `戳了 <target> 一下`）；**戳 bot 时按直通起一轮**
+  （reason = 戳一戳），不经过闸门、不调用 jev；`poke.react` 控制是否接话，
+  每群 `poke.cooldownMs`（默认 10s）防连戳刷屏，冷却内只记录。
+- 昵称 / 群名补查 `get_group_member_info` / `get_group_info`（缓存 10 分钟），失败退化 QQ 号 / 群号。
+- 新工具 `qq_poke`（NapCat 扩展 action `group_poke`）：白名单 + userId 校验，离线报错；
+  与 `qq_send` 在同一个 tools 子 fiber 注册。
+- 配置 `poke` 段（patch 只读）：`enabled` / `react` / `cooldownMs`。
+
+### 验收状态（2026-10-19）
+
+- ✅ 单测：codec 1、配置 1、relay 9、工具 4，共 230 个全过；`pnpm check` 全绿。
+- ✅ 协议端实测：`group_poke` 返回 ok；poke 事件字段与 onebot-channel §5 一致。
+- ⏳ 真机验收：重启 dwdev GUI 后按下面清单确认「别人戳 bot → 回复」链路。
+
+### 验收
+
+- 群里戳 bot → agent 回复；对应会话 prompt 含「（直通：戳一戳）」。
+- 10 秒内连戳两次 → 只回一次，两次都写进聊天记录（设置页「最近消息」可见）。
+- 戳其他群友 → 不回复、只记录。
+- agent 调 `qq_poke` → 对方收到戳；NapCat 离线时工具报「当前离线」。
+- `poke.enabled=false` / 非白名单群 → 事件被忽略。
+- host 半身改动，需重启 profile GUI 生效。
 
 ## 风险登记
 

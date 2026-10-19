@@ -28,7 +28,7 @@ function createHarness(t, options = {}) {
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   const handlers = new Map()
-  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [], images: [], files: [] }
+  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [], images: [], files: [], pokes: [], memberInfo: [], groupInfo: [] }
 
   const ctx = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
@@ -96,6 +96,24 @@ function createHarness(t, options = {}) {
       if (options.fileFails === true) return { status: 'failed', retcode: 1200, message: '文件上传失败', data: null }
       return { status: 'ok', retcode: 0, data: { file_id: 'f' + String(calls.files.length) } }
     },
+    async getGroupMemberInfo(groupId, userId) {
+      calls.memberInfo.push({ groupId, userId })
+      if (options.memberInfoFails === true) return { status: 'failed', retcode: 1200, data: null, message: '成员不存在' }
+      return {
+        status: 'ok',
+        retcode: 0,
+        data: { user_id: userId, nickname: options.memberNickname ?? ('群友' + String(userId)), card: options.memberCard ?? '' },
+      }
+    },
+    async getGroupInfo(groupId) {
+      calls.groupInfo.push(groupId)
+      return { status: 'ok', retcode: 0, data: { group_id: String(groupId), group_name: options.groupName ?? '测试群' } }
+    },
+    async groupPoke(groupId, userId) {
+      calls.pokes.push({ groupId, userId })
+      if (options.pokeFails === true) return { status: 'failed', retcode: 1200, message: '戳一戳失败', data: null }
+      return { status: 'ok', retcode: 0, data: null }
+    },
   }
 
   const config = normalizeConfig({
@@ -108,6 +126,8 @@ function createHarness(t, options = {}) {
     gate: options.gate,
     // 单测默认关掉回复体验增强（引用 / 连发合并 / 处理中占位），避免每条消息多等窗口。
     reply: options.reply ?? { quote: false, mergeWindowMs: 0, ackDelayMs: 0 },
+    // 戳一戳默认不限冷却，避免测试里第二次戳被冷却吞掉（冷却行为单独测）。
+    poke: options.poke ?? { cooldownMs: 0 },
   }).config
 
   const mapping = createMappingStore(join(dir, 'mapping.json'))
@@ -155,6 +175,21 @@ function textEvent(text, overrides = {}) {
     raw_message: text,
     ...overrides,
   })
+}
+
+/** OneBot 11 戳一戳通知（NapCat：notice_type=notify + sub_type=poke）。 */
+function pokeEvent(overrides = {}) {
+  return {
+    post_type: 'notice',
+    notice_type: 'notify',
+    sub_type: 'poke',
+    self_id: 999,
+    group_id: 100,
+    user_id: 205,
+    target_id: 999,
+    time: 1792340775,
+    ...overrides,
+  }
 }
 
 test('relay：@ 消息直通、建会话、prompt 带群名 / 时间 / @ 标记 / 历史指针', async (t) => {
@@ -948,4 +983,117 @@ test('relay：NapCat 明确拒绝时抛出可读错误', async (t) => {
   writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
   await assert.rejects(() => relay.sendImage(100, png), /图片发送失败/)
   await assert.rejects(() => relay.sendFile(100, png), /文件上传失败/)
+})
+test('relay：被戳一戳（poke）写聊天日志并直通一轮', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t)
+  relay.handleRawEvent(pokeEvent())
+  await wait(50)
+
+  assert.equal(calls.create.length, 1)
+  assert.equal(calls.prompt.length, 1)
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.startsWith('[QQ群：测试群（100）] '), text)
+  assert.ok(text.includes('新消息 1 条（直通：戳一戳）'), text)
+  assert.ok(text.includes('[群友205] 戳了你一下'), text)
+  assert.ok(text.includes('[历史记录：.qq-relay/chat/100/'), text)
+  assert.equal(calls.rename[0].title, 'QQ群：测试群')
+
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].text, '戳了你一下')
+  assert.equal(records[0].nickname, '群友205')
+  assert.equal(records[0].raw, 'poke')
+})
+
+test('relay：群友互戳只写聊天记录，不触发回合', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t)
+  relay.handleRawEvent(pokeEvent({ user_id: 206, target_id: 205 }))
+  await wait(40)
+
+  assert.equal(calls.create.length, 0)
+  assert.equal(calls.prompt.length, 0)
+  const records = chatLog.readRecent(100, 0)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].text, '戳了 205 一下')
+  assert.equal(records[0].nickname, '群友206')
+})
+
+test('relay：poke.enabled=false 时完全忽略戳一戳', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { poke: { enabled: false, cooldownMs: 0 } })
+  relay.handleRawEvent(pokeEvent())
+  await wait(30)
+
+  assert.equal(chatLog.readRecent(100, 0).length, 0)
+  assert.equal(calls.prompt.length, 0)
+  assert.equal(calls.memberInfo.length, 0, '关闭后不应再查成员信息')
+})
+
+test('relay：poke.react=false 时只记录不接话', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t, { poke: { react: false, cooldownMs: 0 } })
+  relay.handleRawEvent(pokeEvent())
+  await wait(40)
+
+  assert.equal(chatLog.readRecent(100, 0).length, 1)
+  assert.equal(calls.prompt.length, 0)
+})
+
+test('relay：戳一戳冷却窗口内只记录不重复接话', async (t) => {
+  const { relay, ctx, calls, chatLog } = createHarness(t, { poke: { cooldownMs: '10s' } })
+  relay.handleRawEvent(pokeEvent())
+  await wait(50)
+  assert.equal(calls.prompt.length, 1)
+
+  relay.handleRawEvent(pokeEvent({ user_id: 206, time: 1792340776 }))
+  await wait(50)
+  assert.equal(calls.prompt.length, 1, '冷却中不派发第二轮')
+  assert.equal(chatLog.readRecent(100, 0).length, 2, '冷却中仍然记录')
+
+  // 结束第一轮后也不应补派发冷却期间的那次戳
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 0, reason: { kind: 'completed' } },
+  })
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+})
+
+test('relay：自我戳 / 非白名单群 / 重复事件都被忽略', async (t) => {
+  const { relay, calls, chatLog } = createHarness(t)
+  relay.handleRawEvent(pokeEvent({ user_id: 999, target_id: 999 }))
+  relay.handleRawEvent(pokeEvent({ user_id: 999, target_id: 205 }))
+  relay.handleRawEvent(pokeEvent({ group_id: 200 }))
+  await wait(30)
+  assert.equal(chatLog.readRecent(100, 0).length, 0)
+  assert.equal(calls.prompt.length, 0)
+
+  relay.handleRawEvent(pokeEvent())
+  relay.handleRawEvent(pokeEvent())
+  await wait(50)
+  assert.equal(chatLog.readRecent(100, 0).length, 1)
+  assert.equal(calls.prompt.length, 1)
+})
+
+test('relay：查不到成员昵称时用 QQ 号兜底', async (t) => {
+  const { relay, calls } = createHarness(t, { memberInfoFails: true })
+  relay.handleRawEvent(pokeEvent())
+  await wait(50)
+
+  assert.equal(calls.prompt.length, 1)
+  assert.ok(calls.prompt[0].content[0].text.includes('[205] 戳了你一下'), calls.prompt[0].content[0].text)
+})
+
+test('relay：poke 出向戳群成员并校验白名单 / userId', async (t) => {
+  const { relay, calls } = createHarness(t)
+  assert.deepEqual(await relay.poke(100, 205), { groupId: 100, userId: 205 })
+  assert.deepEqual(calls.pokes, [{ groupId: 100, userId: 205 }])
+  await assert.rejects(() => relay.poke(999, 205), /不在白名单/)
+  await assert.rejects(() => relay.poke(100, 0), /userId/)
+})
+
+test('relay：poke 离线或 NapCat 拒绝时报可读错误', async (t) => {
+  const offline = createHarness(t, { connected: false })
+  await assert.rejects(() => offline.relay.poke(100, 205), /当前离线/)
+
+  const failed = createHarness(t, { pokeFails: true })
+  await assert.rejects(() => failed.relay.poke(100, 205), /戳一戳失败/)
 })

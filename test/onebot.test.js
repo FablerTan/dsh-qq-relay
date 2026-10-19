@@ -297,8 +297,53 @@ test('api：封装 action 与响应判定', async () => {
     params: { group_id: '1', user_id: '2', no_cache: true },
   })
 
+  await api.groupPoke(1, 2)
+  assert.deepEqual(calls[2], {
+    action: 'group_poke',
+    params: { group_id: 1, user_id: 2 },
+  })
+
   assert.equal(isOk({ status: 'failed', retcode: 1200 }), false)
   assert.equal(isOk(null), false)
   assert.equal(failureText({ status: 'failed', retcode: 1200, message: '被移出群' }), '被移出群')
   assert.equal(failureText({ retcode: 5 }), 'retcode=5')
+})
+test('codec：戳一戳事件（notice notify poke）', () => {
+  const poke = toInternalEvent({
+    post_type: 'notice',
+    notice_type: 'notify',
+    sub_type: 'poke',
+    self_id: 999,
+    group_id: 100,
+    user_id: 205,
+    target_id: 999,
+    time: 1792340775,
+    raw_info: [{ type: 'nor', txt: '戳了戳' }],
+  })
+  assert.equal(poke.kind, 'poke')
+  assert.equal(poke.groupId, 100)
+  assert.equal(poke.userId, 205)
+  assert.equal(poke.targetId, 999)
+  assert.equal(poke.targetsSelf, true)
+  assert.equal(poke.timeMs, 1792340775 * 1000)
+
+  const other = toInternalEvent({
+    post_type: 'notice',
+    notice_type: 'notify',
+    sub_type: 'poke',
+    self_id: 999,
+    group_id: 100,
+    user_id: 205,
+    target_id: 206,
+    time: 1792340775,
+  })
+  assert.equal(other.kind, 'poke')
+  assert.equal(other.targetsSelf, false)
+
+  // 其他 notice 仍走通用分支
+  const generic = toInternalEvent({ post_type: 'notice', notice_type: 'group_upload', self_id: 1, group_id: 100, user_id: 205 })
+  assert.equal(generic.kind, 'notice')
+  assert.equal(generic.noticeType, 'group_upload')
+  assert.equal(generic.subType, '')
+  assert.equal(generic.targetId, 0)
 })

@@ -453,7 +453,7 @@ test('apply：清空全部映射', async (t) => {
   assert.deepEqual(JSON.parse(readFileSync(join(storageDir, 'mapping.json'), 'utf8')), {})
 })
 
-test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
+test('apply：注册 qq_send / qq_poke 工具，离线时返回 queued / 报错', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-tool-'))
   const previousHome = process.env.HOME
   process.env.HOME = home
@@ -474,21 +474,26 @@ test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
     workspace: join(home, 'ws'),
   })
   assert.equal(routes.length, 8)
-  assert.equal(tools.length, 1)
-  const definition = tools[0]
-  assert.equal(definition.name, 'qq_send')
-  assert.equal(typeof definition.execute, 'function')
-  assert.equal(typeof definition.output.render, 'function')
+  assert.equal(tools.length, 2)
+  const send = tools.find((tool) => tool.name === 'qq_send')
+  const poke = tools.find((tool) => tool.name === 'qq_poke')
+  assert.ok(send, '应注册 qq_send')
+  assert.ok(poke, '应注册 qq_poke')
+  assert.equal(typeof send.execute, 'function')
+  assert.equal(typeof send.output.render, 'function')
+  assert.equal(typeof poke.execute, 'function')
+  assert.equal(typeof poke.output.render, 'function')
 
   // WS 指向不存在的端口 → 离线；工具应把消息排进发送队列
-  const value = await definition.execute({ groupId: 100, text: '测试推送' })
+  const value = await send.execute({ groupId: 100, text: '测试推送' })
   assert.equal(value.groupId, 100)
   assert.equal(value.chunks, 1)
   assert.equal(value.queued, true)
   assert.deepEqual(value.messageIds, [])
 
-  // 非白名单群被拒绝
-  await assert.rejects(() => definition.execute({ groupId: 200, text: 'x' }), /不在白名单/)
+  // 非白名单群被拒绝；离线时戳一戳直接报错（不排队）
+  await assert.rejects(() => send.execute({ groupId: 200, text: 'x' }), /不在白名单/)
+  await assert.rejects(() => poke.execute({ groupId: 100, userId: 205 }), /当前离线/)
 })
 
 test('apply：启动时把旧全局聊天日志迁移到群项目 .qq-relay', async (t) => {

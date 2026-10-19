@@ -5,7 +5,9 @@
 > QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）与 P4.1 入向媒体落盘已实现（2026-10-19）；
 > P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）已实现（v0.11.0，见 [commands.md](./commands.md)）；
 > P6 回复体验（引用触发消息 / 处理中占位 / 直通连发合并）已实现（v0.11.1，见 [reply.md](./reply.md)）；
-> P4.2 媒体双向（入向视频 / 语音 + 出向图片 / 文件）已实现（v0.12.0，见 [media.md](./media.md)）**。
+> P4.2 媒体双向（入向视频 / 语音 + 出向图片 / 文件）已实现（v0.12.0，见 [media.md](./media.md)）；
+> P7 client 面板增强（闸门每群状态 / 最近消息 / 映射管理）已实现（v0.14.0，见 [client.md](./client.md)）；
+> P8 戳一戳识别与回戳（被戳接话 / 互戳记录 / `qq_poke`）已实现（v0.15.0，见 [poke.md](./poke.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -13,8 +15,8 @@
 ## 1. 形态与边界
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
-- **client 半身**提供设置页「QQ 机器人」（P1.5/P4）：连接状态、配置编辑、群项目目录编辑
-  与重新绑定（契约见 [client.md](./client.md)）；更重的面板（审批开关、闸门可视化等）后续再做。
+- **client 半身**提供设置页「QQ 机器人」（P1.5/P4/P7）：连接状态、配置编辑、群项目目录编辑
+  与重新绑定、闸门状态 / 最近消息 / 映射管理（契约见 [client.md](./client.md)）；审批开关等仍在后续。
 - 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
   插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
@@ -55,6 +57,7 @@
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
 | `commands` | object | `{ enabled: true, bare: true, roles: ['owner','admin'] }` | QQ 侧命令层（P5，v0.11.0）：`/new` / `/stop` / `/status` / `/help`；`bare` 控制裸写式，`roles` 控制可执行角色，详见 [commands.md](./commands.md) |
 | `reply` | object | `{ quote: true, ackDelayMs: 8s, mergeWindowMs: 400ms }` | 出向回复体验（P6，v0.11.1）：引用触发消息 / 处理中占位阈值（0 = 关）/ 直通连发合并窗口（0 = 不合并），详见 [reply.md](./reply.md) |
+| `poke` | object | `{ enabled: true, react: true, cooldownMs: 10s }` | 戳一戳（v0.15.0）：是否识别 / 被戳是否接话 / 每群冷却（0 = 不限，上限 10m），详见 [poke.md](./poke.md) |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
@@ -85,9 +88,9 @@ lib/
 │   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect / rebind / cleanup / messages / mapping
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
-│   ├── tools.js              # qq_send 工具定义（P3：手写 ToolDefinition，零外部依赖）
+│   ├── tools.js              # qq_send / qq_poke 工具定义（P3 / v0.15.0：手写 ToolDefinition，零外部依赖）
 │   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
-│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）
+│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）
 └── model/
     ├── config.js             # 配置默认值与校验
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
@@ -121,8 +124,9 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、立即清理、面板最近消息、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
-决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` 工具契约与注册、审批命令匹配与桥接、
-群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
+决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` / `qq_poke` 工具契约与注册、审批命令匹配与桥接、
+群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1）、戳一戳识别 / 冷却 / 出向（v0.15.0），
+以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
 
@@ -131,6 +135,7 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 ~~~text
 OneBot WS 事件
   → codec 规范化（message_id / group_id / user_id / sender / message[] / raw_message）
+  → notice 分支：戳一戳（v0.15.0）→ 写聊天记录；被戳时按直通接话（见 poke.md）
   → 忽略 message_sent、去重（message_id）
   → 含图片 / 表情时先下载到 <project>/.qq-relay/media/（失败只记 failed）
   → 落盘 chat log（<project>/.qq-relay/chat/<群号>/，媒体路径写进 media 数组）
@@ -168,6 +173,8 @@ ctx.on('agent/error', ...)          # 失败提示
   转 base64，经 `send_group_msg`（image 段）与 `upload_group_file` 发送；离线不排队，见 [media.md §5.1](./media.md)。
 - **QQ 侧审批（P3）**：QQ 会话里的 `approval/request` 由审批桥发到群里，群主 / 管理员回复
   「同意 / 拒绝」；见 [approval.md](./approval.md)。
+- **戳一戳（v0.15.0）**：入向 `notice.notify.poke` 写聊天记录，戳 bot 时直通起一轮；`qq_poke`
+  工具让 agent 回戳白名单群成员（`group_poke`，离线报错不排队）；见 [poke.md](./poke.md)。
 - 失败 / 中断：按配置发简短提示或静默。
 
 ## 5. 会话映射

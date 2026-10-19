@@ -8,7 +8,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createQqSendTool, QQ_SEND_TOOL_NAME } from '../lib/controller/tools.js'
+import { createQqPokeTool, createQqSendTool, QQ_POKE_TOOL_NAME, QQ_SEND_TOOL_NAME } from '../lib/controller/tools.js'
 
 const TEXT_RESULT = { chunks: 1, queued: false, messageIds: ['m1'] }
 
@@ -146,4 +146,63 @@ test('qq_send：exec.signal 已中止时直接失败', async () => {
   const signal = { throwIfAborted() { throw new Error('aborted') } }
   await assert.rejects(() => tool.execute({ text: 'hi' }, { signal }), /aborted/)
   assert.equal(calls.texts.length, 0)
+})
+function createPokeHarness(groups = [100], options = {}) {
+  const calls = { pokes: [] }
+  const tool = createQqPokeTool({
+    getGroups: () => groups,
+    poke: async (groupId, userId) => {
+      calls.pokes.push({ groupId, userId })
+      if (options.fails === true) throw new Error('戳一戳失败：mock')
+      return { groupId, userId }
+    },
+  })
+  return { tool, calls }
+}
+
+test('qq_poke：定义形状（name / 参数 / 输出 schema）', () => {
+  const { tool } = createPokeHarness()
+  assert.equal(tool.name, QQ_POKE_TOOL_NAME)
+  assert.equal(tool.name, 'qq_poke')
+  assert.equal(typeof tool.description, 'string')
+  assert.deepEqual(tool.parameters.required, ['userId'])
+  assert.equal(tool.parameters.additionalProperties, false)
+  assert.deepEqual(Object.keys(tool.parameters.properties).sort(), ['groupId', 'userId'])
+  assert.deepEqual(Object.keys(tool.output.schema.properties).sort(), ['groupId', 'userId'])
+  assert.equal(typeof tool.output.render, 'function')
+  assert.equal(typeof tool.execute, 'function')
+})
+
+test('qq_poke：唯一群时可省略 groupId，结果透传并 render', async () => {
+  const { tool, calls } = createPokeHarness([100])
+  const value = await tool.execute({ userId: 205 }, exec)
+  assert.deepEqual(calls.pokes, [{ groupId: 100, userId: 205 }])
+  assert.deepEqual(value, { groupId: 100, userId: 205 })
+  const rendered = tool.output.render({}, value).map((block) => block.text).join('')
+  assert.match(rendered, /群 100/)
+  assert.match(rendered, /205/)
+})
+
+test('qq_poke：多群缺 groupId / 不在白名单 / userId 非法时报错', async () => {
+  const multi = createPokeHarness([100, 200])
+  await assert.rejects(() => multi.tool.execute({ userId: 205 }, exec), /多个群/)
+
+  const { tool } = createPokeHarness([100])
+  await assert.rejects(() => tool.execute({ userId: 205, groupId: 999 }, exec), /不在白名单/)
+  await assert.rejects(() => tool.execute({}, exec), /userId/)
+  await assert.rejects(() => tool.execute({ userId: 0 }, exec), /userId/)
+  await assert.rejects(() => tool.execute({ userId: '205' }, exec), /userId/)
+})
+
+test('qq_poke：没有白名单 / 透传失败 / exec 中止', async (t) => {
+  const empty = createPokeHarness([])
+  await assert.rejects(() => empty.tool.execute({ userId: 205 }, exec), /白名单/)
+
+  const failing = createPokeHarness([100], { fails: true })
+  await assert.rejects(() => failing.tool.execute({ userId: 205 }, exec), /戳一戳失败/)
+
+  const { tool, calls } = createPokeHarness([100])
+  const signal = { throwIfAborted() { throw new Error('aborted') } }
+  await assert.rejects(() => tool.execute({ userId: 205 }, { signal }), /aborted/)
+  assert.equal(calls.pokes.length, 0)
 })

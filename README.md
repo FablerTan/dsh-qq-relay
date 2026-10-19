@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.14.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.15.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
@@ -10,7 +10,8 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 直通连发合并，见 [docs/reply.md](./docs/reply.md)）；P4.2 已落地**媒体双向**（入向视频 / 语音落盘，
 `qq_send` 出向图片 / 文件，见 [docs/media.md](./docs/media.md)）；P4.3 已落地**聊天记录清理**
 （保留天数 + 立即清理，见 [docs/chat-context.md](./docs/chat-context.md) §7）；P7 已落地**client 面板增强**
-（闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）。设计见
+（闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）；P8 已落地**戳一戳识别与回戳**
+（被戳接话 / 互戳记录 / `qq_poke`，见 [docs/poke.md](./docs/poke.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -47,7 +48,8 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 400ms 连发合并，见 [reply.md](./docs/reply.md)）、媒体双向（P4.2：入向视频 / 语音落盘，
 `qq_send` 出向图片 / 文件，见 [media.md](./docs/media.md)）、聊天记录清理（P4.3：保留天数 +
 立即清理，见 [chat-context.md](./docs/chat-context.md) §7）、client 面板增强（P7：闸门每群状态 / 最近消息 /
-映射增删，见 [client.md](./docs/client.md)）。
+映射增删，见 [client.md](./docs/client.md)）、戳一戳识别与回戳（P8：被戳接话 / 互戳记录 / `qq_poke`，
+见 [poke.md](./docs/poke.md)）。
 **仍未定案**：群审批（按钮）、入向群文件——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -67,7 +69,7 @@ dsh-qq-relay/
 │   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
-│   │   ├── tools.js      # qq_send 工具定义（手写 ToolDefinition，零外部依赖）
+│   │   ├── tools.js      # qq_send / qq_poke 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
 │   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
@@ -98,7 +100,8 @@ dsh-qq-relay/
 | [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 | 改媒体 / 排查媒体收发时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
-| [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送：契约、安全、离线队列、验证 | 改工具 / 排查推送失败时 |
+| [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送 / `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
+| [docs/poke.md](./docs/poke.md) | 戳一戳：事件契约、被戳接话、冷却、聊天记录、`qq_poke` 工具 | 改戳一戳 / 排查戳没反应时 |
 | [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
 | [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 仓库级纪律、渲染树选座速查 | 跨插件协作、装 profile、选 slot |
@@ -131,6 +134,21 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.15.0 戳一戳识别与回戳（2026-10-19）
+
+- 识别 OneBot `notice.notify.poke`：白名单群写聊天记录（`戳了你一下` / `戳了 <target> 一下`）；
+  **被戳（`target_id = self_id`）时按直通起一轮**（reason「戳一戳」），不经过闸门、不调用 jev；
+  群友互戳只记录当上下文。
+- 新增 `poke` 配置段（`enabled` / `react` / `cooldownMs`，默认 10s，patch 只读）：
+  可关识别、可关被戳接话、按群冷却防连戳刷屏（冷却内只记录不接话）。
+- 昵称 / 群名补查 `get_group_member_info` / `get_group_info`（缓存 10 分钟），
+  查不到时退化 QQ 号 / `群 <id>`。
+- 新增 `qq_poke` 工具（NapCat `group_poke`）：agent 可回戳白名单群成员；离线直接报错、不排队；
+  与 `qq_send` 同 fiber 注册（`ctx.inject(['tools'])`）。
+- 协议端实测（2026-10-19）：`group_poke` 返回 ok；poke 事件字段与文档一致。
+- 新增 [docs/poke.md](./docs/poke.md)；同步 onebot-channel / architecture / tools / roadmap / README / AGENTS。
+- 单测 230 个（新增 15 个：codec 1 / 配置 1 / relay 9 / 工具 4）；host 半身改动，需重启 profile GUI 生效。
 
 ### v0.14.0 client 面板增强：闸门状态 / 最近消息 / 映射管理（2026-10-19）
 
