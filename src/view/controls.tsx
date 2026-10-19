@@ -82,6 +82,29 @@ export function StatusLineView({ line }: { line: StatusLine }): ReactElement {
   )
 }
 
+/** 开关（受控）：轨道用中性底色，开启态用宿主 success 语义色。 */
+export function Toggle(props: {
+  checked: boolean
+  onChange: (value: boolean) => void
+  ariaLabel?: string
+  disabled?: boolean
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={props.checked}
+      aria-label={props.ariaLabel}
+      className="qqr-toggle"
+      data-on={props.checked ? 'true' : 'false'}
+      disabled={props.disabled === true}
+      onClick={() => { props.onChange(!props.checked) }}
+    >
+      <span className="qqr-toggle-knob" aria-hidden="true" />
+    </button>
+  )
+}
+
 /** 文本输入框（受控）。 */
 export function TextInput(props: {
   value: string

@@ -47,6 +47,9 @@ export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = 
   { id: 'records', label: '记录' },
 ]
 
+/** 表单里的字符串字段；`proxyEnabled`（开关）走单独的 setProxyEnabled。 */
+export type RelayFormTextField = Exclude<keyof RelayFormState, 'proxyEnabled'>
+
 /** 状态点的色调（View 层只认这个，不认具体颜色）。 */
 export type StatusTone = 'ok' | 'warn' | 'error' | 'muted'
 
@@ -136,7 +139,9 @@ export interface RelaySettingsModel {
   gateLine: StatusLine
   messages: RelayMessagesState
   setTab: (tab: SettingsTab) => void
-  updateField: (key: keyof RelayFormState, value: string) => void
+  updateField: (key: RelayFormTextField, value: string) => void
+  /** 代答开关（v0.18.0）：布尔字段单独走这里，不进 updateField 的字符串通道。 */
+  setProxyEnabled: (enabled: boolean) => void
   updateProjectRow: (groupId: number, projectDir: string) => void
   refresh: () => void
   save: () => void
@@ -188,8 +193,12 @@ export function useRelaySettings(): RelaySettingsModel {
     return () => clearInterval(timer)
   }, [load])
 
-  const updateField = useCallback((key: keyof RelayFormState, value: string) => {
+  const updateField = useCallback((key: RelayFormTextField, value: string) => {
     setForm((previous) => ({ ...previous, [key]: value }))
+  }, [])
+
+  const setProxyEnabled = useCallback((enabled: boolean) => {
+    setForm((previous) => ({ ...previous, proxyEnabled: enabled }))
   }, [])
 
   const updateProjectRow = useCallback((groupId: number, projectDir: string) => {
@@ -391,6 +400,7 @@ export function useRelaySettings(): RelaySettingsModel {
     messages,
     setTab,
     updateField,
+    setProxyEnabled,
     updateProjectRow,
     refresh,
     save: () => { void save() },

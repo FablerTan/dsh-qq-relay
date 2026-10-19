@@ -134,7 +134,12 @@ OneBot 11 事件为 JSON。关键事件：
 - **全量上报**：群里不带 @ 的普通消息同样会收到 `post_type: message` 事件。
 - **@ 段**：`{type:"at", data:{qq:"<bot-qq>"}}`，`qq` 是字符串；@ 后常跟一个空白 `text` 段。
 - **引用回复**：`{type:"reply", data:{id:"<message_id>"}}`，`id` 是字符串，等于被引用消息的 `message_id`。
+  注意：手机 QQ 里 @ 某人常同时带 `reply` 段（引用被 @ 者的消息），所以「有 reply 段」不等于
+  「在回复 bot」——v0.18.0 起只有引用 bot 自己发出的 `message_id` 才算。
 - **message_id 不是全局唯一、也不单调**，幂等键用 `(group_id, message_id)`。
+- **@ 别人 / @全体成员 同样会带 `at` 段**（`qq` 是那个人的 QQ 号，或 `all`）；插件内部事件
+  额外算 `atTargets` / `mentionsOthers`。v0.18.0 起 relay 只对 **@ bot** 直通，@ 别人只记聊天日志，
+  除非该成员命中 `proxyReply.targets`（代答，见 [gate.md §2.6](./gate.md)）。
 - `reportSelfMessage=false` 时，自己发的消息**不会**产生事件；`send_group_msg` 返回的
   `message_id` 必须由插件自行记录（防回环、引用匹配都靠它）。
 

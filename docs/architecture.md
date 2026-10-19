@@ -64,6 +64,7 @@
 | `reply` | object | `{ quote: true, ackDelayMs: 8s, mergeWindowMs: 400ms }` | 出向回复体验（P6，v0.11.1）：引用触发消息 / 处理中占位阈值（0 = 关）/ 直通连发合并窗口（0 = 不合并），详见 [reply.md](./reply.md) |
 | `poke` | object | `{ enabled: true, react: true, cooldownMs: 10s }` | 戳一戳（v0.15.0）：是否识别 / 被戳是否接话 / 每群冷却（0 = 不限，上限 10m），详见 [poke.md](./poke.md) |
 | `files` | object | `{ enabled: true, react: true }` | 入向群文件（v0.16.0）：是否识别 `group_upload` / 落盘成功后是否直通起一轮；上限 20 MiB，详见 [media.md §5.2](./media.md) |
+| `proxyReply` | object | `{ enabled: false, targets: [], silenceWindow: 10m }` | 代答（v0.18.0）：@ 名单里的人且 TA 最近没说话时，直通起一轮并让 agent 代 TA 回应；名单可写 QQ 号 / 群名片 / 昵称，详见 [gate.md §2.6](./gate.md) |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
@@ -76,7 +77,8 @@
 - **配置页覆盖（P1.5）**：插件面板 → dsh-qq-relay 组合包页保存的字段写入
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /
-  sessionTitle / replyChunkSize / commandPrefixes` 可覆盖，其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
+  sessionTitle / replyChunkSize / commandPrefixes / gate.{debounce,fastMinReplyInterval,jevThreshold} /
+  proxyReply.{enabled,targets,silenceWindow}` 可覆盖，其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
   `groupWorkspaces` 是整表替换；已映射群改项目后需在配置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
   契约、HTTP 面与安全边界见 [client.md](./client.md)。
 
@@ -148,7 +150,10 @@ OneBot WS 事件
   → 含图片 / 表情时先下载到 <project>/.qq-relay/media/（失败只记 failed）
   → 落盘 chat log（<project>/.qq-relay/chat/<群号>/，媒体路径写进 media 数组）
   → 命令层（/new /stop /status /help；只认白名单命令名，命中即执行并回复，不派发 prompt）
-  → 直通（@ / 引用 / 命令；先经 400ms 连发合并窗口）或 gate（快路 / 慢路；分类器未接时普通消息 fail closed）
+  → 直通（@ bot / 引用 bot 的消息 / 命令；先经 400ms 连发合并窗口）
+  → 代答（v0.18.0：@ 名单内的人且 TA 最近没发言 → 直通，reason=proxy）
+  → @ 别人 / @全体成员：只记日志，结束
+  → gate（快路 / 慢路；分类器未接时普通消息 fail closed）
   → relay.dispatch（prompt 拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针）
   → ctx.sessionController.prompt({sessionId, content, source})
      或 ctx.sessionController.resolveAgent(id) + agent.followup(createUserMessage(...))

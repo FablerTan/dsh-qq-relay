@@ -45,6 +45,15 @@ export interface RelayGateStatusView {
   groups: RelayGateGroupStatusView[]
 }
 
+/** 代答（v0.18.0）：@ 名单里的人且 TA 最近没说话时，以机器人身份代 TA 回应。 */
+export interface RelayProxyReplyConfigView {
+  enabled: boolean
+  /** 目标名单：QQ 号或群名片 / 昵称。 */
+  targets: string[]
+  /** 沉默窗口（毫秒）；0 = 不检查沉默（总是代答）。 */
+  silenceWindowMs: number
+}
+
 /** host 侧的配置视图（token 永不出现，只有是否已配置与来源）。 */
 export interface RelayConfigView {
   wsUrl: string
@@ -59,6 +68,8 @@ export interface RelayConfigView {
   gate: RelayGateConfigView
   /** host 是否已经返回 gate 配置（旧版 host 为 false，页面应提示重启）。 */
   gateSupported: boolean
+  /** 代答配置（v0.18.0；旧 host 缺字段时按默认关闭兜底）。 */
+  proxyReply: RelayProxyReplyConfigView
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -154,6 +165,12 @@ export interface RelayConfigPatch {
     debounce?: string
     fastMinReplyInterval?: string
     jevThreshold?: number
+  }
+  /** 代答（v0.18.0）：只提交这三个子项；沉默窗口用 10m 这类文本，host 校验。 */
+  proxyReply?: {
+    enabled?: boolean
+    targets?: string[]
+    silenceWindow?: string
   }
   sessionTitle?: string
   replyChunkSize?: number
@@ -292,6 +309,17 @@ function asStatus(value: unknown): RelayStatusView | null {
           }
         : { debounceMs: 5000, fastMinReplyIntervalMs: 45000, jevThreshold: 0.7 },
       gateSupported: isRecord(config.gate),
+      proxyReply: isRecord(config.proxyReply)
+        ? {
+            enabled: config.proxyReply.enabled === true,
+            targets: Array.isArray(config.proxyReply.targets)
+              ? config.proxyReply.targets.filter((target): target is string => typeof target === 'string' && target !== '')
+              : [],
+            silenceWindowMs: typeof config.proxyReply.silenceWindowMs === 'number'
+              ? config.proxyReply.silenceWindowMs
+              : 10 * 60 * 1000,
+          }
+        : { enabled: false, targets: [], silenceWindowMs: 10 * 60 * 1000 },
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)

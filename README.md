@@ -53,7 +53,8 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 立即清理，见 [chat-context.md](./docs/chat-context.md) §7）、client 面板增强（P7：闸门每群状态 / 最近消息 /
 映射增删，见 [client.md](./docs/client.md)）、戳一戳识别与回戳（P8：被戳接话 / 互戳记录 / `qq_poke`，
 见 [poke.md](./docs/poke.md)）、入向群文件（P9：`group_upload` → 下载落盘 → 可选直通，
-见 [media.md](./docs/media.md) §5.2）。
+见 [media.md](./docs/media.md) §5.2）、触发规则修正 + 代答（v0.18.0：引用别人消息 / @ 别人不再触发；
+可选「@ 名单里的人且 TA 最近没说话时代 TA 回应」，见 [gate.md](./docs/gate.md) §2.1/§2.6）。
 **仍未定案**：群审批（按钮）——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -140,6 +141,23 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.18.0 触发规则修正 + 代答（2026-10-19）
+
+- **修 bug：引用别人的消息不再直通**。手机 QQ 里 @ 某人常带一个 `reply` 段，旧实现「有引用
+  就算回复 bot」→ @ 别人 / 回复别人也会起一轮会话。现在引用只有 **引用 bot 自己的消息** 才算
+  直通；relay 记录自己发出的 `message_id`（每群内存 100 条 + 聊天日志兜底，重启后仍可判）。
+- **@ 别人不再触发会话**：消息 @ 了非 bot 成员（含 `@全体成员`）只落聊天日志，不进闸门、
+  不起 turn；@ bot 仍然直通。之前这类消息会走 jev 闸门，偶尔被判定为「需要接话」。
+- **代答（可选，默认关闭）**：配置页「行为」新增一块——名单里的人被 @、且 TA 最近
+  `silenceWindow`（默认 10 分钟）没在本群发言时，直通起一轮并请 agent 代 TA 回应；
+  名单支持 QQ 号或群名片 / 昵称（≤20 项）。prompt 头部 `（直通：代答）`、行内 `（@目标）`，
+  尾部一行 `[代答：…请代 TA 回应…]`。配置段 `proxyReply`（`enabled` / `targets` /
+  `silenceWindow`），三项都能在配置页改，保存即重建 relay。
+- client 新增开关控件 `Toggle`（轨道 / knob 全走宿主 `--dsw-*` token）；prompt 纯函数新增
+  `atNames` 标记与 `notes` 说明行；单测从 244 增到 253。
+- 同步 gate / config / client / chat-context / onebot-channel / reply / architecture / roadmap /
+  README / AGENTS 文档。
 
 ### v0.17.0 配置页迁到插件面板：二级页面 + 宿主主题（2026-10-19）
 

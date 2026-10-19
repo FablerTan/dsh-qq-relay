@@ -165,6 +165,26 @@ test('prompt：时间格式化与历史指针', () => {
   assert.equal(chatHistoryPointer(10002), '.qq-relay/chat/10002/')
   assert.equal(promptLine({ text: 'x' }, T), '[11:21:39] x')
 })
+test('prompt：@ 其他人标记与代答说明（v0.18.0）', () => {
+  const text = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    reason: 'proxy',
+    notes: ['代答：这条消息 @ 了「群主」，TA 最近 10 分钟没有在本群发言，请代 TA 回应（回复以机器人身份发出）。'],
+    messages: [{ text: '帮我看下', time: T, nickname: 'tester', atNames: ['群主'] }],
+  })
+  const lines = text.split('\n')
+  assert.ok(lines[0].includes('（直通：代答）'), lines[0])
+  assert.equal(lines[1], '[11:21:39] [tester]（@群主）帮我看下')
+  assert.equal(lines[2], '[代答：这条消息 @ 了「群主」，TA 最近 10 分钟没有在本群发言，请代 TA 回应（回复以机器人身份发出）。]')
+  assert.equal(lines[3], '[历史记录：.qq-relay/chat/100/（JSONL，按天分文件）]')
+
+  // notes 空行被忽略
+  const noNote = formatIncomingPrompt({ groupId: 100, now: T, notes: [''], messages: [{ text: 'x', time: T }] })
+  assert.ok(!noNote.includes('[]'), noNote)
+})
+
 test('prompt：群文件媒体标记（v0.16.0）', () => {
   const saved = formatIncomingPrompt({
     groupId: 100,

@@ -129,6 +129,8 @@ function createHarness(t, options = {}) {
     workspace: dir,
     commandPrefixes: ['/dsh'],
     gate: options.gate,
+    // 代答默认关闭；需要时由用例显式传入（v0.18.0）。
+    proxyReply: options.proxyReply,
     // 单测默认关掉回复体验增强（引用 / 连发合并 / 处理中占位），避免每条消息多等窗口。
     reply: options.reply ?? { quote: false, mergeWindowMs: 0, ackDelayMs: 0 },
     // 戳一戳默认不限冷却，避免测试里第二次戳被冷却吞掉（冷却行为单独测）。
@@ -391,18 +393,138 @@ test('relay：命令前缀直通', async (t) => {
   assert.ok(text.includes('[tester] /dsh 状态'), text)
 })
 
-test('relay：引用回复直通', async (t) => {
-  const { relay, calls } = createHarness(t)
+test('relay：引用 bot 自己的消息直通，引用别人的消息不直通（v0.18.0）', async (t) => {
+  const { relay, ctx, calls } = createHarness(t)
+  // 先让 bot 发一条消息：默认配置 quote=false → 走普通发送，fake api 返回 message_id=m1
+  relay.handleRawEvent(groupEvent({ message_id: 3 }))
+  await flush()
+  const requestId = calls.prompt[0].requestId
+  ctx.emit('agent/inbox/claimed', {
+    agent: { session: { id: 'session-1' } },
+    message: { source: { rpcId: requestId } },
+    turn: 1,
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'assistant/message',
+    data: { turn: 1, message: { content: [{ type: 'text', text: '先回一句' }] } },
+  })
+  ctx.emit('session/event', { header: { id: 'session-1' } }, {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  })
+  await flush()
+  assert.equal(calls.sends.length, 1)
+
+  // 引用 bot 的消息 → 直通
   relay.handleRawEvent(groupEvent({
-    message_id: 3,
+    message_id: 4,
+    raw_message: '[CQ:reply,id=m1] 在吗',
+    message: [{ type: 'reply', data: { id: 'm1' } }, { type: 'text', data: { text: '在吗' } }],
+  }))
+  await flush()
+  assert.equal(calls.prompt.length, 2)
+  const text = calls.prompt[1].content[0].text
+  assert.ok(text.includes('（直通：引用）'), text)
+  assert.ok(text.includes('[tester]（引用 m1）在吗'), text)
+
+  // 引用别人的消息（该 id 不是 bot 发的）→ 不直通，只落聊天日志
+  relay.handleRawEvent(groupEvent({
+    message_id: 5,
     raw_message: '[CQ:reply,id=42] 在吗',
     message: [{ type: 'reply', data: { id: '42' } }, { type: 'text', data: { text: '在吗' } }],
   }))
   await flush()
+  assert.equal(calls.prompt.length, 2)
+})
+
+test('relay：@ 别人 / @全体成员的消息不触发会话（v0.18.0）', async (t) => {
+  const classifierCalls = []
+  const classifier = {
+    async classify(input) {
+      classifierCalls.push(input)
+      return { reply: true, confidence: 1, reason: '测试', targetMsgIds: [] }
+    },
+  }
+  const { relay, calls, state } = createHarness(t, { gate: { enabled: true, debounce: '10ms' }, classifier })
+  state.update(100, { lastBotSpeakAt: Date.now() - 1000 })
+  const atOther = (qq, id) => groupEvent({
+    message_id: id,
+    message: [{ type: 'at', data: { qq } }, { type: 'text', data: { text: ' 你好' } }],
+    raw_message: '[CQ:at,qq=' + qq + '] 你好',
+  })
+  relay.handleRawEvent(atOther('205', 51))
+  relay.handleRawEvent(atOther('all', 52))
+  await wait(120)
+  assert.equal(calls.prompt.length, 0)
+  assert.equal(classifierCalls.length, 0, '@ 别人的消息不应该进闸门')
+})
+
+test('relay：代答默认关闭 —— @ 名单外的人不触发（v0.18.0）', async (t) => {
+  const { relay, calls } = createHarness(t)
+  relay.handleRawEvent(groupEvent({
+    message_id: 61,
+    message: [{ type: 'at', data: { qq: '305' } }, { type: 'text', data: { text: ' 帮我看下' } }],
+    raw_message: '[CQ:at,qq=305] 帮我看下',
+  }))
+  await flush()
+  assert.equal(calls.prompt.length, 0)
+})
+
+test('relay：代答开启且目标沉默 → 代答直通（v0.18.0）', async (t) => {
+  const { relay, calls } = createHarness(t, {
+    proxyReply: { enabled: true, targets: ['305'], silenceWindow: '10m' },
+  })
+  relay.handleRawEvent(groupEvent({
+    message_id: 62,
+    message: [{ type: 'at', data: { qq: '305' } }, { type: 'text', data: { text: ' 帮我看下' } }],
+    raw_message: '[CQ:at,qq=305] 帮我看下',
+  }))
+  await flush()
   assert.equal(calls.prompt.length, 1)
   const text = calls.prompt[0].content[0].text
-  assert.ok(text.includes('（直通：引用）'), text)
-  assert.ok(text.includes('[tester]（引用 42）在吗'), text)
+  assert.ok(text.includes('（直通：代答）'), text)
+  assert.ok(text.includes('[tester]（@群友305）'), text)
+  assert.ok(text.includes('[代答：'), text)
+  assert.ok(text.includes('请代 TA 回应'), text)
+})
+
+test('relay：代答名单支持群名片 / 昵称匹配', async (t) => {
+  const { relay, calls } = createHarness(t, {
+    memberNickname: '群主',
+    proxyReply: { enabled: true, targets: ['群主'], silenceWindow: '10m' },
+  })
+  relay.handleRawEvent(groupEvent({
+    message_id: 63,
+    message: [{ type: 'at', data: { qq: '305' } }, { type: 'text', data: { text: ' 问个事' } }],
+    raw_message: '[CQ:at,qq=305] 问个事',
+  }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('（直通：代答）'), text)
+  assert.ok(text.includes('（@群主）'), text)
+})
+
+test('relay：代答目标最近发过言时不代答', async (t) => {
+  const { relay, calls } = createHarness(t, {
+    proxyReply: { enabled: true, targets: ['305'], silenceWindow: '10m' },
+  })
+  const nowSec = Math.floor(Date.now() / 1000)
+  relay.handleRawEvent(groupEvent({
+    message_id: 64,
+    time: nowSec - 30,
+    user_id: 305,
+    sender: { user_id: 305, nickname: '群主', card: '', role: 'member' },
+    message: [{ type: 'text', data: { text: '我在' } }],
+    raw_message: '我在',
+  }))
+  relay.handleRawEvent(groupEvent({
+    message_id: 65,
+    message: [{ type: 'at', data: { qq: '305' } }, { type: 'text', data: { text: ' 问个事' } }],
+    raw_message: '[CQ:at,qq=305] 问个事',
+  }))
+  await flush()
+  assert.equal(calls.prompt.length, 0)
 })
 
 test('relay：turn/end 收集 assistant 文本并回发', async (t) => {

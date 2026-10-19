@@ -4,22 +4,28 @@
 > `typesafe/jev-1.14`）**——调度 / 去抖 / 最小间隔 / 慢路定时 / 状态持久化 / 发送队列 / 决策日志
 > 已实现并有单测；v0.10.0 起去抖、最小间隔、阈值可在配置页调。v0.11.0 起
 > `/new` / `/stop` / `/status` / `/help` 由命令层在直通之前截获（见 [commands.md](./commands.md)），
-> 不进闸门。目标：决定群里什么时候该由 bot 接话，
+> 不进闸门。**v0.18.0** 修正触发边界：引用**别人**的消息不再直通、@ 别人 / @全体成员的
+> 消息不再进闸门；并新增可选的「代答」（§2.6）。目标：决定群里什么时候该由 bot 接话，
 > 控制刷屏与模型成本。协议端事实见 [onebot-channel.md](./onebot-channel.md)，
 > 整体架构见 [architecture.md](./architecture.md)。
 
 ## 1. 边界
 
 - 闸门只回答「要不要接话」，**不生成回复内容**；内容交给 DSH agent。
-- 只处理群聊普通消息；**@机器人 / 引用回复机器人 / 显式命令直通**，不参与判断；
+- 只处理群聊普通消息；**@机器人 / 引用机器人自己的消息 / 显式命令直通**，不参与判断；
   relay 命令层（`/new` 等）在直通之前处理，同样不进闸门。
+- **@ 别人（含 `@全体成员`）不是在跟 bot 说话**：这类消息只落聊天日志，不进闸门、
+  不起 turn（v0.18.0 起；例外是 §2.6 的代答目标）。
 - 判断由专用分类器模型 **jev** 完成，不是通用对话模型。
 
 ## 2. 三条路径
 
 ### 2.1 直通（mention bypass）
 
-- 命中：消息段含 at self_id、引用回复机器人消息、显式命令前缀。
+- 命中：消息段含 at self_id、引用 **bot 自己发的** 消息、显式命令前缀。
+- **引用别人的消息不算**（v0.18.0）。手机 QQ 里 @ 某人常会带一个 `reply` 段；旧实现
+  「有引用就算回复 bot」会让 @ 别人也起一轮。现在 relay 记录 bot 发出的 `message_id`
+  （每群内存 100 条，聊天日志兜底），只有引用这些 id 才按「回复」直通。
 - 处理：立即交给 DSH，**不调用 jev**、不受 10 分钟窗口与 2 小时冷却限制。
 - 仍会落盘，并刷新 lastBotSpeakAt / 重置 2h 定时器。
 
@@ -52,13 +58,26 @@
 - 仍受 QQ 自身风控与频率限制；发送失败按 retcode 分类退避重试，不吞错。
 - WebSocket 断线时发送进入队列，重连后按序发送；超过保留时限的旧回复丢弃并记日志。
 
+### 2.6 代答（可选，默认关闭，v0.18.0）
+
+- 命中：消息 **@ 了配置名单里的人**（QQ 号，或群名片 / 昵称），且该成员最近
+  `proxyReply.silenceWindow`（默认 10 分钟）内**没在本群发过言**。
+- 处理：直通起一轮（reason `proxy`），prompt 头部 `（直通：代答）`、行内 `（@目标）`，
+  末尾追加一行 `[代答：…请代 TA 回应（回复以机器人身份发出）]`，让 agent 代 TA 回答。
+- 目标最近发过言 → 不代答（TA 在，会自己回）；名单外的 @ 仍然只记聊天日志。
+- `silenceWindow: 0` = 不检查沉默（只要 @ 目标就代答）。
+- 目标按昵称匹配时会补查 `get_group_member_info`（10 分钟缓存）；查不到就退化为 QQ 号判定。
+- 配置：`proxyReply.enabled` / `targets` / `silenceWindow`，三项都能在配置页「行为」改。
+
 ## 3. 流程
 
 ~~~text
 收到群消息
 ├─ 落盘（JSONL）
 ├─ 去重（message_id） / 忽略 message_sent / 忽略机器人自己
-├─ 直通（@ / 引用回复 / 命令）────────────────→ dispatch
+├─ 直通（@ bot / 引用 bot 的消息 / 命令）────────→ dispatch
+├─ 代答（@ 名单内的人且 TA 最近没发言）─────────→ dispatch（reason=proxy）
+├─ @ 别人 / @全体成员 ──────────────────────→ 只记日志，结束
 └─ 普通消息
    ├─ now - lastBotSpeakAt < 10m
    │    ├─ 是 → debounce 5s → jev(本批)
@@ -140,7 +159,7 @@ dispatch 成功 → lastBotSpeakAt = now；cooldownUntil = now + 2h；清空 pen
 ~~~yaml
 gate:
   enabled: true
-  mentionBypass: true        # @ / 引用回复 / 命令直通
+  mentionBypass: true        # @ bot / 引用 bot 的消息 / 命令直通
   fastWindow: 10m            # bot 最近发言窗口
   fastMinReplyInterval: 45s  # 两次发言的最小间隔
   debounce: 5s               # 快路批合并窗口
@@ -153,6 +172,12 @@ gate:
   classifierTimeoutMs: 8s    # 单次 jev 请求超时
   retentionDays: 7
   maxBatchMessages: 100
+
+# 代答（v0.18.0，默认关闭）
+proxyReply:
+  enabled: false             # 是否启用代答
+  targets: []                # QQ 号或群名片 / 昵称，≤20 项
+  silenceWindow: 10m         # 目标多久没在本群发言才代答；0 = 不检查沉默
 ~~~
 
 - **配置页可改（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 三个参数在
@@ -167,6 +192,8 @@ gate:
 - 快路连续三条消息只产生一次 jev 调用与一次回复。
 - 慢路 2h 到点、无消息时 no-op；有消息时只评估最近 2h。
 - @ 直通在冷却期内仍然工作。
+- @ 别人的消息 / 引用别人消息 → 不触发会话（v0.18.0）。
+- 代答：开启 + 目标沉默 → 起一轮且 prompt 带代答说明；目标最近说过话 → 不代答；关闭 → 不触发。
 - DSH 单轮超过 5 分钟仍能正常回复（真实 QQ 号无窗口）。
 - 发送失败 / retcode 频率限制下的退避与降级。
 - WS 断线重连后不重复回复、不丢队列。
@@ -223,6 +250,9 @@ gate:
   其余 → 不重试（避免刷错误日志）。
 - **无文本消息（v0.8.1）**：纯图片 / 表情等 `text` 为空的消息只写聊天日志，`ingest` 直接返回，
   不进 pending、不调分类器——此前会白调一次 jev。
+- **触发边界（v0.18.0）**：codec 给群消息补 `atTargets` / `mentionsOthers`；relay 在
+  `proceedInbound` 里用「bot 消息 id 集合」判定 `replyToSelf`，@ 别人的消息不进 `gate.ingest`；
+  代答在闸门之前判定（`scheduleBypass(reason='proxy')`，prompt 用 `notes` / `atNames` 标记）。
 - **成员昵称**：直接用 OneBot 事件自带的 `sender.card || sender.nickname` 与 `sender.role`，
   不额外调 `get_group_member_info`（事件缺字段时才需要补查，暂未实现）。
 - **尚未实现**：真正的「群成员信息补查」、多群资源配额；jev 阈值调优（先用 0.7，按决策日志再调）。

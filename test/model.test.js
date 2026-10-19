@@ -558,6 +558,38 @@ test('config：poke 段默认与校验（v0.15.0）', () => {
   assert.ok(invalid.problems.some((p) => p.includes('poke.react')))
   assert.ok(invalid.problems.some((p) => p.includes('poke.cooldownMs')))
 })
+test('config：proxyReply 段默认与校验（v0.18.0）', () => {
+  const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.deepEqual(defaults.config.proxyReply, { enabled: false, targets: [], silenceWindow: 600000 })
+
+  const custom = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    proxyReply: { enabled: true, targets: ['10003', ' @群主 ', '群主'], silenceWindow: '30m' },
+  })
+  assert.equal(custom.ok, true)
+  assert.equal(custom.config.proxyReply.enabled, true)
+  assert.deepEqual(custom.config.proxyReply.targets, ['10003', '群主'])
+  assert.equal(custom.config.proxyReply.silenceWindow, 1800000)
+
+  // 0 = 不检查沉默（总是代答）
+  assert.equal(normalizeConfig({
+    wsUrl: 'ws://x', accessToken: 't', selfId: 1, proxyReply: { silenceWindow: 0 },
+  }).config.proxyReply.silenceWindow, 0)
+
+  const invalid = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    proxyReply: { enabled: 'yes', targets: '205', silenceWindow: '2d' },
+  })
+  assert.equal(invalid.ok, false)
+  assert.ok(invalid.problems.some((p) => p.includes('proxyReply.enabled')))
+  assert.ok(invalid.problems.some((p) => p.includes('proxyReply.targets')))
+  assert.ok(invalid.problems.some((p) => p.includes('proxyReply.silenceWindow')))
+})
+
 test('config：files 段默认与校验（v0.16.0）', () => {
   const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
   assert.deepEqual(defaults.config.files, { enabled: true, react: true })

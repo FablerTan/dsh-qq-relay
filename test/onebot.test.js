@@ -12,6 +12,7 @@ import {
   detectCommand,
   detectMention,
   detectReplyId,
+  extractAtTargets,
   extractText,
   normalizeSegments,
   toChatLogRecord,
@@ -96,6 +97,8 @@ test('codec：@ 群消息规范化', () => {
   assert.equal(event.timeMs, 1792340775 * 1000)
   assert.equal(event.text, ' 测试')
   assert.equal(event.mentionsSelf, true)
+  assert.equal(event.mentionsOthers, false)
+  assert.deepEqual(event.atTargets, ['10001'])
   assert.equal(event.replyToId, null)
   assert.deepEqual(bypassReason(event, { commandPrefixes: ['/dsh'] }), { bypass: true, reason: 'mention' })
   assert.equal(dedupeKey(event), '10002:8582504')
@@ -111,6 +114,8 @@ test('codec：普通群消息不直通，聊天记录字段正确', () => {
   const event = toInternalEvent(plainEvent)
   assert.equal(event.kind, 'group-message')
   assert.equal(event.mentionsSelf, false)
+  assert.equal(event.mentionsOthers, false)
+  assert.deepEqual(event.atTargets, [])
   assert.deepEqual(bypassReason(event, { commandPrefixes: ['/dsh'] }), { bypass: false, reason: null })
   assert.deepEqual(toChatLogRecord(event), {
     time: 1792340798 * 1000,
@@ -141,7 +146,37 @@ test('codec：引用回复识别', () => {
     message: [{ type: 'reply', data: { id: '1210103539' } }, { type: 'text', data: { text: '1' } }],
   })
   assert.equal(replyOnly.mentionsSelf, false)
-  assert.equal(bypassReason(replyOnly, {}).reason, 'reply')
+  // 引用别人的消息不算直通；只有引用 bot 自己的消息才是「回复」
+  assert.equal(bypassReason(replyOnly, {}).reason, null)
+  assert.equal(bypassReason(replyOnly, { replyToSelf: true }).reason, 'reply')
+})
+
+test('codec：@ 别人不算 @ bot，也不直通（v0.18.0）', () => {
+  const event = toInternalEvent({
+    ...plainEvent,
+    message_id: 10,
+    message: [{ type: 'at', data: { qq: '1211176477' } }, { type: 'text', data: { text: ' 你好' } }],
+    raw_message: '[CQ:at,qq=1211176477] 你好',
+  })
+  assert.equal(event.mentionsSelf, false)
+  assert.equal(event.mentionsOthers, true)
+  assert.deepEqual(event.atTargets, ['1211176477'])
+  assert.deepEqual(bypassReason(event, {}), { bypass: false, reason: null })
+
+  const all = toInternalEvent({
+    ...plainEvent,
+    message_id: 11,
+    message: [{ type: 'at', data: { qq: 'all' } }, { type: 'text', data: { text: ' 开会' } }],
+    raw_message: '[CQ:at,qq=all] 开会',
+  })
+  assert.equal(all.mentionsSelf, false)
+  assert.equal(all.mentionsOthers, true)
+  assert.deepEqual(all.atTargets, ['all'])
+  assert.deepEqual(extractAtTargets([
+    { type: 'at', data: { qq: '1' } },
+    { type: 'at', data: { qq: '1' } },
+    { type: 'text', data: { text: 'x' } },
+  ]), ['1'])
 })
 
 test('codec：message_sent 归为 self-message', () => {

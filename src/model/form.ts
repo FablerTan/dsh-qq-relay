@@ -26,6 +26,12 @@ export interface RelayFormState {
   sessionTitle: string
   replyChunkSize: string
   commandPrefixes: string
+  /** 代答开关（v0.18.0）：Toggle 控件用布尔，不走 updateField 的字符串通道。 */
+  proxyEnabled: boolean
+  /** 代答目标：QQ 号或群名片 / 昵称，逗号分隔。 */
+  proxyTargets: string
+  /** 代答沉默窗口：人读时长（10m / 30m / 0s）。 */
+  proxySilenceWindow: string
 }
 
 /** 解析结果：成功带值，失败带可逐条显示的问题。 */
@@ -48,6 +54,9 @@ export function emptyForm(): RelayFormState {
     sessionTitle: '',
     replyChunkSize: '',
     commandPrefixes: '',
+    proxyEnabled: false,
+    proxyTargets: '',
+    proxySilenceWindow: '',
   }
 }
 
@@ -66,6 +75,9 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     sessionTitle: config.sessionTitle,
     replyChunkSize: config.replyChunkSize > 0 ? String(config.replyChunkSize) : '',
     commandPrefixes: config.commandPrefixes.join(', '),
+    proxyEnabled: config.proxyReply.enabled,
+    proxyTargets: config.proxyReply.targets.join(', '),
+    proxySilenceWindow: formatDurationMs(config.proxyReply.silenceWindowMs),
   }
 }
 
@@ -130,6 +142,23 @@ export function parseGroups(text: string): ParseResult<number[]> {
     if (!groups.includes(value)) groups.push(value)
   }
   return problems.length > 0 ? { ok: false, problems } : { ok: true, value: groups }
+}
+
+/**
+ * 解析代答目标：只按逗号 / 顿号切（昵称里可能有空格），去掉开头的 @。
+ */
+export function parseProxyTargets(text: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of text.split(/[,，]/u)) {
+    const value = item.trim().replace(/^@/u, '').trim()
+    if (value === '') continue
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
 }
 
 /** 解析命令前缀：按逗号 / 顿号切分，保持用户顺序。 */
@@ -198,6 +227,23 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
   const prefixes = parseCommandPrefixes(form.commandPrefixes)
   if (prefixes.ok) patch.commandPrefixes = prefixes.value
   else problems.push(...prefixes.problems)
+
+  // 代答（v0.18.0）：开关 / 名单 / 沉默窗口一起提交；开启时必须至少一个目标。
+  const proxyTargets = parseProxyTargets(form.proxyTargets)
+  if (form.proxyEnabled && proxyTargets.length === 0) {
+    problems.push('开启代答时至少要填一个目标（QQ 号或群名片 / 昵称）')
+  }
+  const proxySilenceText = form.proxySilenceWindow.trim()
+  const proxySilenceMs = parseDurationMs(proxySilenceText)
+  if (proxySilenceMs === null || proxySilenceMs > 24 * 60 * 60 * 1000) {
+    problems.push('代答沉默窗口必须是 0..24h 的时长（如 10m / 30m；0s = 总是代答）')
+  } else {
+    patch.proxyReply = {
+      enabled: form.proxyEnabled,
+      targets: proxyTargets,
+      silenceWindow: proxySilenceText,
+    }
+  }
 
   const gate: NonNullable<RelayConfigPatch['gate']> = {}
   const debounceText = form.gateDebounce.trim()

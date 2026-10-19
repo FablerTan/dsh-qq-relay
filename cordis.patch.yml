@@ -17,6 +17,8 @@
 # approval bridge; client renders the bundle's configuration page (status, config,
 # per-group project dirs, rebind). v0.17.0 moved it from `settings.section` to
 # `plugins.bundle.config` and split the form into 连接 / 项目 / 行为 / 记录 sub-pages.
+# v0.18.0 fixes the trigger rules (quoting someone else / @-ing someone else no longer
+# starts a turn) and adds the optional proxy-reply section (`proxyReply`).
 - insert:
     - id: dsh-qq-relay
       name: dsh-qq-relay

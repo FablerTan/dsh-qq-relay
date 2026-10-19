@@ -207,6 +207,41 @@ export const RELAY_CSS = `/* dsh-qq-relay 配置页样式：全部走宿主 ui-t
   border-color: var(--dsw-alias-state-business-primary);
 }
 
+.qqr-toggle {
+  position: relative;
+  box-sizing: border-box;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-active);
+  cursor: pointer;
+  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.qqr-toggle[data-on='true'] { background: var(--dsw-alias-state-success-primary); }
+.qqr-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.qqr-toggle:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+.qqr-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary-foreground);
+  box-shadow: 0 0.5px 1px var(--dsw-alias-border-l4);
+  transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.qqr-toggle[data-on='true'] .qqr-toggle-knob { transform: translateX(16px); }
+
 .qqr-block {
   display: flex;
   flex-direction: column;

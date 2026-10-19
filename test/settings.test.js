@@ -213,6 +213,42 @@ test('settings：gate 三参数可编辑、与 patch 合并、校验与脱敏视
   assert.ok(bad.problems.some((problem) => problem.includes('gate.jevThreshold')))
 })
 
+test('settings：proxyReply 可编辑、与 patch 合并、校验与脱敏视图（v0.18.0）', () => {
+  const picked = pickEditable({
+    proxyReply: { enabled: true, targets: ['205'], silenceWindow: '10m', extra: 'x' },
+  })
+  assert.deepEqual(picked, { proxyReply: { enabled: true, targets: ['205'], silenceWindow: '10m' } })
+
+  const merged = mergeConfig(
+    { ...PATCH_CONFIG, proxyReply: { enabled: false, targets: ['1'], silenceWindow: '5m' } },
+    { proxyReply: { enabled: true } },
+  )
+  assert.equal(merged.proxyReply.enabled, true)
+  assert.deepEqual(merged.proxyReply.targets, ['1'], '没提交的子项保留 patch 值')
+  assert.equal(merged.proxyReply.silenceWindow, '5m')
+
+  const resolved = resolveConfig(
+    { ...PATCH_CONFIG, proxyReply: { enabled: false } },
+    { proxyReply: { enabled: true, targets: ['205', '群主'], silenceWindow: '30m' } },
+  )
+  assert.equal(resolved.ok, true)
+  assert.equal(resolved.config.proxyReply.enabled, true)
+  assert.deepEqual(resolved.config.proxyReply.targets, ['205', '群主'])
+  assert.equal(resolved.config.proxyReply.silenceWindow, 1800000)
+
+  const view = maskConfig(resolved.config, {})
+  assert.deepEqual(view.proxyReply, { enabled: true, targets: ['205', '群主'], silenceWindowMs: 1800000 })
+
+  const defaults = maskConfig({}, {})
+  assert.deepEqual(defaults.proxyReply, { enabled: false, targets: [], silenceWindowMs: 600000 })
+
+  const bad = resolveConfig(PATCH_CONFIG, { proxyReply: { enabled: 'yes', targets: '205', silenceWindow: '2d' } })
+  assert.equal(bad.ok, false)
+  assert.ok(bad.problems.some((problem) => problem.includes('proxyReply.enabled')))
+  assert.ok(bad.problems.some((problem) => problem.includes('proxyReply.targets')))
+  assert.ok(bad.problems.some((problem) => problem.includes('proxyReply.silenceWindow')))
+})
+
 test('settings：store 原子读写覆盖，坏文件当空覆盖', (t) => {
   const dir = tempDir(t)
   const file = join(dir, 'settings.json')

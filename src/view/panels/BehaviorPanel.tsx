@@ -4,7 +4,7 @@
 
 import type { ReactElement } from 'react'
 
-import { Block, Card, Line, Row, TextInput } from '../controls.js'
+import { Block, Card, Line, Row, TextInput, Toggle } from '../controls.js'
 import { formatAgo, formatClockTime } from '../../model/form.js'
 import type { RelaySettingsModel } from '../../viewmodel/settings.js'
 
@@ -106,6 +106,38 @@ export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactEl
             inputMode="decimal"
             placeholder="0.7"
             ariaLabel="jev 接话阈值"
+          />
+        </Row>
+      </Card>
+      <Card>
+        <Block>
+          <h4 className="qqr-subhead">代答（@ 特定的人）</h4>
+          <p className="qqr-hint">
+            开启后，群里有人 @ 名单里的人、且 TA 最近没在本群说话时，机器人代 TA 回应（默认关闭）。
+            名单之外的 @ 别人消息只记聊天记录，不会触发会话。
+          </p>
+        </Block>
+        <Row label="开启代答" hint="默认关闭；开启时下面至少填一个目标">
+          <Toggle
+            checked={form.proxyEnabled}
+            onChange={model.setProxyEnabled}
+            ariaLabel="开启代答"
+          />
+        </Row>
+        <Row label="代答目标" hint="QQ 号或群名片 / 昵称，逗号分隔（如 10003, 群主）">
+          <TextInput
+            value={form.proxyTargets}
+            onChange={(value) => { updateField('proxyTargets', value) }}
+            placeholder="10003, 群主"
+            ariaLabel="代答目标"
+          />
+        </Row>
+        <Row label="沉默窗口" hint="TA 多久没在本群发言才代答；0s = 总是代答（如 10m / 30m）">
+          <TextInput
+            value={form.proxySilenceWindow}
+            onChange={(value) => { updateField('proxySilenceWindow', value) }}
+            placeholder="10m"
+            ariaLabel="代答沉默窗口"
           />
         </Row>
       </Card>

@@ -1,6 +1,6 @@
 # 配置总表（哪些能改、现在能不能在配置页改、改了怎么生效）
 
-> 状态：**v0.17.0（2026-10-19）**。本文是**操作参考**：每个配置项的默认值 / 取值范围 /
+> 状态：**v0.18.0（2026-10-19）**。本文是**操作参考**：每个配置项的默认值 / 取值范围 /
 > 现在能不能在配置页改 / 改完之后怎么生效，外加一张**写死常量清单**（那些"想调但没暴露"的数）。
 > 字段为什么这样设计见 [architecture.md §2.1](./architecture.md)；配置页在哪、层序与 HTTP 契约见
 > [client.md](./client.md)；具体行为见各自专题文档。
@@ -107,6 +107,19 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 | `approval.timeoutMs` | `120000`（2min） | `10s..10m` | 等回复超时（超时即拒绝） | — | 重启 |
 | `approval.roles` | `['owner','admin']` | `owner` / `admin` / `member` 子集 | 谁可以同意 / 拒绝 | — | 重启 |
 
+### 2.9 代答（v0.18.0）
+
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
+|---|---|---|---|---|---|
+| `proxyReply.enabled` | `false` | 布尔 | 是否启用代答（默认关闭） | 可 | 保存后重建 relay |
+| `proxyReply.targets` | `[]` | 字符串数组：QQ 号或群名片 / 昵称，≤20 项 | 谁被 @ 时可由机器人代答 | 可 | 保存后重建 relay |
+| `proxyReply.silenceWindow` | `600000`（10m） | `0..24h`，`0` = 不检查沉默 | 目标多久没在本群发言才代答 | 可 | 保存后重建 relay |
+
+- 语义：消息 @ 了名单里的人、且 TA 在 `silenceWindow` 内没在本群发言 → 直通起一轮，
+  prompt 里请 agent 代 TA 回应（详见 [gate.md §2.6](./gate.md)）。
+- 名单里的非数字项按群名片 / 昵称匹配（大小写不敏感，补查 `get_group_member_info`，缓存 10 分钟）。
+- **@ 别人（非名单）的消息不会触发会话**（v0.18.0 起）；引用别人消息也不再算「回复」。
+
 ## 3. 写死的常量（想调得先改成配置段）
 
 这些目前是代码里的常量，**不在配置里**；下表列出位置与含义，作为"要不要顺手做成配置"的参考。
@@ -133,15 +146,17 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 ## 4. 配置页覆盖矩阵
 
-- **现在可改（10 个顶层字段 + 3 个 gate 子项）**：`wsUrl`、`accessToken`、`selfId`、`groups`、
+- **现在可改（11 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项）**：`wsUrl`、`accessToken`、`selfId`、`groups`、
   `workspace`、`groupWorkspaces`（表格）、`chatRetentionDays`、`sessionTitle`、`replyChunkSize`、
-  `commandPrefixes`，以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
+  `commandPrefixes`、`proxyReply`（`enabled` / `targets` / `silenceWindow`），以及
+  `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
 - **patch 只读（26 项）**：`reconnect`（2 子项）、`commands`（3）、`reply`（3）、`poke`（3）、
   `files`（2）、`approval`（3）、`gate` 其余 10 项（`enabled` / `mentionBypass` / `fastWindow` /
   `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` /
   `jevEndpoint` / `jevApiKeyEnv`）。
-- 白名单在两处：`model/settings.js` 的 `EDITABLE_KEYS`（+ `EDITABLE_GATE_KEYS` 与 `pickGate`）
-  决定**哪些字段能被页面覆盖并写盘**；`model/settings.js` 的 `maskConfig` 决定**页面上能看到哪些值**。
+- 白名单在两处：`model/settings.js` 的 `EDITABLE_KEYS`（+ `EDITABLE_GATE_KEYS` / `EDITABLE_PROXY_KEYS`
+  与 `pickGate` / `pickProxyReply`）决定**哪些字段能被页面覆盖并写盘**；`maskConfig` 决定
+  **页面上能看到哪些值**。
   两处都要加，否则出现"能保存但看不到"或反之。
 
 ## 5. 想放进配置页的成本
@@ -167,6 +182,6 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 - 层序 / 热更新语义 / HTTP 契约：[client.md](./client.md)
 - 字段设计动机：[architecture.md §2.1](./architecture.md)
-- 闸门参数含义：[gate.md](./gate.md) · 回复体验：[reply.md](./reply.md)
+- 闸门参数含义 / 触发规则 / 代答：[gate.md](./gate.md) · 回复体验：[reply.md](./reply.md)
 - 戳一戳：[poke.md](./poke.md) · 群文件：[media.md §5.2](./media.md) · 命令：[commands.md](./commands.md)
 - 审批：[approval.md](./approval.md) · 工具上限：[tools.md](./tools.md)
