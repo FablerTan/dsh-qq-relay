@@ -1,6 +1,6 @@
 /**
  * model 层单测（node:test，零依赖）。
- * 运行：pnpm test  ==  node --test test/
+ * 运行：pnpm test  ==  node --test test/*.test.js
  */
 
 import test from 'node:test'

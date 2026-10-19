@@ -1,6 +1,6 @@
 # 架构
 
-> 状态：**方案定案（2026-10-18）；协议端实测通过、P1 实现中（2026-10-19）**。
+> 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地（2026-10-19）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -8,7 +8,8 @@
 ## 1. 形态与边界
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
-- **client 半身 v1 不做**；配置走 profile patch，运行状态先打日志（面板见 P3）。
+- **client 半身**提供设置页「QQ 机器人」（P1.5）：连接状态、配置编辑、群映射只读
+  （契约见 [client.md](./client.md)）；更重的面板（映射管理、审批开关等）放 P3。
 - 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
   插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
@@ -28,7 +29,7 @@
 | 会话映射 | 默认一个 QQ 群对应一个自动创建的 DSH 会话（草案，见第 5 节） |
 | 审批 / 主动推送 / 媒体 / 面板 | 未定，放 P3 |
 
-### 2.1 配置（P1）
+### 2.1 配置（P1 + P1.5 设置页）
 
 配置由用户在目标 profile 的插件配置里提供（`apply(ctx, config)` 读取）；**token、QQ 号、
 群号都不进仓库**，只写在 profile 配置里：
@@ -39,7 +40,7 @@
 | `accessToken` | string | 必填 | OneBot token |
 | `selfId` | number | 必填 | bot 小号 QQ 号，连接后用 `get_login_info` 校验 |
 | `groups` | number[] | 必填 | 群白名单，未列出的群直接丢弃 |
-| `workspace` | string | `~/dsh/qq-relay-ws` | relay 会话的工作目录；P1 先固定配置，后续做成插件设置 |
+| `workspace` | string | `~/dsh/qq-relay-ws` | relay 会话的工作目录；可在设置页改（只影响之后新建的会话） |
 | `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
@@ -49,38 +50,48 @@
   `- id: dsh-qq-relay` + `config:` 整块替换；token 放 `~/.dsh/.env` 的 `DSH_QQ_RELAY_TOKEN`，
   patch 里用 `!!js 'process.env.QQ_RELAY_TOKEN'` 引用（注意：`DSH_` 前缀是 DSH 启动环境的保留名，不能写进 `.env`）。改配置后需重启该 profile 的 GUI。
 - 临时停用整行：`- id: dsh-qq-relay` + `disabled: true`。
-- P1 不做 client 设置面板；`workspace` 等后续迁到插件设置。
+- **设置页覆盖（P1.5）**：设置 →「QQ 机器人」保存的字段写入
+  `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
+  `wsUrl / accessToken / selfId / groups / workspace / sessionTitle / replyChunkSize /
+  commandPrefixes` 可覆盖，其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
+  契约、HTTP 面与安全边界见 [client.md](./client.md)。
 
 ## 3. 模块分层
 
 ~~~text
 lib/
-├── index.js                  # 组合根：读配置、门控服务、装配 controller/model
+├── index.js                  # 组合根：读配置、门控服务、装配 controller/model、挂配置页路由
 ├── controller/
 │   ├── onebot/
 │   │   ├── client.js         # 正向 WS 客户端：连接、鉴权、重连、心跳、echo
 │   │   ├── api.js            # action 调用封装（send_group_msg 等）与 retcode 处理
 │   │   └── codec.js          # OneBot 事件 / 消息段 → 内部消息模型
-│   ├── gate.js               # 闸门状态机：直通/快路/慢路/去抖/冷却/jev 调度
+│   ├── runtime.js            # 运行实例：client+api+relay 三件套，支持整份配置热替换
+│   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect
+│   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
+│   ├── gate.js               # 闸门状态机：直通/快路/慢路/去抖/冷却/jev 调度（P2）
 │   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复
 └── model/
     ├── config.js             # 配置默认值与校验
+    ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL 落盘 / 读取 / 清理
     ├── state.js              # 每群闸门状态持久化 + 单实例锁
-    ├── jev.js                # 分类器调用契约（fail closed）
+    ├── jev.js                # 分类器调用契约（fail closed，P2）
     └── reply.js              # 回复构造、切分、重试队列
 ~~~
 
-host 半身只依赖 lib/model/；client 半身（src/）保持空骨架。
+client 半身（`src/`）只做设置页：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）
++ `src/view/SettingsSection.tsx`（React 组件）；`src/client.tsx` 只做注册与装配。
+host 半身只依赖 lib/model/。
 
-P1 只实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
-`model/{config,mapping,state,chat-log,reply}.js`；`gate.js`、`jev.js` 自 P2 起。
-当前进度：`model/`、`controller/onebot/{codec,client,api}.js`、`controller/relay.js` 与
-组合根 `index.js` 均已落地（含单测），待重启 GUI 做真机验收。
+P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
+`model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增 `controller/{runtime,config-routes,http}.js`
+与 `model/settings.js`；`gate.js`、`jev.js` 自 P2 起。
 
-`test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖 model 层：配置校验、
-映射 / 状态持久化、单实例锁、聊天日志读写清理、回复切分与退避。
+`test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
+单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面，以及
+`apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
 
@@ -161,5 +172,5 @@ ctx.on('agent/error', ...)          # 失败提示
 - 单聊（private）是否与群共享同一会话映射体系。
 - 媒体收发（入向图片 / 文件转 DSH 附件、出向图片 / 文件）。
 - DSH → QQ 主动推送工具（如 qq_send）。
-- client 状态 / 配置面板。
+- client 面板增强：映射管理、审批开关、闸门可视化（基础配置页已在 P1.5 落地，见 [client.md](./client.md)）。
 - 多群并发时的资源上限与队列策略。

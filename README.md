@@ -1,9 +1,9 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.2.0**：P1「@ 直通」已实现并完成真机验收（2026-10-19）——群里 @ 小号即可触发
-DSH 会话并回复；client 半身仍为空骨架。设计见 [docs/architecture.md](./docs/architecture.md)，
-协议端选型与部署见 [docs/onebot-channel.md](./docs/onebot-channel.md)。
+当前 **v0.3.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+已落地（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+[docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
 > **本项目不使用 openspec**（用户 2026-10-16 决定）——没有 `openspec/`，也没有
@@ -11,7 +11,7 @@ DSH 会话并回复；client 半身仍为空骨架。设计见 [docs/architectur
 > 空骨架唯一的可见副作用：host 半身加载时打一行日志，用于确认 link + bundle 组合生效。
 > 装完 / 改完需**重启对应 profile 的 GUI**（由用户执行，本插件不自行 kill / 重启 DSH）。
 
-## 用途（方案已定案，**尚未实现**）
+## 用途（P1 已实现；后续阶段见 [roadmap](./docs/roadmap.md)）
 
 DSH 与 QQ 之间的**双向桥**：
 
@@ -27,9 +27,8 @@ DSH 与 QQ 之间的**双向桥**：
 - 已知代价：非官方协议端**有封号风险**，需要常开 QQ 客户端 + NapCat。
 - 部署形态：NapCat 跑在 **Docker（macOS 用 Colima）**里，插件连 `127.0.0.1:3001`；macOS 原生 Shell 在 macOS 26 + arm64 上不可用（见 [onebot-channel.md §3.1](./docs/onebot-channel.md)）。
 
-**仍未定案**：会话映射细节、群审批（按钮）、主动推送工具、媒体收发、client 状态面板——先落 `docs/` 再实现。
-
-**当前没有实现任何功能代码**——上面是契约草案，不是已交付能力。
+**已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射只读）。
+**仍未定案**：消息闸门与 jev、群审批（按钮）、主动推送工具、媒体收发、client 面板增强——先落 `docs/` 再实现。
 
 ## 目录结构
 
@@ -44,11 +43,17 @@ dsh-qq-relay/
 │   ├── index.js          # host 半身**手写**组合根（读配置、单实例锁、装配）
 │   ├── controller/
 │   │   ├── onebot/       # codec（事件编解码）· client（WS）· api（action 封装）
+│   │   ├── runtime.js    # relay 运行实例：整份配置热替换（配置页保存后重建连接）
+│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect）
+│   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发
-│   ├── model/            # 配置 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分（纯逻辑）
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 聊天日志 / 回复切分
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
-├── test/                 # model 层单测（node:test，零依赖）
-├── src/client.tsx        # client 半身源码 / 组合根（空骨架，MVVM 三层按需展开）
+├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
+├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
+│   ├── client.tsx        # 组合根：把设置页注册进 settings.section
+│   ├── model/            # api.ts（HTTP）· form.ts（表单 ↔ patch 纯逻辑）
+│   └── view/             # SettingsSection.tsx（设置页「QQ 机器人」）
 ├── scripts/              # wrap-client（产物包装）· check-syntax · check-docs
 ├── docs/                 # 设计文档（官方通道 / 消息闸门 / 架构 / 路线）
 ├── README.md             # 本文件
@@ -62,6 +67,7 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
+| [docs/client.md](./docs/client.md) | client 半身：设置页「QQ 机器人」、配置层序、HTTP 契约、热更新语义 | 改设置页 / 调配置保存时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
@@ -76,7 +82,8 @@ dsh plugin --profile <profile> add link:/path/to/dsh-qq-relay
 ```
 
 - 回滚：`dsh plugin --profile <profile> remove dsh-qq-relay`（不影响本仓库）。
-- 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的加载日志。
+- 验证：重启后宿主日志里应出现 `dsh-qq-relay` 的加载日志；设置页里出现「QQ 机器人」，
+  能看到连接状态与配置表单。
 - 链接现状记录在上级 [PROFILES.md](../../PROFILES.md)。
 
 ## 开发循环
@@ -95,6 +102,16 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### P1.5 基础配置页（2026-10-19）
+
+- 设置 →「QQ 机器人」（`settings.section`）落地：连接状态（含单实例锁冲突提示）、配置表单
+  （wsUrl / token / selfId / 群白名单 / 工作目录 / 标题模板 / 切分上限 / 命令前缀）、群 ↔ 会话映射只读表。
+- host 新增三条同源 HTTP 路由（`/dsh-qq-relay/api/{status,config,reconnect}`），统一 JSON 信封；
+  保存后**立即重建连接**（单实例锁不变），token **只写不读**。
+- 配置层序：profile patch → 设置页保存的 `~/.dsh/storages/dsh-qq-relay/settings.json`；
+  非法字段被 `normalizeConfig` 拒绝，不落盘。
+- 单测 51 个（覆盖设置覆盖模型、路由面、`apply()` 集成），`pnpm check` 全绿。
 
 ### P1 真机验收（2026-10-19）
 

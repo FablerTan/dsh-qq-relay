@@ -5,19 +5,22 @@
 > 仓库级规则见上级 [`../../AGENTS.md`](../../AGENTS.md)，功能 / 用法 / 版本历史见
 > [README.md](./README.md)。
 >
-> 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身规划连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身预留状态 / 配置面板。当前 **v0.2.0**：P1 @ 直通
-> 已实现并完成真机验收（2026-10-19）；上级 §0 已仅对本插件解除。
+> 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
+> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.3.0**：P1 @ 直通
+> 已真机验收、P1.5 基础配置页已落地（2026-10-19）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
 - `src/` — client 半身源码（React + TS），组合根 `src/client.tsx`，构建产物 `lib/client.js`；
-  新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
-- `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**（P1 已验收），
-  分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发）+ `lib/model/`
-  （配置、会话映射、状态、聊天日志、回复）；P1 实现 `controller/onebot/{client,api,codec}.js`、
-  `controller/relay.js`、`model/{config,mapping,state,chat-log,reply}.js`，`gate.js` / `jev.js` 自 P2 起
-- `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图；新增后在 README「文档索引」登记
+  现有 `src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch 纯逻辑）+ `src/view/SettingsSection.tsx`
+  （设置页「QQ 机器人」）；新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，
+  分层细则见 §2 第 4 条）
+- `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**，
+  分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发、配置页 HTTP 面）+ `lib/model/`
+  （配置、设置覆盖、会话映射、状态、聊天日志、回复）；P1 实现 `controller/onebot/{client,api,codec}.js`、
+  `controller/relay.js`、`model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增
+  `controller/{runtime,config-routes,http}.js` 与 `model/settings.js`；`gate.js` / `jev.js` 自 P2 起
+- `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 
 > **本项目不使用 openspec**（用户 2026-10-16 决定）：没有 `openspec/`，也没有
@@ -29,7 +32,7 @@
 | 用途 | 位置 | 何时看 |
 |---|---|---|
 | 本插件总览 / 用途 / 用法 / 版本历史 | [README.md](./README.md) | 任何任务第一步 |
-| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / roadmap） | 动功能前对齐方向 |
+| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / roadmap / client） | 动功能前对齐方向 |
 | 某行为是哪个版本引入 / 为何如此 | README「版本历史」 | 追历史与动机 |
 | 仓库纪律 / 渲染树选座 / 工程基线 | 上级 [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 跨插件协作、装入 profile、选 slot |
 

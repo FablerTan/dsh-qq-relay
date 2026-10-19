@@ -1,6 +1,6 @@
 /**
  * relay 单测：用假 ctx / 假 client / 假 api 验证入向判定与出向回发。
- * 运行：pnpm test  ==  node --test test/
+ * 运行：pnpm test  ==  node --test test/*.test.js
  */
 
 import test from 'node:test'
@@ -142,7 +142,8 @@ test('relay：普通消息落聊天日志但不直通', async (t) => {
   }))
   await flush()
   assert.equal(calls.prompt.length, 0)
-  const records = chatLog.readRecent(100, Date.now() - 3600 * 1000)
+  // 事件自带固定 time，不能拿「当前时间前一小时」当窗口（会随时间腐烂）；窗口从 0 起。
+  const records = chatLog.readRecent(100, 0)
   assert.equal(records.length, 1)
   assert.equal(records[0].text, '随便聊聊')
 })

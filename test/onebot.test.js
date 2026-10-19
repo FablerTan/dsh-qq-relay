@@ -1,6 +1,6 @@
 /**
  * OneBot controller 层单测（codec / client / api），零外部依赖。
- * 运行：pnpm test  ==  node --test test/
+ * 运行：pnpm test  ==  node --test test/*.test.js
  */
 
 import test from 'node:test'
