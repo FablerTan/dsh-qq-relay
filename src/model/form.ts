@@ -19,6 +19,7 @@ export interface RelayFormState {
   selfId: string
   groups: string
   workspace: string
+  chatRetentionDays: string
   gateDebounce: string
   gateFastMinReplyInterval: string
   gateJevThreshold: string
@@ -40,6 +41,7 @@ export function emptyForm(): RelayFormState {
     selfId: '',
     groups: '',
     workspace: '',
+    chatRetentionDays: '',
     gateDebounce: '',
     gateFastMinReplyInterval: '',
     gateJevThreshold: '',
@@ -57,6 +59,7 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     selfId: config.selfId > 0 ? String(config.selfId) : '',
     groups: config.groups.join(', '),
     workspace: config.workspace,
+    chatRetentionDays: String(config.chatRetentionDays),
     gateDebounce: formatDurationMs(config.gate.debounceMs),
     gateFastMinReplyInterval: formatDurationMs(config.gate.fastMinReplyIntervalMs),
     gateJevThreshold: String(config.gate.jevThreshold),
@@ -150,6 +153,17 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
   const workspace = form.workspace.trim()
   if (workspace === '') problems.push('workspace 必填')
   else patch.workspace = workspace
+
+  // 空输入按 0（永不自动删除）处理；自动清理只接受 0 或 7..3650（与 host 校验一致）。
+  const retentionText = form.chatRetentionDays.trim()
+  const retentionRaw = retentionText === '' ? '0' : retentionText
+  const retention = Number(retentionRaw)
+  if (!/^\d+$/u.test(retentionRaw) || !Number.isInteger(retention)
+    || !(retention === 0 || (retention >= 7 && retention <= 3650))) {
+    problems.push('聊天记录保留天数必须是 0（永不自动删除）或 7..3650 的整数')
+  } else {
+    patch.chatRetentionDays = retention
+  }
 
   const sessionTitle = form.sessionTitle.trim()
   if (sessionTitle === '') problems.push('sessionTitle 必填')

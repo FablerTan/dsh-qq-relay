@@ -70,6 +70,20 @@ export interface RelayStatusView {
   mappings: RelayMappingView[]
 }
 
+/** 立即清理的结果（v0.13.0）：删除计数 + 清理后的状态快照。 */
+export interface RelayCleanupView {
+  days: number
+  chat: number
+  media: number
+  at: number
+}
+
+/** 立即清理接口的 value：计数 + 最新状态（页面据此刷新状态行）。 */
+export interface RelayCleanupValue {
+  cleanup: RelayCleanupView
+  status: RelayStatusView
+}
+
 /** 保存时提交的可编辑字段（未改的字段不出现）。 */
 export interface RelayConfigPatch {
   wsUrl?: string
@@ -107,6 +121,8 @@ export const CONFIG_PATH = '/dsh-qq-relay/api/config'
 export const RECONNECT_PATH = '/dsh-qq-relay/api/reconnect'
 /** 重新绑定群项目（P4）：删映射并按当前项目目录重建。 */
 export const REBIND_PATH = '/dsh-qq-relay/api/rebind'
+/** 立即清理聊天记录 / 媒体（v0.13.0）。 */
+export const CLEANUP_PATH = '/dsh-qq-relay/api/cleanup'
 
 /** 配置页用到的能力面（组合根注入 `fetch` 后得到实例）。 */
 export interface RelaySettingsApi {
@@ -114,6 +130,7 @@ export interface RelaySettingsApi {
   saveConfig(patch: RelayConfigPatch): Promise<RelayApiResult<RelayStatusView>>
   reconnect(): Promise<RelayApiResult<RelayStatusView>>
   rebind(groupId: number): Promise<RelayApiResult<RelayStatusView>>
+  cleanup(days: number): Promise<RelayApiResult<RelayCleanupValue>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -202,6 +219,45 @@ function asStatus(value: unknown): RelayStatusView | null {
   }
 }
 
+/** 底层请求：只负责 fetch + 统一信封，`value` 保持 unknown 交给上层解释。 */
+async function requestEnvelope(
+  fetchImpl: typeof fetch,
+  path: string,
+  init?: RequestInit,
+): Promise<RelayApiResult<unknown>> {
+  let response: Response
+  try {
+    response = await fetchImpl(path, { cache: 'no-store', ...init })
+  } catch (error) {
+    const detail = error instanceof Error && error.message !== '' ? '：' + error.message : ''
+    return { ok: false, error: { code: 'NETWORK', message: '连不上 host' + detail } }
+  }
+  let payload: unknown = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+  if (isRecord(payload) && payload.ok === true) {
+    return { ok: true, value: payload.value }
+  }
+  const error = isRecord(payload) && isRecord(payload.error) ? payload.error : null
+  return {
+    ok: false,
+    error: {
+      code: error !== null && typeof error.code === 'string' ? error.code : 'HTTP_' + String(response.status),
+      message: error !== null && typeof error.message === 'string' && error.message !== ''
+        ? error.message
+        : '请求失败（HTTP ' + String(response.status) + '）。',
+    },
+  }
+}
+
+/** host 返回的形状无法识别时的统一失败结果。 */
+function badPayload<T>(): RelayApiResult<T> {
+  return { ok: false, error: { code: 'BAD_PAYLOAD', message: 'host 返回了无法识别的数据。' } }
+}
+
 /**
  * 创建配置页 API。
  *
@@ -210,49 +266,44 @@ function asStatus(value: unknown): RelayStatusView | null {
 export function createRelaySettingsApi(options: { fetch: typeof fetch }): RelaySettingsApi {
   const fetchImpl = options.fetch
 
-  async function request(path: string, init?: RequestInit): Promise<RelayApiResult<RelayStatusView>> {
-    let response: Response
-    try {
-      response = await fetchImpl(path, { cache: 'no-store', ...init })
-    } catch (error) {
-      const detail = error instanceof Error && error.message !== '' ? '：' + error.message : ''
-      return { ok: false, error: { code: 'NETWORK', message: '连不上 host' + detail } }
-    }
-    let payload: unknown = null
-    try {
-      payload = await response.json()
-    } catch {
-      payload = null
-    }
-    if (isRecord(payload) && payload.ok === true) {
-      const status = asStatus(payload.value)
-      if (status !== null) return { ok: true, value: status }
-      return { ok: false, error: { code: 'BAD_PAYLOAD', message: 'host 返回了无法识别的状态数据。' } }
-    }
-    const error = isRecord(payload) && isRecord(payload.error) ? payload.error : null
-    return {
-      ok: false,
-      error: {
-        code: error !== null && typeof error.code === 'string' ? error.code : 'HTTP_' + String(response.status),
-        message: error !== null && typeof error.message === 'string' && error.message !== ''
-          ? error.message
-          : '请求失败（HTTP ' + String(response.status) + '）。',
-      },
-    }
+  /** 所有返回「最新状态」的接口共用：成功时把 value 解释成状态快照。 */
+  async function requestStatus(path: string, init?: RequestInit): Promise<RelayApiResult<RelayStatusView>> {
+    const result = await requestEnvelope(fetchImpl, path, init)
+    if (!result.ok) return result
+    const status = asStatus(result.value)
+    return status !== null ? { ok: true, value: status } : badPayload<RelayStatusView>()
   }
 
+  const jsonPost = (body: unknown): RequestInit => ({
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
   return {
-    getStatus: () => request(STATUS_PATH),
-    saveConfig: (patch) => request(CONFIG_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(patch),
-    }),
-    reconnect: () => request(RECONNECT_PATH, { method: 'POST' }),
-    rebind: (groupId) => request(REBIND_PATH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ groupId }),
-    }),
+    getStatus: () => requestStatus(STATUS_PATH),
+    saveConfig: (patch) => requestStatus(CONFIG_PATH, jsonPost(patch)),
+    reconnect: () => requestStatus(RECONNECT_PATH, { method: 'POST' }),
+    rebind: (groupId) => requestStatus(REBIND_PATH, jsonPost({ groupId })),
+    async cleanup(days) {
+      const result = await requestEnvelope(fetchImpl, CLEANUP_PATH, jsonPost({ days }))
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asStatus(value.status) : null
+      const cleanup = isRecord(value) && isRecord(value.cleanup) ? value.cleanup : null
+      if (status === null || cleanup === null) return badPayload<RelayCleanupValue>()
+      return {
+        ok: true,
+        value: {
+          cleanup: {
+            days: typeof cleanup.days === 'number' ? cleanup.days : days,
+            chat: typeof cleanup.chat === 'number' ? cleanup.chat : 0,
+            media: typeof cleanup.media === 'number' ? cleanup.media : 0,
+            at: typeof cleanup.at === 'number' ? cleanup.at : 0,
+          },
+          status,
+        },
+      }
+    },
   }
 }

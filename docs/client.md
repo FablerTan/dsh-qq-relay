@@ -21,6 +21,7 @@
 | 闸门表单 | `gate.debounce` · `gate.fastMinReplyInterval` · `gate.jevThreshold`（保存即重建闸门，无需重启；`enabled` 等其余 gate 字段仍 patch 只读）。宿主未加载 v0.10.0 时页面回退显示默认值并提示重启，不会显示 0 |
 | 操作 | 「保存并重连」「重新连接」「刷新」，以及未保存修改提示 |
 | 群项目目录 | 可编辑表格：群号 / 会话（标题 + id 或「未创建」）/ 项目目录（留空 = 跟随默认项目）/ 「重新绑定」按钮（P4） |
+| 聊天记录清理 | 保留天数（0 = 永不自动删除；7..3650 = 自动清理）+「立即清理」按钮（用当前天数，1..3650；删除聊天日文件与媒体日期目录，不改配置） |
 | 提示 | host 回来的校验问题（如 `wsUrl 必填`）逐条显示；保存成功/失败有状态提示 |
 
 页面每 5 秒静默刷新一次状态（只刷新连接态与映射，不覆盖正在编辑的表单）。
@@ -38,8 +39,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 - 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
   chatRetentionDays / gate.{debounce,fastMinReplyInterval,jevThreshold} / sessionTitle /
   replyChunkSize / commandPrefixes`；`reconnect` 等保持 patch 只读。
-  `groupWorkspaces` 由「群项目目录」表格整表提交（空表 = 清空覆盖）；`chatRetentionDays` 本期只有配置、
-  没有表单入口（清理 UI 排 v0.8.2）。
+  `groupWorkspaces` 由「群项目目录」表格整表提交（空表 = 清空覆盖）；`chatRetentionDays` 有表单入口
+  （v0.13.0：0 / 7..3650，保存后自动清理按新值执行）。
 - **保存即生效**：host 用新配置重建 client + relay（单实例锁不重入），不需要重启 GUI。
 - 校验失败 → 返回 400，**不写盘、不改内存配置**；页面显示 host 的 problems。
 - `settings.json` 是普通 JSON（`{ version, updatedAt, config }`），原子写；手动改它
@@ -63,6 +64,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 | POST | `/dsh-qq-relay/api/config` | body = 可编辑字段子集；校验、落盘、重建连接后返回新状态 |
 | POST | `/dsh-qq-relay/api/reconnect` | 用当前配置重建连接 |
 | POST | `/dsh-qq-relay/api/rebind` | body `{ groupId }`：删该群会话映射并用当前配置重建 → 下次消息按新项目建会话（P4） |
+| POST | `/dsh-qq-relay/api/cleanup` | body `{ days }`（1..3650）：立即清理超过该天数的聊天日文件与媒体日期目录，返回 `{ cleanup: { days, chat, media, at }, status }`（v0.13.0） |
 
 状态快照字段：
 
@@ -93,8 +95,9 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 }
 ~~~
 
-错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` / `REBIND_GROUP_INVALID` → 400；
-`CONFIG_BODY_TOO_LARGE` → 413；`RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` → 409；
+错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` / `REBIND_GROUP_INVALID` /
+`CLEANUP_DAYS_INVALID` → 400；`CONFIG_BODY_TOO_LARGE` → 413；
+`RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` / `CLEANUP_NOT_CONFIGURED` → 409；
 其余 → 500。请求体上限 64 KiB。
 
 ## 5. 热更新语义
@@ -105,6 +108,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，设置页保存）
 | `groups` / `commandPrefixes` / `replyChunkSize` | 立即对新事件生效 |
 | `workspace` / `groupWorkspaces` / `sessionTitle` | 只影响**之后新建**的会话；已存在的群映射保持原项目 / 标题（表格可查）。改已映射群的项目后点「重新绑定」才会换会话；旧项目聊天记录不移动 |
 | `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` | **立即生效**：保存后重建闸门，阈值由分类器每次判定时读取 |
+| `chatRetentionDays` | 立即写入配置；下一次自动清理（重启后 / 每日）按新值执行。「立即清理」只清一次，不改配置 |
+| 立即清理 | 只删文件（聊天日文件 / 媒体日期目录），不动映射、会话与配置；删除后不可恢复 |
 
 - 重连不重入单实例锁：锁属于进程，连接属于运行实例（`controller/runtime.js`）。
 - **保存会立即断开当前 WS**：进行中的 QQ 触发回合会被中止且不回发（配置改动属低频操作，
@@ -136,7 +141,9 @@ src/
 ## 8. 已知边界 / 后续
 
 - 页面可直接改「群项目目录」，并为已映射群提供「重新绑定」；清空全部映射 / 删除会话仍无入口。
-- 聊天记录清理（保留天数 + 立即清理）排 v0.8.2。
+- 聊天记录清理已交付（v0.13.0）：「立即清理」用**当前输入框里的天数**（1..3650），因此可以比自动清理
+  （0 / 7..3650）更激进；两个区间不同是有意的——自动清理有最低 7 天的保护，手动清理允许 1 天。
+- 「立即清理」只清已解析出项目目录的群（白名单 ∪ 映射 ∪ 群项目配置）；旧全局 chat/ 目录由启动迁移处理。
 - 不做 i18n（当前中文直出）；随插件一起演进。
 - 没有「恢复 profile 默认值」按钮：删掉 settings.json 后重启即可回到 patch 配置。
 - 闸门可编辑项（去抖 / 最小间隔 / jev 阈值）已进表单（v0.10.0）；`enabled` / `model` / `slowTimer`

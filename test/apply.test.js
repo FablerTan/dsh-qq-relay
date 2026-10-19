@@ -87,6 +87,15 @@ function fakeRes() {
   }
 }
 
+/** 本地日期键 YYYY-MM-DD（与聊天日志 / 媒体的按天分片一致）。 */
+function dateKey(ms) {
+  const date = new Date(ms)
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return y + '-' + m + '-' + d
+}
+
 async function call(routes, path, options) {
   const route = routes.find((item) => item.path === path)
   assert.notEqual(route, undefined, '路由不存在：' + path)
@@ -118,7 +127,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     commandPrefixes: ['/dsh'],
   })
 
-  assert.equal(routes.length, 4, '应注册 status / config / reconnect / rebind 四条路由')
+  assert.equal(routes.length, 5, '应注册 status / config / reconnect / rebind / cleanup 五条路由')
 
   const initial = await call(routes, '/dsh-qq-relay/api/status')
   assert.equal(initial.status, 200)
@@ -264,6 +273,74 @@ test('apply：rebind 删除群映射并重建（下次消息按新项目建会�
   assert.deepEqual(stored, {})
 })
 
+test('apply：立即清理按 body 的保留天数删除过期聊天与媒体', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-cleanup-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const now = Date.now()
+  const oldKey = dateKey(now - 30 * 24 * 60 * 60 * 1000)
+  const newKey = dateKey(now)
+  const project = join(home, 'projects', 'my-app')
+  const group = '100'
+
+  // 预置已绑定群映射（聊天目录 / 媒体目录都以该群项目为准）
+  const storageDir = join(home, '.dsh', 'storages', 'dsh-qq-relay')
+  mkdirSync(storageDir, { recursive: true })
+  writeFileSync(join(storageDir, 'mapping.json'), JSON.stringify({
+    100: { sessionId: 'session-old', workspacePath: project, title: 'QQ群：旧', createdAt: 1 },
+  }), 'utf8')
+
+  const chatDir = join(project, '.qq-relay', 'chat', group)
+  mkdirSync(chatDir, { recursive: true })
+  const oldChat = join(chatDir, oldKey + '.jsonl')
+  const newChat = join(chatDir, newKey + '.jsonl')
+  writeFileSync(oldChat, JSON.stringify({ time: now - 30 * 24 * 60 * 60 * 1000, text: '旧' }) + '\n', 'utf8')
+  writeFileSync(newChat, JSON.stringify({ time: now, text: '新' }) + '\n', 'utf8')
+
+  const mediaDir = join(project, '.qq-relay', 'media', group)
+  mkdirSync(join(mediaDir, oldKey), { recursive: true })
+  mkdirSync(join(mediaDir, newKey), { recursive: true })
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: project,
+  })
+
+  const result = await call(routes, '/dsh-qq-relay/api/cleanup', {
+    method: 'POST',
+    body: JSON.stringify({ days: 7 }),
+  })
+  assert.equal(result.status, 200)
+  assert.equal(result.payload.ok, true)
+  assert.equal(result.payload.value.cleanup.days, 7)
+  assert.equal(result.payload.value.cleanup.chat, 1)
+  assert.equal(result.payload.value.cleanup.media, 1)
+  assert.equal(result.payload.value.status.started, true)
+  assert.equal(existsSync(oldChat), false, '过期聊天文件应删除')
+  assert.equal(existsSync(newChat), true, '近期聊天文件应保留')
+  assert.equal(existsSync(join(mediaDir, oldKey)), false, '过期媒体目录应删除')
+  assert.equal(existsSync(join(mediaDir, newKey)), true, '近期媒体目录应保留')
+
+  // 非法天数（0 = 永不自动删除）→ 400，且不删除任何东西
+  const invalid = await call(routes, '/dsh-qq-relay/api/cleanup', {
+    method: 'POST',
+    body: JSON.stringify({ days: 0 }),
+  })
+  assert.equal(invalid.status, 400)
+  assert.equal(invalid.payload.error.code, 'CLEANUP_DAYS_INVALID')
+})
+
 test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-tool-'))
   const previousHome = process.env.HOME
@@ -284,7 +361,7 @@ test('apply：注册 qq_send 工具，离线时返回 queued', async (t) => {
     groups: [100],
     workspace: join(home, 'ws'),
   })
-  assert.equal(routes.length, 4)
+  assert.equal(routes.length, 5)
   assert.equal(tools.length, 1)
   const definition = tools[0]
   assert.equal(definition.name, 'qq_send')

@@ -82,7 +82,7 @@ function statusView(status: RelayStatusView | null): { tone: string; text: strin
 }
 
 /** 把失败结果翻译成一行文案。 */
-function errorText(result: RelayApiResult<RelayStatusView>): string {
+function errorText<T>(result: RelayApiResult<T>): string {
   return result.ok ? '' : result.error.message
 }
 
@@ -190,6 +190,40 @@ export function RelaySettingsSection(): ReactElement {
       setError(errorText(result))
     }
   }, [applyStatus])
+
+  /**
+   * 立即清理：用「保留天数」输入框里的值（1..3650）清一次聊天记录 + 媒体。
+   * 与保存无关（不落盘、不改配置）；0 表示永不自动删除，不能用于立即清理。
+   */
+  const onCleanup = useCallback(async () => {
+    const days = Number(form.chatRetentionDays.trim() === '' ? '0' : form.chatRetentionDays.trim())
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      setNotice(null)
+      setError('立即清理需要先在「保留天数」里填 1..3650 的整数（0 = 永不删除，不能清理）。')
+      return
+    }
+    const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
+    if (typeof confirmFn === 'function') {
+      const approved = confirmFn(
+        '立即清理超过 ' + String(days) + ' 天的聊天记录与媒体文件？\n'
+        + '删除后不可恢复；群映射与会话不受影响。',
+      )
+      if (!approved) return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await api.cleanup(days)
+    setBusy(false)
+    if (result.ok) {
+      const { cleanup, status: next } = result.value
+      applyStatus(next, false)
+      setNotice('已清理：聊天记录 ' + String(cleanup.chat) + ' 个文件、媒体 '
+        + String(cleanup.media) + ' 个日期目录（保留 ' + String(cleanup.days) + ' 天）。')
+    } else {
+      setError(errorText(result))
+    }
+  }, [form.chatRetentionDays, applyStatus])
 
   const current = statusView(status)
   const dirty = status !== null && (isFormDirty(form, status.config) || isProjectRowsDirty(projectRows, status))
@@ -427,6 +461,35 @@ export function RelaySettingsSection(): ReactElement {
           </table>
         </div>
       )}
+
+      <h3 style={{ margin: '16px 0 6px', fontSize: '0.95rem' }}>聊天记录清理</h3>
+      <p style={{ margin: '0 0 8px', color: MUTED, fontSize: '0.82em' }}>
+        聊天记录与媒体文件默认<b>永不自动删除</b>（保留天数 0）。填 7..3650 保存后，宿主启动时与每天各清理一次
+        超过该天数的 <code>.qq-relay/chat/</code> 日文件与 <code>.qq-relay/media/</code> 日期目录。
+      </p>
+      <Field label="聊天记录保留天数" hint="0 = 永不自动删除；7..3650 = 自动清理天数（保存后生效）">
+        <input
+          value={form.chatRetentionDays}
+          onChange={(event) => updateField('chatRetentionDays', event.target.value)}
+          inputMode="numeric"
+          placeholder="0"
+          style={INPUT_STYLE}
+          spellCheck={false}
+        />
+      </Field>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 8px', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => { void onCleanup() }}
+          disabled={busy || loading}
+          style={BUTTON_STYLE}
+        >
+          立即清理
+        </button>
+        <span style={{ fontSize: '0.8em', color: MUTED }}>
+          立即清理用上面的天数（1..3650），不改配置、不动群映射；删除后不可恢复。
+        </span>
+      </div>
 
       <p style={{ margin: '12px 0 0', color: MUTED, fontSize: '0.78em' }}>
         配置来源：profile 的 <code>cordis.patch.yml</code>，设置页保存的覆盖写入

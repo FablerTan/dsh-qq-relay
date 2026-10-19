@@ -17,7 +17,7 @@ import {
   pickEditable,
   resolveConfig,
 } from '../lib/model/settings.js'
-import { createConfigRoutes, CONFIG_PATH, REBIND_PATH, RECONNECT_PATH, STATUS_PATH } from '../lib/controller/config-routes.js'
+import { createConfigRoutes, CLEANUP_PATH, CONFIG_PATH, REBIND_PATH, RECONNECT_PATH, STATUS_PATH } from '../lib/controller/config-routes.js'
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-settings-'))
@@ -342,6 +342,60 @@ test('routes：rebind 未实现 501、非法 JSON 400、非 POST 405', async () 
   const wrongMethod = fakeRes()
   await route.handler(fakeReq({ method: 'GET', url: REBIND_PATH }), wrongMethod)
   assert.equal(wrongMethod.statusCode, 405)
+})
+
+test('routes：POST /cleanup 把 days 交给 cleanup 并回传结果', async () => {
+  const calls = []
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    cleanup: (days) => { calls.push(days); return { ok: true, value: { cleanup: { days, chat: 1, media: 2, at: 0 }, status: {} } } },
+  })
+  const route = routes.find((item) => item.path === CLEANUP_PATH)
+  assert.equal(route.kind, 'exact')
+  const res = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: CLEANUP_PATH, body: '{"days":7}' }), res)
+  assert.deepEqual(calls, [7])
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(parseResponse(res).value.cleanup, { days: 7, chat: 1, media: 2, at: 0 })
+})
+
+test('routes：cleanup 未实现 501、模型层 400、非法 JSON 400、非 POST 405、超限 413', async () => {
+  const missing = createConfigRoutes({ getStatus: () => ({}) })
+  const missingRes = fakeRes()
+  await missing.find((item) => item.path === CLEANUP_PATH)
+    .handler(fakeReq({ method: 'POST', url: CLEANUP_PATH, body: '{"days":7}' }), missingRes)
+  assert.equal(missingRes.statusCode, 501)
+
+  const routes = createConfigRoutes({
+    getStatus: () => ({}),
+    cleanup: () => ({ ok: false, code: 'CLEANUP_DAYS_INVALID', message: '清理保留天数必须是 1..3650 的整数' }),
+  })
+  const route = routes.find((item) => item.path === CLEANUP_PATH)
+
+  const invalid = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: CLEANUP_PATH, body: '{"days":0}' }), invalid)
+  assert.equal(invalid.statusCode, 400)
+  assert.equal(parseResponse(invalid).error.code, 'CLEANUP_DAYS_INVALID')
+
+  const badJson = fakeRes()
+  await route.handler(fakeReq({ method: 'POST', url: CLEANUP_PATH, body: '{oops' }), badJson)
+  assert.equal(badJson.statusCode, 400)
+  assert.equal(parseResponse(badJson).error.code, 'CONFIG_BAD_JSON')
+
+  const wrongMethod = fakeRes()
+  await route.handler(fakeReq({ method: 'GET', url: CLEANUP_PATH }), wrongMethod)
+  assert.equal(wrongMethod.statusCode, 405)
+
+  const smallRoutes = createConfigRoutes({
+    getStatus: () => ({}),
+    cleanup: () => ({ ok: true, value: {} }),
+    maxBodyBytes: 8,
+  })
+  const tooLarge = fakeRes()
+  await smallRoutes.find((item) => item.path === CLEANUP_PATH)
+    .handler(fakeReq({ method: 'POST', url: CLEANUP_PATH, body: '{"days":123456}' }), tooLarge)
+  assert.equal(tooLarge.statusCode, 413)
+  assert.equal(parseResponse(tooLarge).error.code, 'CONFIG_BODY_TOO_LARGE')
 })
 
 test('routes：POST /reconnect 调 reconnect 并回传结果', async () => {
