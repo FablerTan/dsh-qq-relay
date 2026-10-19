@@ -13,7 +13,7 @@
 > 见 [reply.md](./reply.md)。
 > **P4.3 聊天记录清理**：保留天数 UI + 立即清理，v0.13.0 已实现（2026-10-19），见 [chat-context.md](./chat-context.md) §7。
 > **P7 client 面板增强**：闸门每群状态 / 最近消息 / 映射管理，v0.14.0 已实现（2026-10-19），见 [client.md](./client.md)。
-> **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现（2026-10-19），见 [poke.md](./poke.md)。
+> **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现并真机验收（2026-10-19），见 [poke.md](./poke.md)。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -341,7 +341,7 @@
 - 表头「清空全部映射」确认后映射表清空；状态行 / 配置不受影响。
 - 单测与 `pnpm check` 全绿；host + client 半身改动，需重启 profile GUI + 刷新页面生效。
 
-## P8 戳一戳识别与回戳（v0.15.0 已实现，2026-10-19）
+## P8 戳一戳识别与回戳（v0.15.0 已实现并真机验收，2026-10-19）
 
 目标：识别 QQ 群「戳一戳」——被戳时 agent 能回应，群友互戳进入聊天上下文；agent 可选择回戳。
 规格与事件契约见 [poke.md](./poke.md)。
@@ -362,7 +362,8 @@
 
 - ✅ 单测：codec 1、配置 1、relay 9、工具 4，共 230 个全过；`pnpm check` 全绿。
 - ✅ 协议端实测：`group_poke` 返回 ok；poke 事件字段与 onebot-channel §5 一致。
-- ⏳ 真机验收：重启 dwdev GUI 后按下面清单确认「别人戳 bot → 回复」链路。
+- ✅ 真机验收（2026-10-19，用户确认）：重启 dwdev GUI 后群里戳 bot → DSH 回复正常；
+  冷却 / 互戳只记录 / `qq_poke` 等细项随日常使用观察。
 
 ### 验收
 

@@ -10,7 +10,7 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 直通连发合并，见 [docs/reply.md](./docs/reply.md)）；P4.2 已落地**媒体双向**（入向视频 / 语音落盘，
 `qq_send` 出向图片 / 文件，见 [docs/media.md](./docs/media.md)）；P4.3 已落地**聊天记录清理**
 （保留天数 + 立即清理，见 [docs/chat-context.md](./docs/chat-context.md) §7）；P7 已落地**client 面板增强**
-（闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）；P8 已落地**戳一戳识别与回戳**
+（闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）；P8 已落地并真机验收**戳一戳识别与回戳**
 （被戳接话 / 互戳记录 / `qq_poke`，见 [docs/poke.md](./docs/poke.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
@@ -147,6 +147,7 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 - 新增 `qq_poke` 工具（NapCat `group_poke`）：agent 可回戳白名单群成员；离线直接报错、不排队；
   与 `qq_send` 同 fiber 注册（`ctx.inject(['tools'])`）。
 - 协议端实测（2026-10-19）：`group_poke` 返回 ok；poke 事件字段与文档一致。
+- 真机验收（2026-10-19，用户确认）：群里戳 bot → DSH 回复正常。
 - 新增 [docs/poke.md](./docs/poke.md)；同步 onebot-channel / architecture / tools / roadmap / README / AGENTS。
 - 单测 230 个（新增 15 个：codec 1 / 配置 1 / relay 9 / 工具 4）；host 半身改动，需重启 profile GUI 生效。
 

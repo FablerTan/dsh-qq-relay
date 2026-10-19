@@ -1,6 +1,6 @@
 # 戳一戳（poke）识别与回戳
 
-> 状态：**已实现（v0.15.0，2026-10-19）**。host 半身改动，需重启 profile GUI 生效；
+> 状态：**已实现并真机验收（v0.15.0，2026-10-19）**。host 半身改动，需重启 profile GUI 生效；
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md) §5 / §6，工具注册见
 > [tools.md](./tools.md)，整体架构见 [architecture.md](./architecture.md)。
 
@@ -132,7 +132,7 @@ poke:
 - 2026-10-19 协议端实测（v0.15.0 开发时）：`group_poke` 返回 `status: ok / retcode: 0`；
   戳一戳事件字段与 §2 一致（另有 `raw_info` 数组，解析忽略）；bot 自己发起的戳
   `user_id === self_id`，会被插件忽略（避免自问自答 / 记成群友戳 bot）。
-- 真机（重启 dwdev GUI 后）：
+- 真机（2026-10-19 已验收「别人戳 bot → 回复」链路，用户确认没问题；以下清单保留供回归）：
   1. 在群里戳 bot：群里应收到 agent 的回复，会话/prompt 里有「（直通：戳一戳）」；
   2. 戳另一个群友：不应回复；设置页该群「最近消息」里能看到戳记录；
   3. 10 秒内连戳 bot 两次：只回一次（两次都记录）；
