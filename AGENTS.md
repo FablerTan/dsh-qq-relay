@@ -6,10 +6,11 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.10.1**：P1 @ 直通
+> 会话之间双向转发消息，client 半身提供设置页「QQ 机器人」。当前 **v0.11.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
-> `.qq-relay/` + prompt 拼接已落地（2026-10-19）；上级 §0 已仅对本插件解除。
+> `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
+> 已落地（2026-10-19）；上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 
@@ -30,7 +31,9 @@
   （群项目目录解析 / `.qq-relay` 隐藏目录 / prompt 拼接），聊天日志改按群项目路由
   （`model/chat-log.js` 的 `rootFor` + 旧日志迁移）；v0.8.1 修正聊天日志 @ / 引用元信息，
   无文本消息不再进闸门（`codec.toChatLogRecord` / `controller/gate.js`）；P4.1 新增
-  `model/media.js`（入向图片 / 表情下载到 `.qq-relay/media/`，聊天记录与 prompt 引用路径）
+  `model/media.js`（入向图片 / 表情下载到 `.qq-relay/media/`，聊天记录与 prompt 引用路径）；
+  P5 新增 `model/commands.js`（QQ 侧命令层：解析 / 角色校验 / 回复文案），
+  命令分发在 `controller/relay.js`（`proceedInbound` 里先于直通 / 闸门）
 - `docs/` — 本插件的长期文档（一文档一主题）：架构、OneBot 通道、消息闸门、路线图、client 配置页；新增后在 README「文档索引」登记
 - `scripts/` — `wrap-client.mjs`（client 产物包装）· `check-syntax.mjs` · `check-docs.mjs`
 
@@ -43,7 +46,7 @@
 | 用途 | 位置 | 何时看 |
 |---|---|---|
 | 本插件总览 / 用途 / 用法 / 版本历史 | [README.md](./README.md) | 任何任务第一步 |
-| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / approval） | 动功能前对齐方向 |
+| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / approval / commands） | 动功能前对齐方向 |
 | 某行为是哪个版本引入 / 为何如此 | README「版本历史」 | 追历史与动机 |
 | 仓库纪律 / 渲染树选座 / 工程基线 | 上级 [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 跨插件协作、装入 profile、选 slot |
 

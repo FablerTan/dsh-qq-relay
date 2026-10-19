@@ -1,10 +1,12 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.10.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.11.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
-主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
+主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
+P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `/stop` / `/status` / `/help`，
+见 [docs/commands.md](./docs/commands.md)）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
 > **v0.1.0**：按上级技能 `dsh-plugin-project-init` 初始化。
@@ -34,7 +36,9 @@ DSH 与 QQ 之间的**双向桥**：
 jev 分类器（P2.3：OpenRouter `typesafe/jev-1.14`，阈值判定 + fail closed）、
 DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）、
 群项目目录与聊天记录 `.qq-relay/` + prompt 拼接（P4，见 [chat-context.md](./docs/chat-context.md)）、
-入向图片 / 表情落盘与路径引用（P4.1，见 [media.md](./docs/media.md)）。
+入向图片 / 表情落盘与路径引用（P4.1，见 [media.md](./docs/media.md)）、
+QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/help`，群主 / 管理员可用，
+见 [commands.md](./docs/commands.md)）。
 **仍未定案**：群审批（按钮）、媒体收发、client 面板增强、聊天记录清理 UI——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -83,6 +87,7 @@ dsh-qq-relay/
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
 | [docs/media.md](./docs/media.md) | 入向媒体落盘：图片 / 表情下载到 `.qq-relay/media/`、聊天记录与 prompt 里的路径 | 改媒体 / 排查图片下载时 |
+| [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送：契约、安全、离线队列、验证 | 改工具 / 排查推送失败时 |
 | [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
@@ -116,6 +121,19 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.11.0 QQ 侧命令层（2026-10-19）
+
+- 新增命令层（`lib/model/commands.js` + `relay.js`）：群主 / 管理员可以在群里直接操作会话。
+  `/new [标题]` 新建会话并重绑本群（旧会话留在 GUI；自定义标题或加时间后缀）；
+  `/stop` 中断当前轮次（`sessionController.cancel`）；`/status` 汇报会话 / 闸门 / 队列；
+  `/help` 列出命令。
+- 支持 `/dsh new` 前缀式与 `/new` 裸写式；只认白名单命令名，未识别的 `/dsh …` 仍按原「命令前缀直通」转给 DSH。
+  非授权角色静默忽略，不刷屏。
+- 命令回复走独立发送路径：切分发送但不刷新闸门发言窗口 / 冷却（否则一条 `/status` 会让 bot 沉默 2 小时）。
+- `gate.snapshot()` 提供待评估条数 / 批数；新建会话逻辑抽成 `createSessionForGroup` 与首次建会话共用。
+- 新增 `commands` 配置段（`enabled` / `bare` / `roles`，patch 只读）；规格见 [docs/commands.md](./docs/commands.md)。
+- 单测 178 个（新增 commands 纯逻辑 10 个 + relay 集成 8 个）；host 半身改动，需重启 profile GUI 生效。
 
 ### v0.10.1 设置页旧宿主兼容（2026-10-19）
 

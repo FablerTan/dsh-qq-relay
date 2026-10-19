@@ -2,7 +2,8 @@
 
 > 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
 > P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter）、P3 `qq_send` 主动推送与
-> QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）与 P4.1 入向媒体落盘已实现（2026-10-19）**。
+> QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）与 P4.1 入向媒体落盘已实现（2026-10-19）；
+> P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）已实现（v0.11.0，见 [commands.md](./commands.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -26,6 +27,7 @@
 | 首批场景 | **群聊优先**；私聊放 P3 |
 | 消息闸门 | 10 分钟快路 + 2 小时慢路 + jev 分类器；见 gate.md |
 | @ 直通 | @ / 引用回复 / 显式命令不走闸门，直接交给 DSH |
+| QQ 侧命令 | `/new` / `/stop` / `/status` / `/help` 由命令层截获（先于直通与闸门，群主 / 管理员可用），见 [commands.md](./commands.md) |
 | 回复 | 没有平台回复窗口，turn 结束即可发；受 QQ 风控与频率限制 |
 | 最小发言间隔 | 默认 45 秒，期间的消息并入下一批 |
 | 会话映射 | 默认一个 QQ 群对应一个自动创建的 DSH 会话（草案，见第 5 节） |
@@ -48,6 +50,7 @@
 | `sessionTitle` | string | `QQ群：{groupName}` | 自动创建会话的标题模板 |
 | `replyChunkSize` | number | 1500 | 出向文本切分上限（待实测调整） |
 | `commandPrefixes` | string[] | `['/dsh']` | 群消息文本以此开头时直通（绕过闸门） |
+| `commands` | object | `{ enabled: true, bare: true, roles: ['owner','admin'] }` | QQ 侧命令层（P5，v0.11.0）：`/new` / `/stop` / `/status` / `/help`；`bare` 控制裸写式，`roles` 控制可执行角色，详见 [commands.md](./commands.md) |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 
@@ -80,7 +83,7 @@ lib/
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
 │   ├── tools.js              # qq_send 工具定义（P3：手写 ToolDefinition，零外部依赖）
 │   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
-│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送
+│   └── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）
 └── model/
     ├── config.js             # 配置默认值与校验
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
@@ -92,6 +95,7 @@ lib/
     ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
     ├── gate.js               # 闸门纯逻辑（P2.1）：配置解析 / 决策 fail closed / 批次 / 时间窗
     ├── approval.js           # 审批纯逻辑（P3）：命令匹配 / 决策角色 / 提示文案
+    ├── commands.js           # QQ 侧命令层纯逻辑（P5）：命令解析 / 角色校验 / 回复文案
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
     ├── jev.js                # jev 分类器（P2.3）：OpenRouter Decisions API / Noul / 阈值 / fail closed
     └── reply.js              # 回复切分、退避、发送失败分类
@@ -105,7 +109,8 @@ P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增 `controller/{runtime,config-routes,http}.js`
 与 `model/settings.js`；P2.1/P2.3 新增 `controller/gate.js` 与 `model/{gate,jev,gate-log}.js`；
 P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `model/{project,prompt}.js`，
-聊天日志改由群项目路由（`chat-log.js` 的 `rootFor` + `migrateLegacyChatLogs`）。
+聊天日志改由群项目路由（`chat-log.js` 的 `rootFor` + `migrateLegacyChatLogs`）；P5 新增
+`model/commands.js`，命令分发与 `createSessionForGroup` / `sendSystemReply` 在 `controller/relay.js`。
 
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
@@ -123,6 +128,7 @@ OneBot WS 事件
   → 忽略 message_sent、去重（message_id）
   → 含图片 / 表情时先下载到 <project>/.qq-relay/media/（失败只记 failed）
   → 落盘 chat log（<project>/.qq-relay/chat/<群号>/，媒体路径写进 media 数组）
+  → 命令层（/new /stop /status /help；只认白名单命令名，命中即执行并回复，不派发 prompt）
   → 直通（@ / 引用 / 命令）或 gate（快路 / 慢路；分类器未接时普通消息 fail closed）
   → relay.dispatch（prompt 拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针）
   → ctx.sessionController.prompt({sessionId, content, source})

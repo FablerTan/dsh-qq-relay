@@ -26,7 +26,7 @@ function createHarness(t, options = {}) {
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   const handlers = new Map()
-  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [] }
+  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], cancel: [] }
 
   const ctx = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
@@ -45,6 +45,7 @@ function createHarness(t, options = {}) {
       },
       async rename(request) { calls.rename.push(request) },
       async prompt(request) { calls.prompt.push(request); return { accepted: true } },
+      cancel(request) { calls.cancel.push(request); return { accepted: true } },
     },
     workspaceRegistry: {
       async create(path) {
@@ -545,4 +546,103 @@ test('relay：拦截器抛异常不影响后续处理', async (t) => {
   relay.handleRawEvent(groupEvent({ message_id: 63 }))
   await flush()
   assert.equal(calls.prompt.length, 1)
+})
+test('relay：/new 裸写命令新建会话并重绑映射，不派发 prompt', async (t) => {
+  const { relay, calls, mapping } = createHarness(t)
+  relay.handleRawEvent(textEvent('/new', { message_id: 91 }))
+  await wait(20)
+
+  assert.equal(calls.prompt.length, 0, '命令不应变成 prompt')
+  assert.equal(calls.create.length, 1)
+  assert.equal(calls.sends.length, 1)
+  assert.ok(calls.sends[0].text.includes('已新建会话'), calls.sends[0].text)
+  assert.ok(calls.sends[0].text.includes('session-1'), calls.sends[0].text)
+  assert.equal(mapping.get(100).sessionId, 'session-1')
+  assert.ok(mapping.get(100).title.startsWith('QQ群：测试群（'), mapping.get(100).title)
+
+  // 下一条 @ 消息复用新会话
+  relay.handleRawEvent(groupEvent({ message_id: 92 }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+  assert.equal(calls.prompt[0].sessionId, 'session-1')
+})
+
+test('relay：/new 支持自定义标题与 /dsh 前缀写法', async (t) => {
+  const { relay, calls, mapping } = createHarness(t)
+  relay.handleRawEvent(textEvent('/dsh new 修登录', { message_id: 93 }))
+  await wait(20)
+  assert.equal(calls.create.length, 1)
+  assert.equal(mapping.get(100).title, '修登录')
+  assert.ok(calls.sends[0].text.includes('修登录'), calls.sends[0].text)
+})
+
+test('relay：/status 汇报会话 / 闸门 / 队列，且不刷新闸门发言窗口', async (t) => {
+  const { relay, calls, state } = createHarness(t)
+  relay.handleRawEvent(textEvent('/status', { message_id: 94 }))
+  await wait(20)
+
+  assert.equal(calls.prompt.length, 0)
+  assert.equal(calls.sends.length, 1)
+  const text = calls.sends[0].text
+  assert.ok(text.includes('【QQ relay 状态】'), text)
+  assert.ok(text.includes('100（测试群）'), text)
+  assert.ok(text.includes('会话：未创建'), text)
+  assert.ok(text.includes('待评估：0 条 / 0 批'), text)
+  assert.equal(Number(state.get(100).lastReplyAt) || 0, 0, '命令回复不算接话，不能刷新发言窗口')
+})
+
+test('relay：/help 列出命令', async (t) => {
+  const { relay, calls } = createHarness(t)
+  relay.handleRawEvent(textEvent('/help', { message_id: 95 }))
+  await wait(20)
+  assert.equal(calls.sends.length, 1)
+  assert.ok(calls.sends[0].text.includes('QQ relay 命令'), calls.sends[0].text)
+  assert.ok(calls.sends[0].text.includes('/dsh new'), calls.sends[0].text)
+})
+
+test('relay：非管理员发命令被静默忽略', async (t) => {
+  const { relay, calls } = createHarness(t)
+  relay.handleRawEvent(textEvent('/new', {
+    message_id: 96,
+    sender: { user_id: 205, nickname: '路人', card: '', role: 'member' },
+  }))
+  await wait(20)
+  assert.equal(calls.create.length, 0)
+  assert.equal(calls.sends.length, 0, '不回复以避免刷屏')
+  assert.equal(calls.prompt.length, 0, '命令也不能当普通消息派发')
+})
+
+test('relay：未识别的 /dsh 文本仍按命令前缀直通给 DSH', async (t) => {
+  const { relay, calls } = createHarness(t)
+  relay.handleRawEvent(textEvent('/dsh 帮我看看这段代码', { message_id: 97 }))
+  await flush()
+  assert.equal(calls.sends.length, 0)
+  assert.equal(calls.prompt.length, 1, '未知命令名 → 保持原直通行为')
+  assert.ok(calls.prompt[0].content[0].text.includes('帮我看看这段代码'), calls.prompt[0].content[0].text)
+  assert.ok(calls.prompt[0].content[0].text.includes('直通：命令'), calls.prompt[0].content[0].text)
+})
+
+test('relay：/stop 中断进行中的轮次并回复', async (t) => {
+  const { relay, calls, ctx } = createHarness(t)
+  relay.handleRawEvent(groupEvent({ message_id: 98 }))
+  await flush()
+  assert.equal(calls.prompt.length, 1)
+
+  relay.handleRawEvent(textEvent('/stop', { message_id: 99 }))
+  await wait(20)
+  assert.deepEqual(calls.cancel, [{ sessionId: 'session-1' }])
+  assert.equal(calls.sends.length, 1)
+  assert.ok(calls.sends[0].text.includes('已请求中断'), calls.sends[0].text)
+
+  // 让本轮结束，避免 t.after 里的 stop 留下 pending（无副作用，仅清理）
+  ctx.emit('session/event', { header: { id: 'session-1' }, id: 'session-1' }, { type: 'turn/end', data: { turn: 0, reason: { kind: 'cancelled' } } })
+  await flush()
+})
+
+test('relay：/stop 在没有进行中轮次时只回提示', async (t) => {
+  const { relay, calls } = createHarness(t)
+  relay.handleRawEvent(textEvent('/stop', { message_id: 100 }))
+  await wait(20)
+  assert.equal(calls.cancel.length, 0)
+  assert.ok(calls.sends[0].text.includes('本群还没有会话'), calls.sends[0].text)
 })
