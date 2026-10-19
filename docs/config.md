@@ -120,6 +120,20 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 - 名单里的非数字项按群名片 / 昵称匹配（大小写不敏感，补查 `get_group_member_info`，缓存 10 分钟）。
 - **@ 别人（非名单）的消息不会触发会话**（v0.18.0 起）；引用别人消息也不再算「回复」。
 
+### 2.10 角色预设与轻量人设（v0.19.0）
+
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
+|---|---|---|---|---|---|
+| `agentPreset` | `''` | DSH preset id（小写字母 / 数字 / 连字符） | 群会话使用哪个 agent preset；空 = 跟随宿主默认 | 可（下拉，名册来自 `agentPresets.list()`） | 只影响新建会话；已有群要 `/new` 或「重新绑定」 |
+| `persona.enabled` | `false` | 布尔 | 是否每轮注入轻量人设 | 可 | 保存后下一条消息 |
+| `persona.text` | `''` | 字符串，≤4000 字符 | 注入到 prompt 头部的角色设定（开启时不能为空） | 可 | 同上 |
+
+- 插件自带 `qq-relay` agent preset（显示名「QQ 群聊」，DSH 内置 `standard` 组合的拷贝 +
+  QQ 群聊 persona），装插件即出现；见 [persona.md](./persona.md)。
+- preset 在会话创建时固定（DSH 语义）；改名 / 删除 preset 后，状态里的 `agentPresets.missing`
+  为 true，relay 会退回默认 preset 并记 warn。
+- 平台约定行「直接输出最终回复即可，relay 会自动回发到本群；不要用 `qq_send` 往本群发」始终追加。
+
 ## 3. 写死的常量（想调得先改成配置段）
 
 这些目前是代码里的常量，**不在配置里**；下表列出位置与含义，作为"要不要顺手做成配置"的参考。
@@ -146,17 +160,18 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 ## 4. 配置页覆盖矩阵
 
-- **现在可改（11 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项）**：`wsUrl`、`accessToken`、`selfId`、`groups`、
-  `workspace`、`groupWorkspaces`（表格）、`chatRetentionDays`、`sessionTitle`、`replyChunkSize`、
-  `commandPrefixes`、`proxyReply`（`enabled` / `targets` / `silenceWindow`），以及
-  `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
+- **现在可改（13 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项）**：
+  `wsUrl`、`accessToken`、`selfId`、`groups`、`workspace`、`groupWorkspaces`（表格）、
+  `chatRetentionDays`、`sessionTitle`、`replyChunkSize`、`commandPrefixes`、
+  `proxyReply`（`enabled` / `targets` / `silenceWindow`）、`agentPreset`、
+  `persona`（`enabled` / `text`），以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
 - **patch 只读（26 项）**：`reconnect`（2 子项）、`commands`（3）、`reply`（3）、`poke`（3）、
   `files`（2）、`approval`（3）、`gate` 其余 10 项（`enabled` / `mentionBypass` / `fastWindow` /
   `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` /
   `jevEndpoint` / `jevApiKeyEnv`）。
-- 白名单在两处：`model/settings.js` 的 `EDITABLE_KEYS`（+ `EDITABLE_GATE_KEYS` / `EDITABLE_PROXY_KEYS`
-  与 `pickGate` / `pickProxyReply`）决定**哪些字段能被页面覆盖并写盘**；`maskConfig` 决定
-  **页面上能看到哪些值**。
+- 白名单在两处：`model/settings.js` 的 `EDITABLE_KEYS`（+ `EDITABLE_GATE_KEYS` /
+  `EDITABLE_PROXY_KEYS` / `EDITABLE_PERSONA_KEYS` 与 `pickGate` / `pickProxyReply` / `pickPersona`）
+  决定**哪些字段能被页面覆盖并写盘**；`maskConfig` 决定**页面上能看到哪些值**。
   两处都要加，否则出现"能保存但看不到"或反之。
 
 ## 5. 想放进配置页的成本

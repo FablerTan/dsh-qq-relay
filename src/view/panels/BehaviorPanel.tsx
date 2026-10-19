@@ -4,7 +4,7 @@
 
 import type { ReactElement } from 'react'
 
-import { Block, Card, Line, Row, TextInput, Toggle } from '../controls.js'
+import { Block, Card, Line, Row, Select, TextArea, TextInput, Toggle } from '../controls.js'
 import { formatAgo, formatClockTime } from '../../model/form.js'
 import type { RelaySettingsModel } from '../../viewmodel/settings.js'
 
@@ -56,6 +56,25 @@ function GateStatusCard({ model }: { model: RelaySettingsModel }): ReactElement 
 /** 行为配置。 */
 export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactElement {
   const { form, updateField } = model
+  const presets = model.status?.agentPresets ?? null
+  const presetItems = presets?.items ?? []
+  const presetOptions = [
+    { value: '', label: '不指定（跟随 DSH 默认）' },
+    ...presetItems.map((preset) => ({
+      value: preset.id,
+      label: (preset.name !== '' ? preset.name : preset.id) + (preset.broken !== '' ? '（不可用）' : ''),
+      disabled: preset.broken !== '',
+      title: preset.broken !== '' ? preset.broken : preset.description,
+    })),
+  ]
+  if (form.agentPreset !== '' && !presetItems.some((preset) => preset.id === form.agentPreset)) {
+    presetOptions.push({ value: form.agentPreset, label: form.agentPreset + '（不在名册中）', disabled: false })
+  }
+  const presetNote = presets === null || !presets.supported
+    ? <Line tone="warn">当前宿主没有提供 agent preset 服务（可能版本过旧或不是 Web bundle）：预设选择不会生效，轻量人设仍可用。</Line>
+    : presets.missing
+      ? <Line tone="warn">配置里的预设不在当前名册里：下次建会话会退回 DSH 默认预设。</Line>
+      : null
   return (
     <div className="qqr-panel">
       <Card>
@@ -108,6 +127,44 @@ export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactEl
             ariaLabel="jev 接话阈值"
           />
         </Row>
+      </Card>
+      <Card>
+        <Block>
+          <h4 className="qqr-subhead">角色与人设</h4>
+          <p className="qqr-hint">
+            所有群共用一个 DSH agent preset；切换后只影响之后新建的会话（群里发 /new，或到「项目」页点「重新绑定」）。
+            插件自带「QQ 群聊」预设（装好插件后出现在下拉里），也可在 DSH 里自定义 preset 后选它。
+          </p>
+          {presetNote}
+        </Block>
+        <Row label="默认 Agent 预设" hint="空 = 跟随 DSH 默认；preset 在会话创建时固定">
+          <Select
+            value={form.agentPreset}
+            onChange={(value) => { updateField('agentPreset', value) }}
+            options={presetOptions}
+            ariaLabel="默认 Agent 预设"
+          />
+        </Row>
+        <Row label="启用轻量人设" hint="每轮 prompt 前注入；默认关闭；不依赖 profile 改动">
+          <Toggle
+            checked={form.personaEnabled}
+            onChange={model.setPersonaEnabled}
+            ariaLabel="启用轻量人设"
+          />
+        </Row>
+        <Block>
+          <TextArea
+            value={form.personaText}
+            onChange={(value) => { updateField('personaText', value) }}
+            placeholder="例如：你是群里的猫娘助手，说话带「喵」，可以偶尔发一个表情。"
+            rows={4}
+            ariaLabel="轻量人设文本"
+          />
+          <p className="qqr-hint">
+            人设文本最多 4000 字符，开启时不能为空；它叠加在系统提示词里的预设人设之上，适合补群内角色设定。
+            平台约定（最终回复自动回发、不要用 qq_send 往本群发）始终会附在 prompt 末尾。
+          </p>
+        </Block>
       </Card>
       <Card>
         <Block>

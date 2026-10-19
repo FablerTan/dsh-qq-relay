@@ -43,6 +43,9 @@ function createHarness(t, options = {}) {
     sessionController: {
       async create(request) {
         calls.create.push(request)
+        if (options.presetFails === true && typeof request.agentPreset === 'string' && request.agentPreset !== '') {
+          throw new Error('Unknown agent preset: ' + request.agentPreset)
+        }
         return { sessionId: 'session-' + String(calls.create.length) }
       },
       async rename(request) { calls.rename.push(request) },
@@ -131,6 +134,9 @@ function createHarness(t, options = {}) {
     gate: options.gate,
     // 代答默认关闭；需要时由用例显式传入（v0.18.0）。
     proxyReply: options.proxyReply,
+    // 角色预设 / 轻量人设（v0.19.0）：默认空 / 关闭。
+    agentPreset: options.agentPreset,
+    persona: options.persona,
     // 单测默认关掉回复体验增强（引用 / 连发合并 / 处理中占位），避免每条消息多等窗口。
     reply: options.reply ?? { quote: false, mergeWindowMs: 0, ackDelayMs: 0 },
     // 戳一戳默认不限冷却，避免测试里第二次戳被冷却吞掉（冷却行为单独测）。
@@ -1353,3 +1359,25 @@ test('relay：自己上传 / 非白名单 / 重复群文件事件都被忽略', 
   assert.equal(calls.prompt.length, 1)
 })
 
+test('relay：建会话透传 agentPreset，轻量人设注入 prompt（v0.19.0）', async (t) => {
+  const { relay, calls } = createHarness(t, { agentPreset: 'qq-relay', persona: { enabled: true, text: '你是猫娘' } })
+  relay.handleRawEvent(groupEvent())
+  await flush()
+
+  assert.equal(calls.create.length, 1)
+  assert.equal(calls.create[0].agentPreset, 'qq-relay')
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('[角色设定：你是猫娘]'), text)
+  assert.ok(text.includes('[说明：直接输出最终回复即可，relay 会自动回发到本群；不要用 qq_send 往本群发。]'), text)
+})
+
+test('relay：agent preset 不可用时退回默认预设（v0.19.0）', async (t) => {
+  const { relay, calls } = createHarness(t, { agentPreset: 'missing-preset', presetFails: true })
+  relay.handleRawEvent(groupEvent())
+  await flush()
+
+  assert.equal(calls.create.length, 2)
+  assert.equal(calls.create[0].agentPreset, 'missing-preset')
+  assert.equal(calls.create[1].agentPreset, undefined)
+  assert.equal(calls.prompt.length, 1)
+})

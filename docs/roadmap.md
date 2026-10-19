@@ -15,8 +15,8 @@
 > **P7 client 面板增强**：闸门每群状态 / 最近消息 / 映射管理，v0.14.0 已实现（2026-10-19），见 [client.md](./client.md)。
 > **P8 戳一戳识别与回戳**：被戳接话 / 互戳记录 / `qq_poke` 工具，v0.15.0 已实现并真机验收（2026-10-19），见 [poke.md](./poke.md)。
 > **P9 入向群文件**：`group_upload` → 下载落盘 → 可选直通，v0.16.0 已实现（2026-10-19），见 [media.md](./media.md) §5.2。
-> **P10** 已落地（v0.17.0）；**P11** 已完成（v0.18.0）。**P12 / P13** 是 2026-10-19 用户确认的
-> 后续两个重点方向（一键环境安装、会话上下文增强：表情包 + 角色预设），状态：**规划中**。
+> **P10** 已落地（v0.17.0）；**P11** 已完成（v0.18.0）；**P13.1 角色预设** 已落地（v0.19.0）。
+> **P12 环境一键安装 / P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，状态：**规划中**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -508,39 +508,40 @@
 
 - 风险：`brew install` 耗时长、可能失败；Docker Desktop 与 Colima 可能同时存在（先探测谁在跑）；
   NapCat 镜像更新 / QQ 登录态失效要重新扫码；一键装完 ≠ 一定能登录（账号风控）。
-- **待确认**：
-  1. 「一键」边界——允许插件直接执行 `brew install` / `colima start`，还是只做「检测 + 复制命令」、
-     自动化容器与配置两步？
-  2. 环境目录固定 `~/napcat-docker`，还是设置页可改（默认值仍放那儿）？
-  3. 只支持 Docker + NapCat（推荐），还是也列 macOS 原生 NapCat Shell（文档已否定）？
-  4. 是否需要「卸载 / 重置环境」入口（删容器 + 数据卷，危险操作二次确认）？
+- **用户已确认（2026-10-19）**：
+  1. 允许插件执行下载 / 启动命令（`brew install` / `colima start` 可自动跑，但要确认 + 日志）；
+     配置页要能看到**运行状态**与 **WebUI 链接**（`http://127.0.0.1:6099/webui?token=…`）。
+  2. 环境目录在设置页可改（默认 `~/napcat-docker`）。
+  3. 只支持 Docker + NapCat（macOS 用 Colima）；macOS 原生 Shell 不列入。
+- **待定**：「卸载 / 重置环境」入口（删容器 + 数据卷，危险操作二次确认）是否需要。
 
-## P13 会话上下文增强：表情包与角色预设（规划中，2026-10-19 用户定为重点）
+## P13 会话上下文增强：表情包与角色预设（P13.1 v0.19.0 已实现，2026-10-19）
 
 目标：让 QQ 侧的 agent 更像群友——有稳定人设、会用 / 会学表情包；同时把
 「最终回复自动回发」这类平台约定写进 prompt，减小模型行为偏差。
 
-### P13.1 角色预设（先做，改动小）
+### P13.1 角色预设与轻量人设（v0.19.0 已实现，2026-10-19）
 
-- **两层机制**：
-  1. **原生 DSH agent preset**：relay 建会话时透传
-     `sessionController.create({ cwd, agentPreset })`；新增配置
-     `agentPresets: { default?, byGroup?: { "<群号>": "<preset id>" } }`；设置页「行为」下拉的
-     选项来自 host `ctx.get('agentPresets').list()`（含 `broken` 原因；服务缺失时整块隐藏）。
-     preset 在会话创建时固定，切预设要 `/new` 或「重新绑定」。
-  2. **轻量人设**（不依赖 profile 改动）：配置 `persona: { enabled, text }`（可按群覆盖），
-     prompt 顶部注入强边界说明；默认关闭。用于快速试人设 / 不想动 profile 的场景。
-- **人设模板**（client 侧一键填表）：通用群友 / 猫娘 / 客服 / 技术助手 / 自定义；
-  字段：自称、性格、语气、口癖、回复长度、是否可用表情包。
-- **平台约定补进 prompt**（修协议级验收发现的 gap）：每轮 prompt 末尾固定一行
+规格与维护说明见 [persona.md](./persona.md)。
+
+- **插件自带 agent preset**：bundle patch 插入 `@deepseek-ai/dsh-agent-preset` 声明
+  （Loader 行 `preset-qq-relay`，id `qq-relay`，显示名「QQ 群聊」），`plugins` 复制 DSH 内置
+  `standard` 完整组合表、只换 persona 前缀。装插件即可在 DSH preset 选择里看到，无需改 profile。
+  代价：preset 无继承，DSH 升级后需按 persona.md §2 重新同步组合表。
+- **会话可选 preset**：配置 `agentPreset`（默认空 = 宿主默认）；relay 建会话时透传
+  `sessionController.create({ cwd, agentPreset })`；不可用则记 warn 并退回默认（不中断建会话）。
+  配置页「行为 → 角色与人设」下拉数据来自 host `ctx.get('agentPresets').list()`；
+  状态快照带 `agentPresets: { supported, items[], missing }`。preset 创建时固定，
+  切预设要 `/new` 或「重新绑定」。
+- **轻量人设**：`persona.enabled` / `persona.text`（默认关、≤4000 字符）；prompt 头部
+  `[角色设定：…]`，保存后下一条消息生效，不依赖 profile。
+- **平台约定进 prompt**（修协议级验收发现的 gap）：每轮末尾固定
   「直接输出最终回复即可，relay 会自动回发本群；不要用 `qq_send` 往本群发」，
   避免双发与绕过引用 / 占位 / 合并。
-- 文档：新增 `docs/persona.md`，给一个 `@deepseek-ai/dsh-agent-preset` +
-  `@deepseek-ai/dsh-persona` 的 profile patch 示例（`prefix` 人设 + QQ 平台规则），
-  用户复制即用；插件**不**动态注册 preset（会话恢复要求 preset 在启动时已声明）。
-- 验收：设置页选 preset → 新建会话后走该 preset 的系统提示词；旧会话不受影响；
-  `/new` 后生效；preset 不存在 → 保存时校验报错 / 建会话回退默认并记 problem；
-  关闭人设 → prompt 与 v0.18.0 等价；双发不再出现。
+- 配置页新增 `Select` / `TextArea` 控件；单测 253 → 258（config / settings / prompt / relay 各补用例）。
+- 验收：重启 GUI 后 DSH preset 列表出现「QQ 群聊」；配置页可选并保存；`/new` 后新会话走该 preset；
+  preset 不存在 → 状态 missing + 建会话退回默认；开启人设后 prompt 带角色行与平台约定；双发不再出现。
+- 延后：人设模板一键填表、按群覆盖 preset / persona（当前均为全局）——需要时再做。
 
 ### P13.2 表情包发送（拟人化第一步）
 
@@ -570,12 +571,12 @@
 
 ### 待确认（P13）
 
-1. 角色预设优先走原生 DSH agent preset（推荐、系统提示词强度高，但要动 profile），
-   还是先做插件内轻量人设（零 profile 改动、prompt 注入）？两条都做的话谁先？
-2. 表情包：优先「能发」（P13.2）还是「能学」（P13.3）？发送样式接受「收藏表情」
-   （图片 + `sub_type=1`）还是必须真·商城表情（需要 `mface` key，可能过期）？
-3. 表情包默认开还是默认关？
-4. 排期：P12 → P13（v0.19.0 / v0.20.x），还是 P13 先做？
+- P13.1 已落地（v0.19.0）：用户选择先做角色预设，且接受「插件自带 preset + 配置页选择 + 轻量人设」两层。
+- 剩余待定都是表情包：
+  1. 用户决定「能发」与「能学」**同等优先**，默认开启、设置页可关（2026-10-19）。
+  2. 发送样式：先做「收藏表情」（`image` + `sub_type: 1`）；商城 `mface` 需先协议实测
+     `emoji_id / emoji_package_id / key` 是否可复用，再决定是否支持。
+  3. 排期：P13.2 发送 → P13.3 学习；与 P12 环境向导的先后待定。
 
 ## 协议级联调验收（2026-10-19，AI 代理执行，非真机）
 

@@ -207,6 +207,47 @@ export const RELAY_CSS = `/* dsh-qq-relay 配置页样式：全部走宿主 ui-t
   border-color: var(--dsw-alias-state-business-primary);
 }
 
+.qqr-select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.qqr-select:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.qqr-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+.qqr-textarea::placeholder { color: var(--dsw-alias-label-dimmed); }
+
+.qqr-textarea:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
 .qqr-toggle {
   position: relative;
   box-sizing: border-box;

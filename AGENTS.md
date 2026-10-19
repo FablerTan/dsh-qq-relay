@@ -6,7 +6,7 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.18.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.19.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -19,6 +19,8 @@
 > （`plugins.bundle.config`，四个二级页面，样式走宿主 `--dsw-*` token）已落地（v0.17.0）；
 > v0.18.0 修正触发规则（引用别人消息 / @ 别人不再触发会话）并加**可选代答**
 > （`proxyReply`：@ 名单里的人且 TA 最近没说话时代 TA 回应，默认关闭）；
+> v0.19.0 加**角色预设与轻量人设**（bundle patch 自带 `qq-relay` agent preset，配置页可选
+> preset、prompt 注入 `persona` 与「最终回复自动回发」平台约定，见 [docs/persona.md](./docs/persona.md)）；
 > 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
@@ -69,7 +71,7 @@
 | 用途 | 位置 | 何时看 |
 |---|---|---|
 | 本插件总览 / 用途 / 用法 / 版本历史 | [README.md](./README.md) | 任何任务第一步 |
-| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / poke / approval / commands / reply / config） | 动功能前对齐方向 |
+| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / poke / approval / commands / reply / config / persona） | 动功能前对齐方向 |
 | 某行为是哪个版本引入 / 为何如此 | README「版本历史」 | 追历史与动机 |
 | 仓库纪律 / 渲染树选座 / 工程基线 | 上级 [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 跨插件协作、装入 profile、选 slot |
 

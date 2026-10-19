@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.17.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.19.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -14,7 +14,9 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 （闸门每群状态 / 最近消息 / 映射管理，见 [docs/client.md](./docs/client.md)）；P8 已落地并真机验收**戳一戳识别与回戳**
 （被戳接话 / 互戳记录 / `qq_poke`，见 [docs/poke.md](./docs/poke.md)）；P9 已落地**入向群文件**
 （`group_upload` → 下载落盘 → 可选直通，见 [docs/media.md](./docs/media.md) §5.2）；P10 已落地
-**配置页迁到插件面板 + 二级页面 + 跟随宿主主题**（v0.17.0，见 [docs/client.md](./docs/client.md)）。设计见
+**配置页迁到插件面板 + 二级页面 + 跟随宿主主题**（v0.17.0，见 [docs/client.md](./docs/client.md)）；P13.1 已落地
+**角色预设与轻量人设**（v0.19.0：插件自带「QQ 群聊」agent preset + 配置页可选 preset + prompt 注入人设与
+平台约定，见 [docs/persona.md](./docs/persona.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -54,7 +56,9 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 映射增删，见 [client.md](./docs/client.md)）、戳一戳识别与回戳（P8：被戳接话 / 互戳记录 / `qq_poke`，
 见 [poke.md](./docs/poke.md)）、入向群文件（P9：`group_upload` → 下载落盘 → 可选直通，
 见 [media.md](./docs/media.md) §5.2）、触发规则修正 + 代答（v0.18.0：引用别人消息 / @ 别人不再触发；
-可选「@ 名单里的人且 TA 最近没说话时代 TA 回应」，见 [gate.md](./docs/gate.md) §2.1/§2.6）。
+可选「@ 名单里的人且 TA 最近没说话时代 TA 回应」，见 [gate.md](./docs/gate.md) §2.1/§2.6）、
+角色预设与轻量人设（v0.19.0：插件自带「QQ 群聊」agent preset / 配置页可选 preset / prompt 注入人设与
+平台约定，见 [persona.md](./docs/persona.md)）。
 **仍未定案**：群审批（按钮）——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -110,6 +114,7 @@ dsh-qq-relay/
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送 / `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
 | [docs/poke.md](./docs/poke.md) | 戳一戳：事件契约、被戳接话、冷却、聊天记录、`qq_poke` 工具 | 改戳一戳 / 排查戳没反应时 |
 | [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
+| [docs/persona.md](./docs/persona.md) | 角色预设与轻量人设：插件自带 `qq-relay` agent preset、配置页选择、prompt 人设行与平台约定 | 调人设 / 选 preset / 排查回复风格时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
 | [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 仓库级纪律、渲染树选座速查 | 跨插件协作、装 profile、选 slot |
 
@@ -141,6 +146,26 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.19.0 角色预设与轻量人设（2026-10-19）
+
+- **插件自带 `qq-relay` agent preset**：bundle patch 里插入一条 `@deepseek-ai/dsh-agent-preset`
+  声明，组合表复制 DSH 内置 `standard` 预设（persona + 工具 / 压缩 / 委派等），只把 persona 换成
+  QQ 群聊语气。装插件即可在 DSH 的 preset 选择里看到「QQ 群聊」，**无需改 profile**。
+  代价：preset 没有继承机制，这份组合表会随 DSH 升级滞后，需按 `docs/persona.md` §维护重新同步。
+- **会话可选 preset**：新配置 `agentPreset`（默认空 = 跟随 DSH 默认）；relay 建会话时透传
+  `sessionController.create({ agentPreset })`，preset 不可用时记 warn 并退回默认预设。
+  配置页「行为 → 角色与人设」下拉的数据来自宿主 `agentPresets.list()`（服务缺失时隐藏 / 提示）。
+  preset 在会话创建时固定，切换后要对已有群 `/new` 或「重新绑定」。
+- **轻量人设**：新配置 `persona.enabled` / `persona.text`（默认关闭、≤4000 字符）。开启后每轮
+  prompt 头部插入 `[角色设定：…]`；适合群内角色叠加，不依赖 profile 改动。
+- **平台约定进 prompt**：每轮末尾固定追加
+  `[说明：直接输出最终回复即可，relay 会自动回发到本群；不要用 qq_send 往本群发。]`，
+  修掉协议级验收发现的「模型改用 `qq_send` 回话导致双发 / 绕过引用与占位」问题。
+- 配置页「行为」新增「角色与人设」卡片（`Select` / `TextArea` 两个新控件）；状态快照新增
+  `agentPresets`（名册 + 服务可用性 + 配置里的 preset 是否缺失）；单测 253 → 258。
+- 同步 README / AGENTS / config / client / chat-context / architecture / roadmap 文档，新增
+  [docs/persona.md](./docs/persona.md)。
 
 ### v0.18.0 触发规则修正 + 代答（2026-10-19）
 

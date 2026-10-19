@@ -32,6 +32,12 @@ export interface RelayFormState {
   proxyTargets: string
   /** 代答沉默窗口：人读时长（10m / 30m / 0s）。 */
   proxySilenceWindow: string
+  /** DSH agent preset id（v0.19.0）；空串 = 宿主默认预设。 */
+  agentPreset: string
+  /** 轻量人设开关（v0.19.0）：布尔，走 setPersonaEnabled。 */
+  personaEnabled: boolean
+  /** 轻量人设文本（v0.19.0）。 */
+  personaText: string
 }
 
 /** 解析结果：成功带值，失败带可逐条显示的问题。 */
@@ -57,6 +63,9 @@ export function emptyForm(): RelayFormState {
     proxyEnabled: false,
     proxyTargets: '',
     proxySilenceWindow: '',
+    agentPreset: '',
+    personaEnabled: false,
+    personaText: '',
   }
 }
 
@@ -78,6 +87,9 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     proxyEnabled: config.proxyReply.enabled,
     proxyTargets: config.proxyReply.targets.join(', '),
     proxySilenceWindow: formatDurationMs(config.proxyReply.silenceWindowMs),
+    agentPreset: config.agentPreset,
+    personaEnabled: config.persona.enabled,
+    personaText: config.persona.text,
   }
 }
 
@@ -244,6 +256,18 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
       silenceWindow: proxySilenceText,
     }
   }
+
+  // 角色与人设（v0.19.0）：agent preset 与轻量人设一起提交；preset 空串表示跟随宿主默认。
+  const agentPreset = form.agentPreset.trim()
+  patch.agentPreset = agentPreset
+  const personaText = form.personaText.trim()
+  if (form.personaEnabled && personaText === '') {
+    problems.push('开启轻量人设时至少要填一段人设文本')
+  }
+  if (personaText.length > 4000) {
+    problems.push('轻量人设最多 4000 字符')
+  }
+  patch.persona = { enabled: form.personaEnabled, text: personaText }
 
   const gate: NonNullable<RelayConfigPatch['gate']> = {}
   const debounceText = form.gateDebounce.trim()

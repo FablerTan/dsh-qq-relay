@@ -67,6 +67,8 @@
 | `proxyReply` | object | `{ enabled: false, targets: [], silenceWindow: 10m }` | 代答（v0.18.0）：@ 名单里的人且 TA 最近没说话时，直通起一轮并让 agent 代 TA 回应；名单可写 QQ 号 / 群名片 / 昵称，详见 [gate.md §2.6](./gate.md) |
 | `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
+| `agentPreset` | string | `''` | 群会话使用的 DSH agent preset id；空 = 宿主默认。插件自带 `qq-relay`（显示名「QQ 群聊」）。preset 在会话创建时固定，详见 [persona.md](./persona.md) |
+| `persona` | object | `{ enabled: false, text: '' }` | 轻量人设（v0.19.0）：每轮 prompt 头部 `[角色设定：…]`；≤4000 字符，默认关闭 |
 
 - 会话映射 / 闸门状态 / 决策日志落在 `~/.dsh/storages/dsh-qq-relay/`；**聊天日志（P4）落在各群项目下的
   `<项目>/.qq-relay/chat/<群号>/YYYY-MM-DD.jsonl`**（agent 可直接 read；目录内 `.gitignore` 为 `*` 自我忽略）。
@@ -78,7 +80,8 @@
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /
   sessionTitle / replyChunkSize / commandPrefixes / gate.{debounce,fastMinReplyInterval,jevThreshold} /
-  proxyReply.{enabled,targets,silenceWindow}` 可覆盖，其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
+  proxyReply.{enabled,targets,silenceWindow} / agentPreset / persona.{enabled,text}` 可覆盖，
+  其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI。
   `groupWorkspaces` 是整表替换；已映射群改项目后需在配置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
   契约、HTTP 面与安全边界见 [client.md](./client.md)。
 

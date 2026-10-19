@@ -38,13 +38,17 @@
 |---|---|---|
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
 | 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
-| 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
+| 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
 | 记录 | `chatRetentionDays`（0 = 永不自动删除；7..3650 = 自动清理） | 「立即清理」（用输入框天数 1..3650，二次确认） |
 
 - 行为页还有**每群实时状态表**：待评估条数 / 最近发言 / 冷却 / DSH 忙 / 评估中，外加全局计数
   （待评估消息 / 群、活动定时器、派发队列、发送队列）；随状态轮询 5 秒刷新。
 - 「代答」（v0.18.0）：开关（默认关）+ 目标名单（QQ 号或群名片 / 昵称，逗号分隔）+
   沉默窗口（默认 `10m`，`0s` = 总是代答）。开启时名单不能为空，页面保存前就地校验。
+- 「角色与人设」（v0.19.0）：agent preset 下拉（空 = 跟随 DSH 默认；选项来自 host 的
+  `agentPresets.list()`，`broken` 的项标「（不可用）」并禁用）+ 轻量人设开关 / 多行文本框。
+  宿主没有 `agentPresets` 服务时下拉隐藏并提示；配置里的 preset 不在名册时提示 missing。
+  保存后 preset 只影响新建会话（已有群要 `/new` 或「重新绑定」），人设下一条消息生效。
 - 「最近消息」：该群最近 24 小时聊天记录（最多 20 条），只读显示时间 / 显示名 / @ 与引用标记 /
   媒体标记（含 `[文件]` / `[群文件下载失败]`）。
 - 页面每 5 秒静默刷新一次状态（只刷新连接态与映射，不覆盖正在编辑的表单）。
@@ -206,6 +210,8 @@ src/
 - 配置页只有 §4 列的字段可改；`commands` / `reply` / `poke` / `files` / `approval` / `reconnect`
   与部分 `gate` 字段仍是 patch 只读（见 [config.md](./config.md) §4/§5），加进页面要同时改
   `EDITABLE_KEYS`、`maskConfig`、`form.ts`、`viewmodel/settings.ts` 与对应面板。
+- 「角色与人设」的 preset 下拉依赖宿主提供 `agentPresets` 服务；旧宿主 / 非 Web bundle 下
+  整块降级为提示（轻量人设仍可用）。agent preset 在会话创建时固定，切换后旧会话不变。
 - 「最近消息」只看**最近 24 小时**（按天分文件，回看窗口太大没意义）；最多 20 条、只读，
   不含 raw CQ 码与 seen / pending 等内部状态。
 - 「闸门状态」表来自 state 文件 + relay 的只读快照；页面每 5 秒轮询状态，不在页面上实时推送。

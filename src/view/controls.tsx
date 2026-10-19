@@ -105,6 +105,58 @@ export function Toggle(props: {
   )
 }
 
+/** 多行文本域（受控）。 */
+export function TextArea(props: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  rows?: number
+  ariaLabel?: string
+}): ReactElement {
+  return (
+    <textarea
+      className="qqr-textarea"
+      value={props.value}
+      placeholder={props.placeholder}
+      rows={props.rows ?? 4}
+      spellCheck={false}
+      aria-label={props.ariaLabel}
+      onChange={(event) => { props.onChange(event.target.value) }}
+    />
+  )
+}
+
+/** 下拉选项。 */
+export interface SelectOption {
+  value: string
+  label: string
+  disabled?: boolean
+  title?: string
+}
+
+/** 下拉选择（受控）。 */
+export function Select(props: {
+  value: string
+  onChange: (value: string) => void
+  options: SelectOption[]
+  ariaLabel?: string
+}): ReactElement {
+  return (
+    <select
+      className="qqr-select"
+      value={props.value}
+      aria-label={props.ariaLabel}
+      onChange={(event) => { props.onChange(event.target.value) }}
+    >
+      {props.options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled === true} title={option.title}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 /** 文本输入框（受控）。 */
 export function TextInput(props: {
   value: string

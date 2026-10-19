@@ -547,3 +547,29 @@ test('routes：POST /reconnect 调 reconnect 并回传结果', async () => {
   assert.equal(res.statusCode, 200)
   assert.deepEqual(parseResponse(res), { ok: true, value: { started: true } })
 })
+test('settings：agentPreset 与 persona 可编辑、合并与脱敏视图（v0.19.0）', () => {
+  const picked = pickEditable({
+    agentPreset: 'qq-relay',
+    persona: { enabled: true, text: '猫娘', extra: 'x' },
+    unknown: 1,
+  })
+  assert.deepEqual(picked, { agentPreset: 'qq-relay', persona: { enabled: true, text: '猫娘' } })
+
+  const merged = mergeConfig(
+    { ...PATCH_CONFIG, persona: { enabled: false, text: '旧人设' } },
+    { agentPreset: 'qq-relay', persona: { enabled: true } },
+  )
+  assert.equal(merged.agentPreset, 'qq-relay')
+  assert.equal(merged.persona.enabled, true)
+  assert.equal(merged.persona.text, '旧人设', '没提交的子项保留 patch 值')
+
+  const resolved = resolveConfig(PATCH_CONFIG, { agentPreset: 'qq-relay', persona: { enabled: true, text: '猫娘' } })
+  assert.equal(resolved.ok, true)
+  const view = maskConfig(resolved.config, {})
+  assert.equal(view.agentPreset, 'qq-relay')
+  assert.deepEqual(view.persona, { enabled: true, text: '猫娘' })
+
+  const defaults = maskConfig({}, {})
+  assert.equal(defaults.agentPreset, '')
+  assert.deepEqual(defaults.persona, { enabled: false, text: '' })
+})

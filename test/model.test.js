@@ -615,3 +615,30 @@ test('config：files 段默认与校验（v0.16.0）', () => {
   assert.ok(invalid.problems.some((p) => p.includes('files.react')))
 })
 
+test('config：agentPreset / persona 默认与校验（v0.19.0）', () => {
+  const defaults = normalizeConfig({ wsUrl: 'ws://x', accessToken: 't', selfId: 1 })
+  assert.equal(defaults.config.agentPreset, '')
+  assert.deepEqual(defaults.config.persona, { enabled: false, text: '' })
+
+  const ok = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    agentPreset: 'qq-relay',
+    persona: { enabled: true, text: '  你是猫娘  ' },
+  })
+  assert.equal(ok.ok, true)
+  assert.equal(ok.config.agentPreset, 'qq-relay')
+  assert.deepEqual(ok.config.persona, { enabled: true, text: '你是猫娘' })
+
+  const bad = normalizeConfig({
+    wsUrl: 'ws://x',
+    accessToken: 't',
+    selfId: 1,
+    agentPreset: 'QQ Relay',
+    persona: { enabled: true, text: '' },
+  })
+  assert.equal(bad.ok, false)
+  assert.ok(bad.problems.some((problem) => problem.includes('agentPreset')), bad.problems.join('；'))
+  assert.ok(bad.problems.some((problem) => problem.includes('persona')), bad.problems.join('；'))
+})

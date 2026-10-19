@@ -12,6 +12,7 @@ import {
   formatDateTime,
   formatIncomingPrompt,
   promptLine,
+  PROMPT_PLATFORM_NOTE,
 } from '../lib/model/prompt.js'
 
 /** 用本地时间构造，格式化结果与运行机时区无关。 */
@@ -29,11 +30,12 @@ test('prompt：闸门批次格式（群名 / 时间 / 条数 / 行 / 历史指�
     ],
   })
   const lines = text.split('\n')
-  assert.equal(lines.length, 4)
+  assert.equal(lines.length, 5)
   assert.equal(lines[0], '[QQ群：示例群（10002）] 2026-10-19 11:21 新消息 2 条')
   assert.equal(lines[1], '[11:21:39] [tester] 测试')
   assert.equal(lines[2], '[11:21:47] [tester]（@你）再回复一句话')
   assert.equal(lines[3], '[历史记录：.qq-relay/chat/10002/（JSONL，按天分文件）]')
+  assert.equal(lines[4], PROMPT_PLATFORM_NOTE)
 })
 
 test('prompt：引用标记与 @ 同时出现时按顺序拼接', () => {
@@ -214,3 +216,20 @@ test('prompt：群文件媒体标记（v0.16.0）', () => {
   assert.ok(failed.includes('[群文件下载失败]'), failed)
 })
 
+test('prompt：轻量人设与平台约定（v0.19.0）', () => {
+  const text = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    persona: '你是猫娘\n说话带喵',
+    messages: [{ text: 'x', time: T }],
+  })
+  const lines = text.split('\n')
+  assert.equal(lines[0], '[QQ群：测试群（100）] 2026-10-19 11:21 新消息 1 条')
+  assert.equal(lines[1], '[角色设定：你是猫娘 说话带喵]')
+  assert.equal(lines[lines.length - 1], PROMPT_PLATFORM_NOTE)
+
+  const noNote = formatIncomingPrompt({ groupId: 100, now: T, platformNote: false, messages: [{ text: 'x', time: T }] })
+  assert.ok(!noNote.includes(PROMPT_PLATFORM_NOTE), noNote)
+  assert.ok(!noNote.includes('角色设定'), noNote)
+})

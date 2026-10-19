@@ -54,6 +54,29 @@ export interface RelayProxyReplyConfigView {
   silenceWindowMs: number
 }
 
+/** DSH agent preset 名册里的一个预设（v0.19.0）。 */
+export interface RelayAgentPresetView {
+  id: string
+  name: string
+  description: string
+  /** 非空 = 该预设激活失败，不能用于新会话。 */
+  broken: string
+}
+
+/** 轻量人设（v0.19.0）：每轮 prompt 前注入的文本，不依赖 profile 改动。 */
+export interface RelayPersonaConfigView {
+  enabled: boolean
+  text: string
+}
+
+/** host 侧 agent preset 名册（服务缺失时 supported=false，页面隐藏选择器）。 */
+export interface RelayAgentPresetsView {
+  supported: boolean
+  items: RelayAgentPresetView[]
+  /** 当前配置的 preset 不在名册里（已删除 / 未声明），下次建会话会退回默认。 */
+  missing: boolean
+}
+
 /** host 侧的配置视图（token 永不出现，只有是否已配置与来源）。 */
 export interface RelayConfigView {
   wsUrl: string
@@ -70,6 +93,10 @@ export interface RelayConfigView {
   gateSupported: boolean
   /** 代答配置（v0.18.0；旧 host 缺字段时按默认关闭兜底）。 */
   proxyReply: RelayProxyReplyConfigView
+  /** 会话使用的 DSH agent preset id（v0.19.0）；空串 = 宿主默认预设。 */
+  agentPreset: string
+  /** 轻量人设（v0.19.0）；默认关闭。 */
+  persona: RelayPersonaConfigView
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -97,6 +124,8 @@ export interface RelayStatusView {
   config: RelayConfigView
   /** 闸门运行状态；配置无效时为 null。 */
   gate: RelayGateStatusView | null
+  /** DSH agent preset 名册（v0.19.0）；旧 host 缺字段时按「不支持」兜底。 */
+  agentPresets: RelayAgentPresetsView
   mappings: RelayMappingView[]
 }
 
@@ -171,6 +200,13 @@ export interface RelayConfigPatch {
     enabled?: boolean
     targets?: string[]
     silenceWindow?: string
+  }
+  /** 会话使用的 DSH agent preset id（v0.19.0）；空串 = 宿主默认预设。 */
+  agentPreset?: string
+  /** 轻量人设（v0.19.0）：开关 + 文本一起提交。 */
+  persona?: {
+    enabled?: boolean
+    text?: string
   }
   sessionTitle?: string
   replyChunkSize?: number
@@ -254,6 +290,17 @@ function asPanelMessages(value: unknown): RelayPanelMessageView[] {
   }))
 }
 
+/** agent preset 名册数组兜底（旧 host / 服务缺失 → 空数组）。 */
+function asAgentPresetItems(value: unknown): RelayAgentPresetView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    id: typeof entry.id === 'string' ? entry.id : '',
+    name: typeof entry.name === 'string' ? entry.name : '',
+    description: typeof entry.description === 'string' ? entry.description : '',
+    broken: typeof entry.broken === 'string' ? entry.broken : '',
+  })).filter((entry) => entry.id !== '')
+}
+
 /**
  * 把未知 JSON 读成状态快照。
  * 只做形状兜底（页面不能因为 host 版本漂移白屏），字段级默认值给全。
@@ -320,6 +367,13 @@ function asStatus(value: unknown): RelayStatusView | null {
               : 10 * 60 * 1000,
           }
         : { enabled: false, targets: [], silenceWindowMs: 10 * 60 * 1000 },
+      agentPreset: typeof config.agentPreset === 'string' ? config.agentPreset : '',
+      persona: isRecord(config.persona)
+        ? {
+            enabled: config.persona.enabled === true,
+            text: typeof config.persona.text === 'string' ? config.persona.text : '',
+          }
+        : { enabled: false, text: '' },
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)
@@ -328,6 +382,13 @@ function asStatus(value: unknown): RelayStatusView | null {
       accessTokenConfigured: config.accessTokenConfigured === true,
       accessTokenSource: config.accessTokenSource === 'settings' ? 'settings' : 'profile',
     },
+    agentPresets: isRecord(value.agentPresets)
+      ? {
+          supported: value.agentPresets.supported === true,
+          items: asAgentPresetItems(value.agentPresets.items),
+          missing: value.agentPresets.missing === true,
+        }
+      : { supported: false, items: [], missing: false },
     gate: isRecord(value.gate)
       ? {
           enabled: value.gate.enabled === true,
