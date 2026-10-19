@@ -1,6 +1,7 @@
 # 聊天记录与消息拼接（规格）
 
-> 状态：**已实现（v0.8.0，2026-10-19；v0.8.1 修正日志元信息与空文本消息）**；本文既是规格也是现状记录。
+> 状态：**已实现（v0.8.0，2026-10-19；v0.8.1 修正日志元信息与空文本消息；v0.9.0 增加媒体落盘引用）**；
+> 本文既是规格也是现状记录。媒体下载细节见 [media.md](./media.md)。
 > 聊天记录落在「群绑定的项目」隐藏目录里、DSH 会话可读；发给 DSH 的 prompt 由
 > `lib/model/prompt.js` 统一拼接。真机验收待用户重启 GUI 后确认。
 >
@@ -49,9 +50,11 @@ OneBot 事件 → codec.toInternalEvent（segments → text，丢 at / reply 结
 <project>/
 └── .qq-relay/
     ├── .gitignore                 # 内容只有一行 `*`：自我忽略，永不进用户仓库
-    └── chat/
-        └── <group_id>/
-            └── YYYY-MM-DD.jsonl   # 本地时区按天分文件，append-only
+    ├── chat/
+    │   └── <group_id>/
+    │       └── YYYY-MM-DD.jsonl   # 本地时区按天分文件，append-only
+    └── media/
+        └── <group_id>/<日期>/<messageId>-<序号>.<ext>   # 图片 / 表情文件（v0.9.0，见 media.md）
 ```
 
 - 一个项目一个 `.qq-relay/`；同项目多群时按 `chat/<group_id>/` 分目录。
@@ -69,7 +72,8 @@ OneBot 事件 → codec.toInternalEvent（segments → text，丢 at / reply 结
   `groupId`、`card`、`mentionsSelf`、`replyToId`。
 - 读取端对缺字段补默认值（`''` / `false` / `null`），旧行照常可读。
 - 纯图片 / 表情等没有文本的消息只写日志（`text` 为空），**不进闸门、不调分类器**；`text` 写入前 trim。
-- 纯图片 / 表情等没有文本的消息只写日志（`text` 为空），**不进闸门、不调分类器**；`text` 写入前 trim。
+- 图片 / 表情消息新增可选 `media` 数组（`kind` / `status` / `path` / `bytes` / `contentType`，
+  失败带 `reason`），`path` 是相对项目根的路径；格式与下载规则见 [media.md](./media.md) §4。
 - `raw` 仍是 OneBot `raw_message`（含 CQ 码），调试 / 回放用。
 - bot 自己的发言继续以 `role: "bot"`、`nickname: "bot"` 写入（jev 上下文依赖）。
 
@@ -128,6 +132,8 @@ dsh-qq-relay:
   直通时追加原因（`@` / `引用` / `命令`）。
 - 行：`[HH:mm:ss] [显示名]（标记）正文`；显示名取 `card || nickname || userId`（统一两处逻辑）。
 - 标记：`@你`（`mentionsSelf`）、`引用 <被引用 message_id>`（`replyToId` 非空）；都没有则省略。
+- 媒体标记（v0.9.0）：`[图片：<相对路径>]` / `[表情：<相对路径>]` / `[表情 <faceText>]` /
+  `[媒体下载失败]`，紧跟名字标记、在正文之前；**纯媒体消息也能生成 prompt**（@ 带图会转给 DSH）。
 - 历史指针用**相对路径**（会话 cwd 即项目目录）：`.qq-relay/chat/<group_id>/`；
   不内联整段历史——agent 需要时自行 `read`。内联的仍然只有本批消息。
 - 空白文本 / 空白批次不生成 prompt（保持现状）；正文不截断（保持现状）。
@@ -193,7 +199,8 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 - `test/model.test.js`（扩充）：`rootFor` 多项目、新字段默认值、按群 prune、迁移幂等。
 - `test/settings.test.js`：`groupWorkspaces` / `chatRetentionDays` 的 pick / mask / merge / 校验；
   rebind 路由 400 / 409。
-- `test/relay.test.js`：会话 cwd 用群项目；prompt 带历史指针；聊天记录写进项目目录。
+- `test/relay.test.js`：会话 cwd 用群项目；prompt 带历史指针；聊天记录写进项目目录；媒体下载与路径。
+- `test/media.test.js`：媒体计划解析 / 下载 / 失败 / 归一化 / 清理（详见 [media.md](./media.md) §10）。
 - 真机：设置页配置群项目 → @ 一条 → 项目目录下出现 `.qq-relay/chat/<gid>/<日期>.jsonl`；
   普通消息 prompt 带群名 / 时间 / 历史指针；重启后记录仍在。
 
@@ -202,5 +209,6 @@ jev 上下文不变：仍走 chat log `readRecent`（按群项目目录解析）
 - **v0.8.0（已实现，2026-10-19）**：§3–§8 全部（隐藏目录 + 群项目 + prompt 拼接 + 迁移 + 设置页 + 重新绑定）；
   单测 `test/{project,prompt,migration}.test.js` 等共 144 个通过。
 - **v0.8.1（已实现，2026-10-19）**：聊天日志补全 @ / 引用元信息；无文本消息不进闸门（修正）。
+- **v0.9.0（已实现，2026-10-19）**：入向图片 / 表情落盘到 `.qq-relay/media/`，聊天记录与 prompt 引用相对路径（见 [media.md](./media.md)）。
 - **v0.8.2**：清理功能（保留天数 UI + 立即清理）；可选 `inbox/` 批次快照、可读 digest。
 - **Backlog**：`qq_history` 工具、聊天记录跨机同步、私聊 / 媒体。

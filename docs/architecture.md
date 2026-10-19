@@ -2,7 +2,7 @@
 
 > 状态：**方案定案（2026-10-18）；协议端实测通过、P1 已真机验收、P1.5 基础配置页已落地、
 > P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器已接（OpenRouter）、P3 `qq_send` 主动推送与
-> QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）已实现（2026-10-19）**。
+> QQ 侧审批已落地（2026-10-19）；P4 聊天记录与消息拼接（群项目 `.qq-relay/`）与 P4.1 入向媒体落盘已实现（2026-10-19）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -86,6 +86,7 @@ lib/
     ├── settings.js           # 设置页覆盖：层序合并、token 脱敏、settings.json 原子读写
     ├── mapping.js            # group_id ↔ sessionId 映射与持久化
     ├── chat-log.js           # 群消息 JSONL（按群项目路由）/ 读取 / 清理 / 旧日志迁移
+    ├── media.js              # 入向图片 / 表情下载到 .qq-relay/media/ 与清理（P4.1）
     ├── project.js            # 群项目目录解析、`.qq-relay/` 创建与自忽略 .gitignore（P4）
     ├── prompt.js             # 消息拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针（P4）
     ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
@@ -110,7 +111,7 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 单实例锁、聊天日志读写清理、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
 决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` 工具契约与注册、审批命令匹配与桥接、
-群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
+群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
 
@@ -120,7 +121,8 @@ P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；P4 新增 `
 OneBot WS 事件
   → codec 规范化（message_id / group_id / user_id / sender / message[] / raw_message）
   → 忽略 message_sent、去重（message_id）
-  → 落盘 chat log（群项目 <project>/.qq-relay/chat/<群号>/）
+  → 含图片 / 表情时先下载到 <project>/.qq-relay/media/（失败只记 failed）
+  → 落盘 chat log（<project>/.qq-relay/chat/<群号>/，媒体路径写进 media 数组）
   → 直通（@ / 引用 / 命令）或 gate（快路 / 慢路；分类器未接时普通消息 fail closed）
   → relay.dispatch（prompt 拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针）
   → ctx.sessionController.prompt({sessionId, content, source})
@@ -179,7 +181,7 @@ ctx.on('agent/error', ...)          # 失败提示
 - **提示注入**：群成员文本一律视为不可信输入；工作目录限定；操作留审计日志。
 - **本地接口**：NapCat WS 只监听回环地址；启用 access_token；不暴露公网。
 - **隐私**：聊天日志落在群项目内的 `.qq-relay/`（自忽略、不进 git），默认**永久保留**
-  （`chatRetentionDays: 0`）；需要时配天数清理。决策日志仍在 storage 下按 7 天保留。
+  （`chatRetentionDays: 0`）；需要时配天数清理（媒体按日期目录一起清）。决策日志仍在 storage 下按 7 天保留。
 
 ## 7. 运行前提
 

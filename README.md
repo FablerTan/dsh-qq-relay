@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.8.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
+当前 **v0.9.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页（设置 →「QQ 机器人」）
 已落地（2026-10-19）；P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）。设计见 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
@@ -33,7 +33,8 @@ DSH 与 QQ 之间的**双向桥**：
 消息闸门骨架与收尾（P2.1/P2.2：去抖 / 最小间隔 / 慢路 / 状态持久化 / 决策日志 / 发送队列）、
 jev 分类器（P2.3：OpenRouter `typesafe/jev-1.14`，阈值判定 + fail closed）、
 DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）、
-群项目目录与聊天记录 `.qq-relay/` + prompt 拼接（P4，见 [chat-context.md](./docs/chat-context.md)）。
+群项目目录与聊天记录 `.qq-relay/` + prompt 拼接（P4，见 [chat-context.md](./docs/chat-context.md)）、
+入向图片 / 表情落盘与路径引用（P4.1，见 [media.md](./docs/media.md)）。
 **仍未定案**：群审批（按钮）、媒体收发、client 面板增强、聊天记录清理 UI——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -56,7 +57,7 @@ dsh-qq-relay/
 │   │   ├── tools.js      # qq_send 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   └── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ view（设置页组件）
@@ -80,7 +81,8 @@ dsh-qq-relay/
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
-| [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接（v0.8.0 规格）：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
+| [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
+| [docs/media.md](./docs/media.md) | 入向媒体落盘：图片 / 表情下载到 `.qq-relay/media/`、聊天记录与 prompt 里的路径 | 改媒体 / 排查图片下载时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送：契约、安全、离线队列、验证 | 改工具 / 排查推送失败时 |
 | [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
 | [docs/roadmap.md](./docs/roadmap.md) | 分期、验收标准、风险与用户前置动作 | 排期 / 决定下一步时 |
@@ -115,6 +117,17 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### v0.9.0 入向媒体落盘（2026-10-19）
+
+- 入向 CQ 图片 / 贴纸 / 商城表情下载到群项目 `.qq-relay/media/<群号>/<日期>/<messageId>-<序号>.<ext>`，
+  聊天记录新增 `media` 数组（`kind` / `status` / `path` / `bytes` / `contentType`，失败带 `reason`）。
+- `path` 是相对项目根（会话 cwd）的路径，agent 可直接 read；原始 CQ 码仍保留在 `raw`。
+- prompt 追加媒体标记：`[图片：<相对路径>]` / `[表情：<相对路径>]` / `[表情 <faceText>]` / `[媒体下载失败]`；
+  **纯媒体消息（无文本）也能生成 prompt**，@ 带图会真正转给 DSH。
+- 下载规则：只接受 http(s)、10 秒超时、单文件 20 MiB、单消息最多 10 个；失败不阻断消息流。
+- 媒体默认不自动删除；配了 `chatRetentionDays > 0` 时按日期目录一起清理。
+- 新增 `lib/model/media.js`、`docs/media.md`、`test/media.test.js`；单测 157 个。
+- host 半身改动，需重启 profile GUI 生效。
 ### v0.8.1 聊天日志元信息与空文本修正（2026-10-19）
 
 - 修掉聊天日志丢元信息的问题：`codec.toChatLogRecord` 现在写入 `groupId` / `card` /

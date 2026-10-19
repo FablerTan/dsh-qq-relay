@@ -58,6 +58,51 @@ test('prompt：直通原因标签（@ / 引用 / 命令）', () => {
   assert.ok(!noReason.includes('直通'), noReason)
 })
 
+test('prompt：媒体标记（图片 / 表情 / face / 失败）与纯媒体行', () => {
+  const imageOnly = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{
+      text: '',
+      time: T,
+      nickname: 'TS',
+      media: [{ kind: 'image', status: 'saved', path: '.qq-relay/media/100/2026-10-19/1-0.png' }],
+    }],
+  })
+  assert.ok(imageOnly.includes('新消息 1 条'), imageOnly)
+  assert.ok(imageOnly.includes('[11:21:39] [TS] [图片：.qq-relay/media/100/2026-10-19/1-0.png]'), imageOnly)
+
+  const withText = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{
+      text: '这是什么',
+      time: T,
+      nickname: 'TS',
+      media: [{ kind: 'sticker', status: 'saved', path: '.qq-relay/media/100/x.gif' }],
+    }],
+  })
+  assert.ok(withText.includes('[表情：.qq-relay/media/100/x.gif] 这是什么'), withText)
+
+  const face = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{ text: '', time: T, nickname: 'TS', media: [{ kind: 'face', status: 'metadata', text: '/失眠' }] }],
+  })
+  assert.ok(face.includes('[表情 /失眠]'), face)
+
+  const failed = formatIncomingPrompt({
+    groupId: 100,
+    groupName: '测试群',
+    now: T,
+    messages: [{ text: '图呢', time: T, nickname: 'TS', media: [{ kind: 'image', status: 'failed', reason: 'timeout' }] }],
+  })
+  assert.ok(failed.includes('[媒体下载失败] 图呢'), failed)
+})
+
 test('prompt：群名缺省 / 显示名回退 / 空批次', () => {
   assert.equal(formatIncomingPrompt({ groupId: 7, messages: [] }), '')
   assert.equal(formatIncomingPrompt({ groupId: 7, messages: null }), '')

@@ -5,14 +5,14 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { normalizeConfig } from '../lib/model/config.js'
 import { createMappingStore } from '../lib/model/mapping.js'
 import { createStateStore } from '../lib/model/state.js'
-import { createChatLog } from '../lib/model/chat-log.js'
+import { createChatLog, localDateKey } from '../lib/model/chat-log.js'
 import { chatRootFor, ensureRelayDir, projectDirFor } from '../lib/model/project.js'
 import { createRelay } from '../lib/controller/relay.js'
 
@@ -98,7 +98,7 @@ function createHarness(t, options = {}) {
     },
     retentionDays: 7,
   })
-  const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog, classifier: options.classifier ?? null, interceptors: options.interceptors ?? [] })
+  const relay = createRelay({ ctx, config, logger: null, client, api, mapping, state, chatLog, classifier: options.classifier ?? null, interceptors: options.interceptors ?? [], fetchImpl: options.fetchImpl ?? null })
   relay.start()
 
   t.after(() => relay.stop())
@@ -189,6 +189,83 @@ test('relay：聊天日志与 .qq-relay 落在群项目目录（含 @ / 引用�
   const quote = records.find((record) => record.messageId === '73')
   assert.equal(quote.replyToId, '42', '日志要保留引用元信息')
   assert.equal(quote.mentionsSelf, false)
+})
+
+test('relay：图片消息下载到 .qq-relay/media 并写进聊天日志', async (t) => {
+  const body = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (name) => (String(name).toLowerCase() === 'content-type' ? 'image/png' : null) },
+    async arrayBuffer() { return body },
+  })
+  const { relay, dir } = createHarness(t, { fetchImpl })
+  relay.handleRawEvent(groupEvent({
+    message_id: 81,
+    message: [{ type: 'image', data: { file: 'x.png', url: 'https://example.com/x.png', sub_type: 0 } }],
+    raw_message: '[CQ:image,file=x.png,url=https://example.com/x.png]',
+  }))
+  await wait(30)
+
+  const dateKey = localDateKey(1792340775 * 1000)
+  const mediaFile = join(dir, '.qq-relay', 'media', '100', dateKey, '81-0.png')
+  assert.equal(existsSync(mediaFile), true, '图片应下载到 .qq-relay/media')
+  assert.equal(readFileSync(mediaFile).length, body.length)
+
+  const chatDir = join(dir, '.qq-relay', 'chat', '100')
+  const records = readFileSync(join(chatDir, readdirSync(chatDir)[0]), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  const record = records.find((item) => item.messageId === '81')
+  assert.equal(record.media.length, 1)
+  assert.equal(record.media[0].status, 'saved')
+  assert.equal(record.media[0].path, '.qq-relay/media/100/' + dateKey + '/81-0.png')
+  assert.equal(existsSync(join(dir, record.media[0].path)), true, '日志里的相对路径可直接访问')
+})
+
+test('relay：@ 带图且无文本时，prompt 带媒体标记并转给 DSH', async (t) => {
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (name) => (String(name).toLowerCase() === 'content-type' ? 'image/png' : null) },
+    async arrayBuffer() { return Buffer.from([1, 2, 3]) },
+  })
+  const { relay, calls } = createHarness(t, { fetchImpl })
+  relay.handleRawEvent(groupEvent({
+    message_id: 82,
+    message: [
+      { type: 'at', data: { qq: '999' } },
+      { type: 'image', data: { file: 'y.png', url: 'https://example.com/y.png', sub_type: 0 } },
+    ],
+    raw_message: '[CQ:at,qq=999][CQ:image,file=y.png,url=https://example.com/y.png]',
+  }))
+  await wait(30)
+
+  assert.equal(calls.prompt.length, 1)
+  const text = calls.prompt[0].content[0].text
+  assert.ok(text.includes('（直通：@）'), text)
+  assert.ok(text.includes('（@你）'), text)
+  assert.ok(text.includes('[图片：.qq-relay/media/100/'), text)
+})
+
+test('relay：媒体下载失败时聊天日志记 failed 且不阻断消息', async (t) => {
+  const fetchImpl = async () => ({ ok: false, status: 403, headers: { get: () => null }, async arrayBuffer() { return Buffer.alloc(0) } })
+  const { relay, calls, dir } = createHarness(t, { fetchImpl })
+  relay.handleRawEvent(groupEvent({
+    message_id: 83,
+    message: [
+      { type: 'at', data: { qq: '999' } },
+      { type: 'image', data: { file: 'z.png', url: 'https://example.com/z.png', sub_type: 0 } },
+    ],
+    raw_message: '[CQ:at,qq=999][CQ:image,file=z.png,url=https://example.com/z.png]',
+  }))
+  await wait(30)
+
+  const chatDir = join(dir, '.qq-relay', 'chat', '100')
+  const records = readFileSync(join(chatDir, readdirSync(chatDir)[0]), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  const record = records.find((item) => item.messageId === '83')
+  assert.equal(record.media[0].status, 'failed')
+  assert.equal(record.media[0].reason, 'http-403')
+  assert.equal(calls.prompt.length, 1, '下载失败不阻断直通')
+  assert.ok(calls.prompt[0].content[0].text.includes('[媒体下载失败]'))
 })
 
 test('relay：同一条 message_id 只处理一次', async (t) => {

@@ -5,6 +5,8 @@
 > P3 `qq_send` 主动推送与 QQ 侧审批已落地（2026-10-19）**。
 > **P4 聊天记录与消息拼接**：`.qq-relay/` 隐藏目录 + 群项目目录 + prompt 拼接，
 > v0.8.0 已实现（2026-10-19；真机验收待用户重启 GUI 后确认），见 [chat-context.md](./chat-context.md)。
+> **P4.1 入向媒体落盘**：图片 / 表情下载进 `.qq-relay/media/` 并写进聊天记录与 prompt，
+> v0.9.0 已实现（2026-10-19），见 [media.md](./media.md)。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -126,7 +128,8 @@
 - ✅ 审批：文本命令（同意 / 拒绝），超时按拒绝（2026-10-19 已实现，见 [approval.md](./approval.md)；
   真机验证待用户重启 dwdev 后在 QQ 群里触发需要审批的操作确认）。
 - 私聊（private）：与群共享映射体系还是独立会话，待定。
-- 媒体：入向图片 / 文件转 DSH 附件；出向图片 / 文件上传发送。
+- 媒体：入向图片 / 表情已落盘（v0.9.0，见 [media.md](./media.md)）；仍缺视频 / 语音 / 群文件、
+  入向转 DSH 附件、出向图片 / 文件上传发送。
 - ✅ DSH → QQ 主动推送工具 `qq_send`（2026-10-19 已实现，契约见 [tools.md](./tools.md)；
   真机验证待用户重启 dwdev 后在任意会话调用确认）。
 - client 半身面板增强：映射管理、闸门状态、最近消息（基础配置页已在 P1.5 交付，见 [client.md](./client.md)）。
@@ -160,6 +163,32 @@
 - `git status` 在该项目里保持干净（聊天记录被自我忽略）。
 - 重启 GUI 后历史记录仍在；旧全局日志迁移后不重复迁移。
 - `pnpm check` / `pnpm test` 全绿。
+
+## P4.1 入向媒体落盘（v0.9.0 已实现，2026-10-19）
+
+目标：图片 / 表情下载到群项目本地，聊天记录与 prompt 引用对应路径。规格与实现记录见
+[media.md](./media.md)。
+
+### 范围
+
+- `<project>/.qq-relay/media/<群号>/<日期>/<messageId>-<序号>.<ext>`。
+- 聊天记录新增 `media` 数组（`kind` / `status` / `path` / `bytes` / `contentType` / `reason`）。
+- prompt 追加媒体标记；纯媒体消息也能生成 prompt（@ 带图可转给 DSH）。
+- 只收 http(s)、10 秒超时、单文件 20 MiB、单消息最多 10 个；失败不阻断消息流。
+- `chatRetentionDays > 0` 时按日期目录清理媒体。
+
+### 验收状态（2026-10-19）
+
+- ✅ 单测：计划解析 / 下载 / 失败分类 / 归一化 / 清理 / prompt 标记，
+  共 157 个全过；`pnpm check` 全绿。
+- ⏳ 真机验收：重启 dwdev GUI 后发图确认文件与路径。
+
+### 验收
+
+- 群里发图 → `<project>/.qq-relay/media/<群号>/<日期>/` 出现文件，聊天记录 `media[0].path` 指向它。
+- @ 带图（无文字）→ DSH prompt 里出现 `[图片：.qq-relay/media/...]`。
+- 图片下载失败 → 聊天记录 `status: "failed"`，prompt 显示 `[媒体下载失败]`，消息不丢。
+- 单测与 `pnpm check` 全绿。
 
 ## 风险登记
 
