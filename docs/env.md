@@ -1,4 +1,4 @@
-# 环境一键配置（P12 / v0.23.0；v0.25.0 起「一键修复」逐步补全；v0.25.2 起按实际容器引擎给动作）
+# 环境一键配置（P12 / v0.23.0；v0.25.0 起「一键修复」逐步补全；v0.25.3 起只认 Colima）
 
 把 [onebot-channel.md §3](./onebot-channel.md) 里「装 Docker / 起 Colima / 拉 NapCat /
 扫码登录 / 写 OneBot 配置 / 回填插件配置」的手工步骤，收敛成插件面板里的**「环境」二级页**：
@@ -14,17 +14,17 @@
 
 | 平台 | 支持 | 容器引擎 | 说明 |
 |---|---|---|---|
-| macOS | ✅ | Colima / OrbStack / Docker Desktop | 按 `docker context ls` 与 endpoint 判断**这台机器实际在用哪个**，再给启动 / 安装动作（v0.25.2） |
+| macOS | ✅ | Colima（`colima start`） | 默认路径；装 Colima 需要 Homebrew |
 | Linux | ✅ | 已有 Docker daemon | 步骤 1 / 2 通常直接通过；不执行安装 |
 | Windows / WSL | ❌ | — | 页面只显示「暂不支持」，不执行任何动作 |
 
-> 为什么不假定 Colima：docker CLI 的 endpoint 由 docker context / `DOCKER_HOST` 决定，
-> 可能指向 OrbStack（`~/.orbstack/run/docker.sock`）或 Docker Desktop，也可能指向一个**已经卸装**
-> 的引擎（典型报错 `failed to connect … ~/.orbstack/run/docker.sock: no such file`，
-> 同时 `docker --context colima` 报 `context not found`）。v0.25.1 只会盲试 `colima`，
-> 在这类机器上给出的动作全是无效的；v0.25.2 改成先认引擎、再按引擎给动作。
-
 只支持 **Docker + NapCat**；macOS 原生 Shell 方案不列入（见 [onebot-channel.md](./onebot-channel.md) §2）。
+
+> **只认 Colima / 已有 daemon**（v0.25.3）：v0.25.2 曾按 docker endpoint 识别 OrbStack / Docker Desktop
+> 并给 `start-orbstack` / `install-orbstack` 等动作，实测收益不足（真机上反而把人引向修 OrbStack），
+> 已整段回滚。如果 docker endpoint 指向别的引擎（残留的 OrbStack / Docker Desktop context 等），
+> 环境页会显示 docker 的原始报错；装上 / 启动 Colima 后执行 `docker context use colima`
+> （`colima start` 会创建该 context），再点「重新检测」即可。
 
 ## 2. `environment` 配置段
 
@@ -63,7 +63,7 @@
 | # | id | 判定 | ok / warn / error | 可用动作 |
 |---|---|---|---|---|
 | 1 | `docker-cli` | `docker --version` | ok = 退出码 0 | `install-docker`（仅 macOS，需确认） |
-| 2 | `docker-daemon` | `docker info --format {{.ServerVersion}}`；先读 `docker context ls`，直连失败时逐个试其它 context | 失败 = error「容器引擎未运行：docker 当前指向 <引擎>」+ 可执行动作；未识别引擎时给 `docker info` 原文 | 按引擎给：`start-orbstack` / `start-docker-desktop` / `install-orbstack`（endpoint 指向它时）、`start-daemon` / `restart-daemon`（Colima，按 `colima status` 区分）、`install-docker`（都没有时；安装类需确认） |
+| 2 | `docker-daemon` | `docker info --format {{.ServerVersion}}`（失败时再用 `docker --context colima` 试一次） | 失败 = error「容器引擎未运行：<docker stderr 原文>」；Colima 在跑时会提示重启引擎 | `start-daemon` / `restart-daemon`（按 `colima status` 区分，仅 macOS，需确认） |
 | 3 | `compose-file` | 环境目录存在 `compose.yaml` / `docker-compose.yml`，且含非空 `WEBUI_TOKEN` | 无文件 = error；缺 token = warn | `write-compose` |
 | 4 | `container` | `docker inspect --format {{.State.Status}} <container_name>` | running = ok；存在但非 running = warn；不存在 = error | `compose-up` |
 | 5 | `login` | `<dir>/data/config/onebot11_<uin>.json` 是否存在 | 存在 = ok（QQ 已登录）；否则 warn | `open-webui`（配置了 token 时） |
@@ -84,8 +84,7 @@
 v0.25.0 起 `fix-all` 改成**逐轮推进**：
 
 1. 探测 → 按 `computeFixSequence` 排计划（只取当前未通过步骤自己列出的动作，按
-   `install-docker → install-orbstack → start-orbstack → start-docker-desktop → start-daemon →
-   restart-daemon → write-compose → compose-up → write-onebot → backfill-config`）；
+   `install-docker → start-daemon → write-compose → compose-up → write-onebot → backfill-config`）；
 2. 执行计划里的**第一个**动作；
 3. 重新探测，回到 1；被 skip 的步骤在前置补齐后自然变成 error，下一步动作随之出现；
 4. 直到计划为空（或需要确认 / 动作失败 / 同一动作连续两次没有推进 / 卸载）；
@@ -95,7 +94,6 @@ v0.25.0 起 `fix-all` 改成**逐轮推进**：
 安装 Docker / 启动 / 重启容器引擎也进了计划（页面确认后执行），否则新机器一次点击只能写个 compose，
 永远到不了 NapCat。安装 / 启动 / 重启引擎 / 覆盖已存在的 compose 需要 `confirm: true`：
 页面按 `fixPlan.needsConfirm` 弹一次确认，host 侧同样强制校验（不只靠页面）。
-`open -a OrbStack` / `open -a Docker`（v0.25.2）只是拉起已装的 App，不需要确认。
 
 ## 5. 动作清单（白名单）
 
@@ -107,15 +105,12 @@ host 只执行下表动作；命令一律 `spawn(bin, args, { shell: false })`�
 | `install-docker` | command | `brew install colima docker docker-compose` | ✅ | 仅 macOS；耗时数分钟 |
 | `start-daemon` | command | `colima start --cpu 4 --memory 4 --disk 60 --vm-type vz` | ✅ | 仅 macOS；`colima status` 显示 VM 未运行时用 |
 | `restart-daemon` | command | `colima restart` | ✅ | 仅 macOS；Colima 在跑但 Docker daemon 连不上时用（会重启 VM 与容器） |
-| `start-orbstack` | command | `open -a OrbStack` | 否 | 仅 macOS；docker 当前指向 OrbStack 且它的 socket 不存在 / 没响应时用（执行后最多等 25 秒让 daemon 起来再重探） |
-| `start-docker-desktop` | command | `open -a Docker` | 否 | 仅 macOS；docker 当前指向 Docker Desktop 但它没在运行时用 |
-| `install-orbstack` | command | `brew install --cask orbstack` | ✅ | 仅 macOS；docker 指向 OrbStack 而本机没装它时用（也可以改用 Colima） |
 | `write-compose` | fs | 写 `<dir>/compose.yaml`（端口只绑 `127.0.0.1`，三个数据卷） | ✅ | 需要已配置 WebUI token；已存在文件时覆盖（页面总是先确认） |
 | `compose-up` | command | `docker compose -f <dir>/compose.yaml up -d` | 否 | 首次会拉镜像 |
 | `restart-napcat` | command | `docker compose -f <dir>/compose.yaml restart napcat` | 否 | 写 OneBot 配置后自动调用；**不在**「一键修复」序列里（避免多余重启） |
 | `write-onebot` | fs | 补 `token` / `port` / `messagePostFormat=array` / `reportSelfMessage=false`，先备份 `.bak-<时间戳>`，再重启 NapCat | ✅ | 需要登录后的 `onebot11_<uin>.json`；token 取插件 access_token → OneBot 现有 token → 两边都空时生成随机 32 位 hex（随后回填） |
 | `backfill-config` | callback | 用 OneBot 配置的端口 / token / 登录 QQ 号写插件 `wsUrl` / `accessToken` / `selfId`，然后重建连接 | 否 | 复用配置页的 `saveConfig`，两条路径一致 |
-| `fix-all` | chain | **逐轮推进**：探测 → 计划里第一个动作 → 再探测；计划含 `install-docker / install-orbstack / start-orbstack / start-docker-desktop / start-daemon / restart-daemon / write-compose / compose-up / write-onebot / backfill-config` | 计划含安装 / 启动 / 重启引擎 / 覆盖 compose 时 ✅ | 不含打开 WebUI（扫码只能手动）；每轮之间自动重探 |
+| `fix-all` | chain | **逐轮推进**：探测 → 计划里第一个动作 → 再探测；计划含 `install-docker / start-daemon / restart-daemon / write-compose / compose-up / write-onebot / backfill-config` | 计划含安装 / 启动 / 重启引擎 / 覆盖 compose 时 ✅ | 不含打开 WebUI（扫码只能手动）；每轮之间自动重探 |
 | `open-webui` | link | 返回 `http://127.0.0.1:6099/webui?token=…` | 否 | token 来自 environment 配置 |
 
 - 命令类动作**后台执行**：HTTP 立即返回 `accepted:true`，页面靠 `status.running` +
@@ -129,17 +124,10 @@ host 只执行下表动作；命令一律 `spawn(bin, args, { shell: false })`�
   `already running, ignoring`，但 `docker info` 仍失败）。这时把该动作标记为「没能自动完成」、
   记下该步骤的说明，然后继续执行后面**独立**的步骤（如生成 compose），不再整条链停在这一步；
   收尾日志逐条列出没完成的动作与原因（含 docker / colima 的 stderr 原文，而不是「退出码 1」）。
-- **docker endpoint 兜底**（v0.25.1 起，v0.25.2 泛化）：`docker info` 直连失败时，读
-  `docker context ls` 并**逐个**用 `docker --context <name> info` 试（不再写死 colima）；谁通了
-  就本轮后续所有 docker 命令（inspect / compose up / restart）都带上它，并在证据里写明
-  「直连失败：<stderr>；已自动改用 docker --context <name>」。这覆盖插件进程环境里
-  `DOCKER_HOST` / docker context 配错的情况。
-- **按引擎给动作**（v0.25.2）：失败时先用 endpoint 判断 docker 指向哪个引擎
-  （`/.colima/` → Colima、`/.orbstack/` → OrbStack、`/.docker/run/docker.sock` → Docker Desktop），
-  再结合「本机装没装这个引擎」给动作：装了 → 「启动 OrbStack / Docker Desktop」；没装 →
-  「安装 OrbStack」并提示也可以改用 Colima；都识别不出才退回 Colima 那套（启动 / 重启 / 安装）。
-  这样「Colima 明明在跑，docker 却报 OrbStack socket 不存在」的机器不会再拿到无效的
-  `colima start` 建议；证据里同时列出 `--context <name>` 的失败原因与已知 context 列表。
+- **docker endpoint 兜底**（v0.25.1）：`docker info` 直连失败时，在 macOS 上自动用
+  `docker --context colima` 再试一次；成功则本轮后续所有 docker 命令（inspect / compose up /
+  restart）都带上该 context，并在步骤证据里写明「直连失败：<stderr>；已自动改用 --context colima」。
+  这覆盖插件进程环境里 `DOCKER_HOST` / docker context 配错的情况。
 
 ## 6. HTTP 契约
 
@@ -188,7 +176,7 @@ POST /dsh-qq-relay/api/env/action   → body { action, confirm? } → { ok, valu
 
 ## 8. 安全边界
 
-- 只跑白名单命令：`docker`、`docker compose`、`brew`、`colima`、`open -a OrbStack` / `open -a Docker`；不 `sudo`，
+- 只跑白名单命令：`docker`、`docker compose`、`brew`、`colima`；不 `sudo`，
   不下载可执行文件（brew 包与 docker 镜像除外），不执行用户输入的命令。
 - 安装 / 启动引擎 / 写 compose / 写 OneBot 必须显式 `confirm: true`；页面用 `window.confirm`
   二次确认（`write-compose` 总是确认：已存在的 compose 文件会被覆盖）。
@@ -212,10 +200,10 @@ POST /dsh-qq-relay/api/env/action   → body { action, confirm? } → { ok, valu
 
 ## 10. 验证
 
-- `pnpm test`：**299** 个用例全过（`test/env.test.js` 16 个：配置 / compose / OneBot / 求值 /
+- `pnpm test`：**297** 个用例全过（`test/env.test.js` 14 个：配置 / compose / OneBot / 求值 /
   argv / 日志 / controller 刷新 + 写 OneBot + 回填 + open-webui + 确认制 / 修复序列逐步展开 /
   一键修复逐步补全（装引擎 → 起容器）/ token 双空生成 / 引擎启停区分与可读错误 /
-  docker context 兜底 / 动作不推进时跳过继续 / endpoint 归属引擎 / 指向 OrbStack 的机器给安装动作）。
+  docker context 兜底 / 动作不推进时跳过继续）。
 - `pnpm check`：语法 + tsc + 文档配对全绿。
 - 真机验收清单（重启 dwdev GUI 后）：
   1. 「环境」页 7 步全绿（本机已有 NapCat 环境时）；
@@ -230,9 +218,6 @@ POST /dsh-qq-relay/api/env/action   → body { action, confirm? } → { ok, valu
   8. Docker endpoint 连不上（插件进程里 `DOCKER_HOST` / context 配错）时：步骤显示 ok，证据里
      有「直连失败：<stderr>；已自动改用 --context colima」，后续 docker 命令都带该 context；
   9. Colima 在跑但 `docker info` 仍失败：出现「重启容器引擎」按钮；一键修复会尝试它，
-     仍失败时日志写明 stderr、跳过它并继续能做的步骤（如生成 compose），不会卡死在同一动作；
-  10. docker 指向别的引擎（例如另一台机器装了 OrbStack，endpoint 是 `~/.orbstack/run/docker.sock`
-      但没跑）：步骤说明写明「docker 当前指向 OrbStack」，按钮是「启动 OrbStack」；本机没装它时
-      是「安装 OrbStack」，不再出现「启动容器引擎（colima）」这种无效动作。
+     仍失败时日志写明 stderr、跳过它并继续能做的步骤（如生成 compose），不会卡死在同一动作。
 - 命令类动作的真机执行（`brew install` / `colima start` / `compose up`）会改用户机器：
   验收时只对已就绪环境跑只读动作；安装路径用单测 + 手动命令确认。

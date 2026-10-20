@@ -20,7 +20,6 @@ import {
   ENV_ONEBOT_PORT,
   buildActionArgv,
   computeFixSequence,
-  engineOfEndpoint,
   createLogBuffer,
   evaluateEnvSteps,
   maskEnvConfig,
@@ -59,26 +58,7 @@ function goodProbe(overrides = {}) {
     platform: 'darwin',
     docker: { ok: true, version: 'Docker version 29.9.1', error: '' },
     compose: { ok: true, version: 'Docker Compose version 5.6.0', error: '' },
-    daemon: {
-      ok: true,
-      serverVersion: '29.9.1',
-      provider: '',
-      directError: '',
-      error: '',
-      endpoint: 'unix:///tmp/colima/default/docker.sock',
-      endpointExists: true,
-      attempts: [],
-    },
-    contexts: {
-      current: 'colima',
-      list: [{ name: 'colima', endpoint: 'unix:///tmp/colima/default/docker.sock', current: true }],
-      error: '',
-    },
-    engines: {
-      colima: { installed: true, running: true },
-      orbstack: { installed: false },
-      dockerDesktop: { installed: false },
-    },
+    daemon: { ok: true, serverVersion: '29.9.1', provider: '', directError: '', error: '' },
     colima: { running: true, error: '' },
     composeFile: { path: '/tmp/napcat/compose.yaml', tokenPresent: true, containerName: 'napcat', ports: [], error: '' },
     container: { name: 'napcat', state: 'running', running: true, error: '' },
@@ -210,22 +190,6 @@ test('env：wsUrl 解析与动作 argv 白名单', () => {
   assert.deepEqual(restart.args, ['compose', '-f', '/tmp/napcat/compose.yaml', 'restart', 'napcat'])
 
   assert.equal(buildActionArgv('compose-up', { platform: 'darwin', composePath: '' }).error !== undefined, true)
-
-  // 引擎是 OrbStack / Docker Desktop 时用 open 拉起，不要硬套 colima。
-  assert.deepEqual(buildActionArgv('start-orbstack', { platform: 'darwin' }), { bin: 'open', args: ['-a', 'OrbStack'], cwd: '' })
-  assert.deepEqual(buildActionArgv('start-docker-desktop', { platform: 'darwin' }), { bin: 'open', args: ['-a', 'Docker'], cwd: '' })
-  assert.deepEqual(buildActionArgv('install-orbstack', { platform: 'darwin' }), { bin: 'brew', args: ['install', '--cask', 'orbstack'], cwd: '' })
-  assert.equal(buildActionArgv('start-orbstack', { platform: 'linux' }).error !== undefined, true)
-  assert.equal(buildActionArgv('install-orbstack', { platform: 'linux' }).error !== undefined, true)
-})
-
-test('env：docker endpoint 归到哪个容器引擎', () => {
-  assert.equal(engineOfEndpoint('unix:///Users/x/.colima/default/docker.sock'), 'colima')
-  assert.equal(engineOfEndpoint('unix:///Users/x/.orbstack/run/docker.sock'), 'orbstack')
-  assert.equal(engineOfEndpoint('unix:///Users/x/.docker/run/docker.sock'), 'docker-desktop')
-  assert.equal(engineOfEndpoint('unix:///var/run/docker.sock'), '')
-  assert.equal(engineOfEndpoint(''), '')
-  assert.equal(engineOfEndpoint(undefined), '')
 })
 
 test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
@@ -259,7 +223,6 @@ test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
   // 装好 CLI、引擎没起：容器步骤仍是 skip，序列里没有 compose-up（这是 v0.23.0 跳过 NapCat 的原因）。
   const engineDown = evaluateEnvSteps(goodProbe({
     daemon: { ok: false, serverVersion: '', error: 'daemon down' },
-    engines: { colima: { installed: true, running: false }, orbstack: { installed: false }, dockerDesktop: { installed: false } },
     colima: { running: false, error: 'colima is not running' },
     composeFile: { path: null, tokenPresent: false, containerName: 'napcat', ports: [], error: '' },
     container: { name: 'napcat', state: '', running: false, error: '' },
@@ -300,15 +263,7 @@ test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
 test('env：容器引擎失败区分「启动」与「重启」，错误可读', () => {
   const daemonError = 'failed to connect to the docker API at unix:///var/run/docker.sock'
   const failed = (colimaRunning) => evaluateEnvSteps(goodProbe({
-    daemon: {
-      ok: false, serverVersion: '', provider: '', directError: '', error: daemonError,
-      endpoint: '', endpointExists: null, attempts: [],
-    },
-    engines: {
-      colima: { installed: true, running: colimaRunning },
-      orbstack: { installed: false },
-      dockerDesktop: { installed: false },
-    },
+    daemon: { ok: false, serverVersion: '', provider: '', directError: '', error: daemonError },
     colima: { running: colimaRunning, error: colimaRunning ? '' : 'colima is not running' },
   }), DEFAULT_ENVIRONMENT)
 
@@ -324,53 +279,11 @@ test('env：容器引擎失败区分「启动」与「重启」，错误可读',
   assert.equal(runningStep.status, 'error')
   assert.deepEqual(runningStep.actions, ['restart-daemon'])
   assert.match(runningStep.detail, /重启容器引擎/u)
-
-  // docker 当前指向别的引擎（OrbStack 已装但没跑）→ 给「启动 OrbStack」，而不是让用户去启动 Colima。
-  const orbstackDown = evaluateEnvSteps(goodProbe({
-    daemon: {
-      ok: false, serverVersion: '', provider: '', directError: '', error: daemonError,
-      endpoint: 'unix:///Users/x/.orbstack/run/docker.sock', endpointExists: false, attempts: [],
-    },
-    engines: {
-      colima: { installed: false, running: false },
-      orbstack: { installed: true },
-      dockerDesktop: { installed: false },
-    },
-    contexts: {
-      current: 'orbstack',
-      list: [{ name: 'orbstack', endpoint: 'unix:///Users/x/.orbstack/run/docker.sock', current: true }],
-      error: '',
-    },
-    colima: { running: false, error: 'colima is not running' },
-  }), DEFAULT_ENVIRONMENT)
-  const orbStep = orbstackDown.steps.find((step) => step.id === 'docker-daemon')
-  assert.equal(orbStep.status, 'error')
-  assert.deepEqual(orbStep.actions, ['start-orbstack'])
-  assert.match(orbStep.detail, /OrbStack/u)
-  assert.match(orbStep.detail, /不存在/u)
-  assert.ok(orbStep.evidence.some((line) => line.includes('docker context：orbstack*')))
-
-  // 指向 OrbStack 但本机没装 → 安装 OrbStack（走确认制），不再瞎猜 Colima。
-  const orbstackMissing = evaluateEnvSteps(goodProbe({
-    daemon: {
-      ok: false, serverVersion: '', provider: '', directError: '', error: daemonError,
-      endpoint: 'unix:///Users/x/.orbstack/run/docker.sock', endpointExists: false, attempts: [],
-    },
-    engines: {
-      colima: { installed: false, running: false },
-      orbstack: { installed: false },
-      dockerDesktop: { installed: false },
-    },
-    colima: { running: false, error: 'colima is not running' },
-  }), DEFAULT_ENVIRONMENT)
-  assert.deepEqual(orbstackMissing.steps.find((step) => step.id === 'docker-daemon').actions, ['install-orbstack'])
+  assert.match(runningStep.detail, /failed to connect/u)
 
   // 直连失败、colima context 可用 → ok，并把原因写进证据。
   const viaContext = evaluateEnvSteps(goodProbe({
-    daemon: {
-      ok: true, serverVersion: '29.5.2', provider: 'colima', directError: daemonError, error: '',
-      endpoint: 'unix:///tmp/colima/default/docker.sock', endpointExists: true, attempts: [],
-    },
+    daemon: { ok: true, serverVersion: '29.5.2', provider: 'colima context', directError: daemonError, error: '' },
   }), DEFAULT_ENVIRONMENT)
   const contextStep = viaContext.steps.find((step) => step.id === 'docker-daemon')
   assert.equal(contextStep.status, 'ok')
@@ -706,15 +619,6 @@ test('env controller：docker 直连失败时自动改用 colima context', async
   const run = async (bin, args) => {
     calls.push([bin, ...args].join(' '))
     if (bin === 'colima' && args[0] === 'status') return { ok: true, code: 0, stdout: 'colima is running', stderr: '' }
-    if (bin === 'docker' && args[0] === 'context' && args[1] === 'ls') {
-      return {
-        ok: true,
-        code: 0,
-        stdout: '{"Current":true,"DockerEndpoint":"unix:///var/run/docker.sock","Name":"default"}\n'
-          + '{"Current":false,"DockerEndpoint":"unix:///Users/x/.colima/default/docker.sock","Name":"colima"}',
-        stderr: '',
-      }
-    }
     if (bin === 'docker' && args[0] === '--version') return { ok: true, code: 0, stdout: 'Docker version 29.9.1', stderr: '' }
     if (bin === 'docker' && args[0] === 'compose' && args.includes('version')) {
       return { ok: true, code: 0, stdout: 'Docker Compose version 5.6.0', stderr: '' }
@@ -771,61 +675,6 @@ test('env controller：docker 直连失败时自动改用 colima context', async
   assert.ok(calls.some((call) => call.includes('--context colima inspect')))
   const steps = Object.fromEntries(controller.status().steps.map((step) => [step.id, step]))
   assert.equal(steps.container.status, 'ok')
-})
-
-test('env controller：docker 指向 OrbStack 但本机没装时给「安装 OrbStack」', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-env-orbstack-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const orbSocket = 'unix:///Users/x/.orbstack/run/docker.sock'
-  const run = async (bin, args) => {
-    if (bin === 'colima' && args[0] === 'status') {
-      return { ok: false, code: 1, stdout: '', stderr: 'colima is not running', error: 'colima is not running' }
-    }
-    if (bin === 'docker' && args[0] === 'context' && args[1] === 'ls') {
-      return {
-        ok: true,
-        code: 0,
-        stdout: '{"Current":true,"DockerEndpoint":"' + orbSocket + '","Name":"orbstack"}\n'
-          + '{"Current":false,"DockerEndpoint":"unix:///Users/x/.colima/default/docker.sock","Name":"colima"}',
-        stderr: '',
-      }
-    }
-    if (bin === 'docker' && args[0] === '--version') return { ok: true, code: 0, stdout: 'Docker version 29.9.1', stderr: '' }
-    if (bin === 'docker' && args[0] === 'compose' && args.includes('version')) {
-      return { ok: true, code: 0, stdout: 'Docker Compose version 5.6.0', stderr: '' }
-    }
-    if (bin === 'docker' && args[0] === 'info') {
-      return {
-        ok: false,
-        code: 1,
-        stdout: '',
-        stderr: 'failed to connect to the docker API at ' + orbSocket + ': no such file or directory',
-      }
-    }
-    if (bin === 'docker' && args[0] === '--context' && args.includes('info')) {
-      return { ok: false, code: 1, stdout: '', stderr: 'context "colima": context not found' }
-    }
-    return { ok: true, code: 0, stdout: '', stderr: '' }
-  }
-  const controller = createEnvController({
-    getConfig: () => ({ enabled: true, dir, webuiToken: 'tok' }),
-    getRelayInfo: () => ({ started: true, connected: false, selfId: 0, wsUrl: 'ws://127.0.0.1:3001', accessToken: '', accessTokenConfigured: false }),
-    backfill: () => ({ ok: true }),
-    run,
-    platform: 'darwin',
-  })
-  t.after(() => controller.dispose())
-
-  const status = await controller.refresh()
-  const daemon = status.steps.find((step) => step.id === 'docker-daemon')
-  assert.equal(daemon.status, 'error')
-  assert.deepEqual(daemon.actions, ['install-orbstack'])
-  assert.match(daemon.detail, /OrbStack/u)
-  assert.ok(daemon.evidence.some((line) => line.includes('--context colima') && line.includes('context not found')))
-  assert.ok(daemon.evidence.some((line) => line.includes('docker context：orbstack*')))
-  assert.ok(daemon.evidence.join('\n').includes('orbstack/run/docker.sock'))
-  assert.deepEqual(status.fixPlan.sequence, ['install-orbstack', 'write-compose'])
-  assert.equal(status.fixPlan.needsConfirm, true)
 })
 
 test('env controller：动作没有推进时跳过它，继续后面的步骤', async (t) => {

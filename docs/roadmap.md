@@ -536,20 +536,16 @@
 - **测试**：`test/env.test.js` 14 个（新增引擎启停区分与可读错误 / context 兜底 / 不推进跳过）；
   总数 **297**。
 
-### 已落地（v0.25.2，2026-10-20）：先认容器引擎，再给动作
+### 已回滚（v0.25.3，2026-10-20）：移除 v0.25.2 的引擎识别
 
-- 用户在**另一台 Mac mini** 的真机反馈：环境页卡在「容器引擎未运行：failed to connect …
-  ~/.orbstack/run/docker.sock …；改用 --context colima 仍失败：context "colima": context not found」——
-  docker endpoint 被 context 指到 OrbStack，本机没装 / 没跑它，也没有 colima context；
-  v0.25.1 的兜底写死 colima，给出的动作全是无效的（「启动容器引擎」= colima start）。
-- **context 泛化**：探测新增 `docker context ls --format '{{json .}}'`；`docker info` 失败时逐个
-  `docker --context <name> info` 试，谁通了本轮后续 docker 命令都带它。
-- **引擎识别**：`model/env.js` 新增 `engineOfEndpoint`；结合 `colima status`、
-  `/Applications/OrbStack.app` / `~/.orbstack`、`/Applications/Docker.app` 判断「指向哪个引擎 + 装没装」，
-  给 `start-orbstack` / `start-docker-desktop` / `install-orbstack`（安装需确认）；识别不出才退回
-  Colima 三件套。`open -a …` 是立即返回的，之后最多等 25 秒 daemon 再重探。
-- **测试**：`test/env.test.js` 16 个（新增 endpoint 归属引擎 / 指向 OrbStack 的机器给安装动作）；
-  总数 **299**。
+- v0.25.2 曾按 docker endpoint 识别 Colima / OrbStack / Docker Desktop，并给
+  `start-orbstack` / `start-docker-desktop` / `install-orbstack` 动作。真机结论：收益不足——
+  另一台 Mac mini 的 OrbStack 装了一半、context 指向已卸装的 socket，按引擎给动作反而把人引向修
+  OrbStack，而实际更省事的做法是直接用 Colima。
+- v0.25.3 整段 `git revert`：环境页恢复 v0.25.1 行为（macOS 只认 Colima，`--context colima` 兜底），
+  endpoint 指向别的引擎时以 docker 原始报错为准，处理办法是启动 / 安装 Colima 后
+  `docker context use colima`。
+- **测试**：回滚掉两个用例，总数回到 **297**（`test/env.test.js` 14 个）。
 
 ### 设计草案（原始，2026-10-19）
 

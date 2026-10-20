@@ -1,6 +1,6 @@
 # client 半身与配置页
 
-> 状态：**v0.25.2（2026-10-20）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
+> 状态：**v0.25.3（2026-10-20）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
 > 配置怎么分层、HTTP 面怎么调、保存后哪些东西立刻生效、样式怎么跟宿主主题一致。
 > 总体架构见 [architecture.md](./architecture.md)，配置项全表见 [config.md](./config.md)。
 
@@ -37,7 +37,7 @@
 | 页面 | 内容 | 动作 |
 |---|---|---|
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
-| 环境 | `environment.enabled` · `environment.dir` · `environment.webuiToken`（只写，留空不修改）；7 步检查表（Docker CLI / 容器引擎 / compose 文件 / NapCat 容器 / QQ 登录 / OneBot 配置 / 插件回填），每步状态 + 证据 + 按钮；**修复计划**（将依次执行什么 + 下一步，v0.25.0）；动作日志（脱敏）；安全边界说明（v0.23.0） | 「一键修复」（逐步补全，含安装 / 启动 / 重启引擎时先确认）「重新检测」「打开 WebUI 扫码」+ 每步动作（安装引擎 / 启动或重启引擎 / 写 OneBot 需二次确认；docker 指向 OrbStack / Docker Desktop 时按钮是「启动 OrbStack」「启动 Docker Desktop」，v0.25.2） |
+| 环境 | `environment.enabled` · `environment.dir` · `environment.webuiToken`（只写，留空不修改）；7 步检查表（Docker CLI / 容器引擎 / compose 文件 / NapCat 容器 / QQ 登录 / OneBot 配置 / 插件回填），每步状态 + 证据 + 按钮；**修复计划**（将依次执行什么 + 下一步，v0.25.0）；动作日志（脱敏）；安全边界说明（v0.23.0） | 「一键修复」（逐步补全，含安装 / 启动 / 重启引擎时先确认）「重新检测」「打开 WebUI 扫码」+ 每步动作（安装 / 启动引擎 / 重启引擎 / 写 OneBot 需二次确认） |
 | 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读）；workspace 挂载失败告警（v0.21.1，会话显示「未分组」时） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
 | 行为 | `replyChunkSize` · `commandPrefixes`；闸门参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` / `gate.jevApiKey`（只写，留空不修改；保存即热切换分类器，v0.24.0）+ 闸门摘要（开关 / 分类器 / 阈值 / key 来源）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
 | 画图 / 视频 | ComfyUI 服务（启用画图 / 视频 / 服务地址 / 探测超时 3s..120s / 连接成功后加载 skill）+「测试连接」+ 运行状态（可达 / 版本 / GPU / 队列 / 最近检查 / **逐条** `comfy-image`、`comfy-video` 的加载状态与错误，v0.22.0） | 「测试连接」（只探测、不保存）；保存 `comfy` 后立即探测并决定是否注册两个 skill，不重建 relay |
