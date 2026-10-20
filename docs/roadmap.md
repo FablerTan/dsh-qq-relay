@@ -21,7 +21,7 @@
 > **P15 视频生成（MiniMax H3 + comfy-video skill + qq_send videos）** 已落地（v0.22.0），
 > 见 [comfy.md](./comfy.md) §8。
 > **P12 环境一键安装** 已落地基础版（v0.23.0，2026-10-20：7 步诊断 + 白名单动作 + 一键修复 +
-> 动作日志，见 [env.md](./env.md)）；**P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，
+> 动作日志；v0.25.0 起「一键修复」改为逐步补全，见 [env.md](./env.md)）；**P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，
 > 状态：**规划中**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
@@ -473,7 +473,7 @@
 - 关闭代答 → @ 名单内的人也不触发。
 - 显式 `@全体成员` 的公告不触发会话。
 
-## P12 环境一键安装（v0.23.0 基础版已落地，2026-10-19 用户定为重点）
+## P12 环境一键安装（v0.23.0 基础版 + v0.25.0 逐步补全，2026-10-19 用户定为重点）
 
 目标：把「装 Docker / 起 Colima / 拉 NapCat / 扫码登录 / 写 OneBot 配置 / 回填插件配置」从
 [onebot-channel.md §3](./onebot-channel.md) 的手工步骤，收敛成插件面板里的**「环境」页**：
@@ -491,7 +491,10 @@
 - **动作**：白名单共 10 个（含 `refresh` / `fix-all` / `open-webui`），命令固定 argv、`shell: false`；
   安装 / 启动引擎 / 写 OneBot 需 `confirm: true`；命令类动作后台执行，超时 10 分钟 SIGKILL。
   `fix-all` 只补可自动完成的步骤（`write-compose → compose-up → restart-napcat → write-onebot →
-  backfill-config`），**不含**安装 / 启动引擎 / 扫码。
+  backfill-config`），**不含**安装 / 启动引擎 / 扫码（v0.25.0 已改为逐步补全，见下节）。
+  **v0.23.0 的缺陷**：序列按点按钮那一刻的快照算一次，写完 compose 不重排，被 `skip` 的
+  NapCat 容器步骤不会变成 `compose-up` → 新机器点一次「一键修复」只写了个 compose，
+  NapCat 容器始终没起来（用户反馈「为啥会跳过 napcat」）。
 - **路由**：`GET /api/env` + `POST /api/env/action`；日志尾部（60 条、已脱敏）直接放在状态快照里，
   **没有**单开 `GET /api/env/log?since=`（一次轮询同时拿步骤与日志，少一条路由）。
 - **CSRF**：只接受 `content-type: application/json` 的 POST（跨站会触发预检），**没有** nonce——
@@ -502,6 +505,22 @@
   Windows / WSL 只显示「暂不支持」，不执行动作。
 - **测试**：`test/env.test.js` 9 个用例（配置 / compose / OneBot / 求值 / argv / 日志 / controller
   探测 + 写 OneBot + 回填 + open-webui + 确认制 / 一键修复序列）；总数 291。
+
+### 已落地（v0.25.0，2026-10-20）：一键修复改为逐步补全
+
+- **逐轮推进**：`fix-all` 不再一次算好序列，而是「探测 → 执行计划第一个动作 → 再探测」，
+  直到计划为空 / 需确认 / 动作失败 / 同一动作连续两次没有推进；被 `skip` 的步骤在前置补齐后
+  自动进入下一轮（装引擎后出现 `compose-up`，容器起来后才轮到 OneBot / 回填）。
+- **安装 / 启动引擎进计划**：`install-docker` / `start-daemon` 现在也由「一键修复」执行，
+  但需要页面确认（`status.fixPlan.needsConfirm`）且 host 强制校验 `confirm:true`；
+  覆盖已存在的 compose 同样要确认。
+- **`status.fixPlan`**：下发 `sequence` / `titles` / `needsConfirm` / `next`，页面渲染
+  「一键修复将依次执行：… 下一步：…」，并据此弹一次确认。
+- **token 闭环**：写 OneBot 配置时 token 取「插件 access_token → OneBot 现有 token → 自动生成
+  32 位 hex」，不再因为插件 access_token 为空而永远卡住（生成后回填到插件配置）。
+- **`restart-napcat` 退出序列**：写 OneBot 时本身会重启 NapCat，不再作为链里独立一步。
+- **测试**：`test/env.test.js` 11 个（新增修复序列逐步展开 / 一键修复逐步补全 / token 双空生成）；
+  总数 **294**。
 
 ### 设计草案（原始，2026-10-19）
 

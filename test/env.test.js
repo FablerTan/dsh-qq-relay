@@ -23,6 +23,7 @@ import {
   createLogBuffer,
   evaluateEnvSteps,
   maskEnvConfig,
+  nextEnvStep,
   normalizeEnvConfig,
   parseComposeFile,
   parseWsUrl,
@@ -185,12 +186,15 @@ test('env：wsUrl 解析与动作 argv 白名单', () => {
   assert.equal(buildActionArgv('compose-up', { platform: 'darwin', composePath: '' }).error !== undefined, true)
 })
 
-test('env：探测求值 / 一键修复序列', () => {
+test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
   const healthy = evaluateEnvSteps(goodProbe(), DEFAULT_ENVIRONMENT)
   assert.equal(healthy.steps.length, 7)
   assert.deepEqual(healthy.summary, { ok: 7, warn: 0, error: 0, skip: 0 })
   assert.deepEqual(computeFixSequence(healthy.steps), [])
+  assert.equal(nextEnvStep(healthy.steps), null)
 
+  // 新机器：没有 docker。容器 / OneBot 步骤是 skip（前置缺失），只有 compose 能补；
+  // 安装项现在也进序列（页面确认后执行），否则永远补不到 NapCat 容器。
   const broken = evaluateEnvSteps(goodProbe({
     docker: { ok: false, version: '', error: '找不到 docker 命令' },
     daemon: { ok: false, serverVersion: '', error: 'daemon down' },
@@ -203,9 +207,33 @@ test('env：探测求值 / 一键修复序列', () => {
   const byId = Object.fromEntries(broken.steps.map((step) => [step.id, step]))
   assert.equal(byId['docker-cli'].status, 'error')
   assert.deepEqual(byId['docker-cli'].actions, ['install-docker'])
+  assert.equal(byId['container'].status, 'skip')
+  assert.deepEqual(byId['container'].actions, [])
   assert.equal(byId['compose-file'].status, 'error')
   assert.deepEqual(byId['compose-file'].actions, ['write-compose'])
-  assert.deepEqual(computeFixSequence(broken.steps), ['write-compose'])
+  assert.deepEqual(computeFixSequence(broken.steps), ['install-docker', 'write-compose'])
+  assert.equal(nextEnvStep(broken.steps).id, 'docker-cli')
+
+  // 装好 CLI、引擎没起：容器步骤仍是 skip，序列里没有 compose-up（这是 v0.23.0 跳过 NapCat 的原因）。
+  const engineDown = evaluateEnvSteps(goodProbe({
+    daemon: { ok: false, serverVersion: '', error: 'daemon down' },
+    composeFile: { path: null, tokenPresent: false, containerName: 'napcat', ports: [], error: '' },
+    container: { name: 'napcat', state: '', running: false, error: '' },
+    login: { uin: 0, file: '' },
+    onebot: null,
+    relay: { started: true, connected: false, selfId: 10001, wsUrl: 'ws://127.0.0.1:3001', accessToken: 'secret-token-123', accessTokenConfigured: true },
+  }), { ...DEFAULT_ENVIRONMENT, webuiToken: 'tok' })
+  assert.deepEqual(computeFixSequence(engineDown.steps), ['start-daemon', 'write-compose'])
+
+  // 引擎起来后重新求值：容器从 skip 变 error，compose-up 才进入序列（逐步补全的关键）。
+  const engineUp = evaluateEnvSteps(goodProbe({
+    composeFile: { path: null, tokenPresent: false, containerName: 'napcat', ports: [], error: '' },
+    container: { name: 'napcat', state: '', running: false, error: '' },
+    login: { uin: 0, file: '' },
+    onebot: null,
+    relay: { started: true, connected: false, selfId: 10001, wsUrl: 'ws://127.0.0.1:3001', accessToken: 'secret-token-123', accessTokenConfigured: true },
+  }), { ...DEFAULT_ENVIRONMENT, webuiToken: 'tok' })
+  assert.deepEqual(computeFixSequence(engineUp.steps), ['write-compose', 'compose-up'])
 
   // 非 macOS / Linux 平台全部跳过。
   const windows = evaluateEnvSteps(goodProbe({ platform: 'win32' }), DEFAULT_ENVIRONMENT)
@@ -320,7 +348,7 @@ test('env controller：探测 / 写 OneBot / 回填 / open-webui / 确认制', a
   assert.equal(logText.includes('secret-token-123'), false)
 })
 
-test('env controller：一键修复只跑不需要安装确认的步骤', async (t) => {
+test('env controller：一键修复按现状补缺（写 compose → 启动容器）', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-env-fix-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   mkdirSync(join(dir, 'data', 'config'), { recursive: true })
@@ -371,4 +399,152 @@ test('env controller：一键修复只跑不需要安装确认的步骤', async 
   const steps = Object.fromEntries(controller.status().steps.map((step) => [step.id, step]))
   assert.equal(steps.container.status, 'ok')
   assert.equal(steps.relay.status, 'warn')
+  // 回填过一次仍没连上（桩 relay 永远未连接）→ 计划里只剩它且不再重复执行。
+  assert.deepEqual(controller.status().fixPlan.sequence, ['backfill-config'])
+  assert.ok(controller.status().log.entries.some((entry) => entry.text.includes('没有推进')))
+})
+
+test('env controller：一键修复逐步补全（确认后安装 → 启动引擎 → compose → 启动 NapCat）', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-env-chain-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const state = { installed: false, daemon: false, up: false }
+  const calls = []
+  const run = async (bin, args) => {
+    calls.push([bin, ...args].join(' '))
+    if (bin === 'brew') {
+      state.installed = true
+      return { ok: true, code: 0, stdout: '', stderr: '' }
+    }
+    if (bin === 'colima') {
+      state.daemon = true
+      return { ok: true, code: 0, stdout: '', stderr: '' }
+    }
+    if (bin === 'docker' && args[0] === '--version') {
+      return state.installed
+        ? { ok: true, code: 0, stdout: 'Docker version 29.9.1', stderr: '' }
+        : { ok: false, code: 127, stdout: '', stderr: 'command not found', error: '找不到 docker 命令' }
+    }
+    if (bin === 'docker' && args[0] === 'compose' && args.includes('version')) {
+      return state.installed
+        ? { ok: true, code: 0, stdout: 'Docker Compose version 5.6.0', stderr: '' }
+        : { ok: false, code: 127, stdout: '', stderr: '', error: 'compose 不可用' }
+    }
+    if (bin === 'docker' && args[0] === 'info') {
+      return state.daemon
+        ? { ok: true, code: 0, stdout: '29.5.2', stderr: '' }
+        : { ok: false, code: 1, stdout: '', stderr: 'Cannot connect', error: 'docker info 失败' }
+    }
+    if (bin === 'docker' && args[0] === 'inspect') {
+      return state.up
+        ? { ok: true, code: 0, stdout: 'running', stderr: '' }
+        : { ok: false, code: 1, stdout: '', stderr: '', error: 'no such container' }
+    }
+    if (bin === 'docker' && args[0] === 'compose' && args.includes('up')) {
+      state.up = true
+      return { ok: true, code: 0, stdout: '', stderr: '' }
+    }
+    return { ok: true, code: 0, stdout: '', stderr: '' }
+  }
+
+  const controller = createEnvController({
+    getConfig: () => ({ enabled: true, dir, webuiToken: 'tok' }),
+    getRelayInfo: () => ({
+      started: true,
+      connected: false,
+      selfId: 0,
+      wsUrl: 'ws://127.0.0.1:3001',
+      accessToken: '',
+      accessTokenConfigured: false,
+    }),
+    backfill: () => ({ ok: true }),
+    run,
+    platform: 'darwin',
+  })
+  t.after(() => controller.dispose())
+
+  const status = await controller.refresh()
+  assert.deepEqual(status.fixPlan.sequence, ['install-docker', 'write-compose'])
+  assert.equal(status.fixPlan.needsConfirm, true)
+  assert.equal(status.fixPlan.next.id, 'docker-cli')
+  assert.equal(status.fixPlan.titles[0], '安装 Docker / Colima')
+
+  // 系统类动作（安装 / 启动引擎）没有确认时整条链拒绝执行。
+  const refused = await controller.action({ action: 'fix-all' })
+  assert.equal(refused.ok, false)
+  assert.equal(refused.code, 'ENV_CONFIRM_REQUIRED')
+
+  const started = await controller.action({ action: 'fix-all', confirm: true })
+  assert.equal(started.ok, true)
+  assert.equal(started.value.accepted, true)
+  for (let index = 0; index < 300; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    if (controller.status().running === null) break
+  }
+  assert.equal(controller.status().running, null)
+
+  // 一条链走完：brew install → colima start → 写 compose → compose up -d。
+  assert.ok(calls.some((call) => call.startsWith('brew install colima')))
+  assert.ok(calls.some((call) => call.startsWith('colima start')))
+  assert.ok(calls.some((call) => call.includes('up -d')))
+
+  const after = controller.status()
+  const steps = Object.fromEntries(after.steps.map((step) => [step.id, step]))
+  assert.equal(steps['docker-cli'].status, 'ok')
+  assert.equal(steps['docker-daemon'].status, 'ok')
+  assert.equal(steps['compose-file'].status, 'ok')
+  assert.equal(steps.container.status, 'ok')
+  assert.equal(steps.login.status, 'warn')
+  // 没有扫码 → 停在登录；序列为空，下一步提示登录。
+  assert.deepEqual(after.fixPlan.sequence, [])
+  assert.equal(after.fixPlan.next.id, 'login')
+  assert.ok(after.log.entries.some((entry) => entry.text.includes('下一步')))
+})
+
+test('env controller：写 OneBot 时 token 双空自动生成并随后回填', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-env-token-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  mkdirSync(join(dir, 'data', 'config'), { recursive: true })
+  const onebotFile = join(dir, 'data', 'config', 'onebot11_10001.json')
+  writeFileSync(onebotFile, JSON.stringify(onebotConfig({ token: '' })), 'utf8')
+  writeFileSync(join(dir, 'compose.yaml'), renderComposeFile({ webuiToken: 'tok' }), 'utf8')
+
+  const calls = []
+  const run = async (bin, args) => {
+    calls.push([bin, ...args].join(' '))
+    if (bin === 'docker' && args[0] === 'inspect') return { ok: true, code: 0, stdout: 'running', stderr: '' }
+    return { ok: true, code: 0, stdout: '', stderr: '' }
+  }
+  const backfilled = []
+  const controller = createEnvController({
+    getConfig: () => ({ enabled: true, dir, webuiToken: 'tok' }),
+    getRelayInfo: () => ({
+      started: true,
+      connected: false,
+      selfId: 10001,
+      wsUrl: 'ws://127.0.0.1:3001',
+      accessToken: '',
+      accessTokenConfigured: false,
+    }),
+    backfill: (values) => {
+      backfilled.push(values)
+      return { ok: true }
+    },
+    run,
+    platform: 'darwin',
+  })
+  t.after(() => controller.dispose())
+
+  await controller.refresh()
+  const written = await controller.action({ action: 'write-onebot', confirm: true })
+  assert.equal(written.ok, true, JSON.stringify(written))
+  const token = JSON.parse(readFileSync(onebotFile, 'utf8')).network.websocketServers[0].token
+  assert.match(token, /^[0-9a-f]{32}$/u)
+  assert.equal(calls.some((call) => call.includes('restart napcat')), true)
+
+  const filled = await controller.action({ action: 'backfill-config' })
+  assert.equal(filled.ok, true)
+  assert.equal(backfilled[0].accessToken, token)
+  // 状态快照 / 日志里都不出现生成的 token 明文。
+  assert.equal(JSON.stringify(controller.status()).includes(token), false)
 })

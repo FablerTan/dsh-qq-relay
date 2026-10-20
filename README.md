@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.24.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.25.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -25,7 +25,9 @@ ComfyUI，连上后把插件自带的 `comfy-image` skill 动态注册给 DSH，
 Docker / Colima / NapCat / 扫码登录 / OneBot 配置 / 插件回填收敛成 7 个检查与白名单动作，
 新机器可从零装到 relay 连上（见 [docs/env.md](./docs/env.md)）；v0.24.0 把 **jev（OpenRouter）
 API key** 收进配置页「行为」页——保存即热启用分类器，环境变量 `OPENROUTER_API_KEY` 仍可兜底
-（只写不读）。设计见
+（只写不读）；v0.25.0 修「一键修复」——改成**逐步补全**（装 Docker / 起 Colima / 写 compose /
+起 NapCat 容器 / 写 OneBot / 回填），每完成一步自动重探再继续，不再跳过 NapCat 容器，
+token 两边都空时自动生成。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -129,7 +131,7 @@ dsh-qq-relay/
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
 | [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 视频 / 文件与画图 / 视频产物 | 改媒体 / 排查媒体收发时 |
 | [docs/comfy.md](./docs/comfy.md) | 画图与视频：ComfyUI 配置 / 探测、动态注册 `comfy-image` / `comfy-video` 两个 skill 的生命周期与模板渲染、图片 + 视频工作流、QQ 群用法与安全边界 | 开画图 / 视频、排查生成不生效时 |
-| [docs/env.md](./docs/env.md) | 环境一键配置（v0.23.0）：`environment` 配置段、7 个检查步骤、白名单动作与固定 argv、一键修复序列、HTTP 契约与安全边界 | 新机器装 NapCat / 排查「环境」页、改环境动作时 |
+| [docs/env.md](./docs/env.md) | 环境一键配置（v0.23.0；v0.25.0 起「一键修复」逐步补全）：`environment` 配置段、7 个检查步骤、白名单动作与固定 argv、逐步修复链与 `fixPlan`、HTTP 契约与安全边界 | 新机器装 NapCat / 排查「环境」页、改环境动作时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送（文本 / 图片 / 视频 / 文件）/ `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |

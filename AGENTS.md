@@ -6,7 +6,7 @@
 > [README.md](./README.md)，版本历史见 [docs/changelog.md](./docs/changelog.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.24.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -32,6 +32,9 @@
 > v0.23.0 加**环境一键配置**（配置页「环境」页：`environment` 配置段 + 7 步诊断 + 白名单动作 /
 > 一键修复 / 动作日志，见 [docs/env.md](./docs/env.md)）；v0.24.0 把 jev（OpenRouter）API key
 > 加进「行为」页（`gate.jevApiKey` 只写不读、保存即热切换分类器，环境变量仍兜底）；
+> v0.25.0 修「一键修复」：改成**逐步补全**——按计划一次只执行一个动作、每步后重新探测，
+> 安装 / 起引擎 / 起 NapCat 容器 / 写 OneBot / 回填串成一条链（系统类动作先确认），
+> 不再跳过 NapCat 容器；写 OneBot 时 token 两边都空则自动生成（见 [docs/env.md §4.1](./docs/env.md)）；
 > 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
@@ -43,7 +46,8 @@
   `controls.tsx` 公共控件、`theme.ts` 注入的 `--dsw-*` 主题样式、
   `panels/{Connection,Env,Project,Behavior,Comfy,Presets,Records}Panel.tsx`；`ComfyPanel` = 「画图 / 视频」
   二级页（v0.22.0：开关 / 地址 / 超时 / skill 开关 / 测试连接 / 运行状态 / 逐条展示两个 skill 的状态）；
-  `EnvPanel` = 「环境」页（v0.23.0：环境目录 / WebUI token、7 步检查表、一键修复 / 动作日志 / 安全说明））；
+  `EnvPanel` = 「环境」页（v0.23.0：环境目录 / WebUI token、7 步检查表、一键修复 / 动作日志 / 安全说明；
+  v0.25.0 起增修复计划提示 + 一次性确认））；
   新增代码按 MVVM 三层落位（`src/model/` → `src/viewmodel/` → `src/view/`，分层细则见 §2 第 4 条）
 - `lib/` — 自包含运行时产物；`index.js` 为**手写 host 半身**，
   分层 = `lib/controller/`（协议端接入、消息编解码、路由与转发、配置页 HTTP 面）+ `lib/model/`
@@ -75,7 +79,8 @@
   `controller/tools.js` 增加 `qq_poke`（NapCat `group_poke`），配置段为 `poke`；
   v0.21.0 新增 `controller/comfy.js`（ComfyUI 探测 / `ctx.skills.register` 动态注册 / 探测失败不注销的
   抖动保持 / 「测试连接」）、`model/comfy.js`（`comfy` 配置校验 / 脱敏视图 / `COMFY_SKILLS` 与模板渲染）、
-  v0.23.0 的 `controller/env.js`（环境 7 步探测 / 固定 argv 动作 / 后台命令 + 日志 / 一键修复）与
+  v0.23.0 的 `controller/env.js`（环境 7 步探测 / 固定 argv 动作 / 后台命令 + 日志 / 一键修复；
+  v0.25.0 起逐轮推进 + `fixPlan`）与
   `model/env.js`（`environment` 配置校验与脱敏视图 / compose 生成与解析 / OneBot 校验 / 步骤求值 /
   动作白名单 / 日志环形缓冲）与
   `lib/skills/comfy-image/`（插件自带 skill：`SKILL.md` 出图 + `SKILL-video.md` 视频两个模板、

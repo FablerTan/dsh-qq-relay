@@ -17,7 +17,8 @@
 > **v0.22.0 视频生成（同一个 ComfyUI 动态注册 `comfy-video` skill + `qq_send` 的 `videos` 出向视频）
 > 已实现，见 [comfy.md](./comfy.md)**；**v0.23.0 环境一键配置（7 步诊断 + 白名单动作 + 一键修复，
 > 见 [env.md](./env.md)）已实现**；**v0.24.0 jev API key 进配置页（`gate.jevApiKey` 只写不读 +
-> 分类器热切换，见 [gate.md §4](./gate.md)）已实现**。
+> 分类器热切换，见 [gate.md §4](./gate.md)）已实现**；**v0.25.0 环境「一键修复」改为逐步补全
+> （按计划逐轮执行 + 每步重探 + 系统类动作先确认 + `fixPlan` 下发，见 [env.md §4.1](./env.md)）已实现**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -136,7 +137,7 @@ lib/
 │   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
 │   ├── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）、出向视频 sendVideo（v0.22.0）
 │   ├── comfy.js              # 画图 / 视频（v0.21.0 / v0.22.0）：探测 ComfyUI / 逐个注册两个 skill / 抖动保持 / 测试连接
-│   └── env.js                # 环境（v0.23.0）：7 步探测 / 固定 argv 动作 / 后台命令 + 日志 / 一键修复
+│   └── env.js                # 环境（v0.23.0，v0.25.0 逐步补全）：7 步探测 / 固定 argv 动作 / 后台命令 + 日志 / 逐轮修复链 + fixPlan
 ├── skills/comfy-image/       # 插件自带画图 / 视频 skill（SKILL.md + SKILL-video.md 模板 / scripts / 7 个 workflows / references 含 video-workflows.md），随包发布
 └── model/
     ├── config.js             # 配置默认值与校验

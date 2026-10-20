@@ -5,6 +5,29 @@
 > GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
 > `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
+## v0.25.0 修「一键修复」：逐步补全环境，不再跳过 NapCat 容器（2026-10-20）
+
+- **问题**：v0.23.0 的 `fix-all` 在**点按钮那一刻**算一次序列，只收集「未通过步骤」自己列出的动作。
+  引擎没起时 NapCat 容器步骤是 `skip`（不贡献动作），写完 compose 也不会重新求值 → `compose-up`
+  永远进不了序列，新机器点一次「一键修复」只写了个 compose；另一处 `restart-napcat` 被写进顺序表
+  却没有任何步骤会产出它（死代码）。两个原因叠加，用户看到的现象就是「跳过 napcat」。
+- **逐轮推进**：`fix-all` 改成「探测 → 执行计划里的第一个动作 → 再探测」，直到计划为空 / 需要确认 /
+  动作失败 / 同一动作连续两次没有推进；`skip` 步骤在前置补齐后自动变成可修复，装引擎后出现
+  `compose-up`，容器起来后才轮到 OneBot / 回填。顺序表移除死条目 `restart-napcat`
+  （写 OneBot 时本身会重启 NapCat）。
+- **安装 / 启动引擎进计划**：`install-docker` / `start-daemon` 也由一键修复执行，但需要页面确认：
+  `status.fixPlan = { sequence, titles, needsConfirm, next }` 下发计划，页面渲染「将依次执行：… /
+  下一步：…」并用 `window.confirm` 确认；host 侧同样强制校验 `confirm:true`（覆盖已有 compose 同理）。
+- **token 闭环**：写 OneBot 配置不再要求插件 `accessToken` 非空——按「插件 token → OneBot 现有
+  token → 自动生成 32 位 hex」取值，生成后由 `backfill-config` 回填，新机器扫码后能一路走完。
+- **可读性**：跳过 / 阻塞步骤的说明写清「先解决哪一步」；一键修复收尾把下一步写进动作日志
+  （例如「可自动完成的步骤已跑完；下一步（QQ 登录）：…」），全部通过记「环境已就绪」。
+- **client**：「环境」页新增修复计划提示行与一次性确认；「安全边界」补一条逐步补全说明。
+- 单测 292 → **294**（`test/env.test.js` 11 个：修复序列逐步展开 / 一键修复确认后连做四步 /
+  token 双空生成）；`pnpm check` 全绿。
+- 文档同步：env / client / architecture / roadmap / README / AGENTS / 本文件；`lib/client.js` 已重建。
+- **需要重启 dwdev GUI** 才能看到新的「环境」页提示与逐步修复行为。
+
 ## v0.24.0 jev API key 进配置页：`gate.jevApiKey` 只写不读 + 分类器热切换（2026-10-20）
 
 - **「行为」页新增「OpenRouter API key」密码框**：保存后立即热切换 jev 分类器，**不用重启 GUI**；

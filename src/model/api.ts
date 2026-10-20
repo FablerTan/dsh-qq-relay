@@ -182,6 +182,18 @@ export interface RelayEnvLogEntryView {
   text: string
 }
 
+/** 一键修复计划（v0.25.0）：页面据此提示「将执行什么」并在需要时弹一次确认。 */
+export interface RelayEnvFixPlanView {
+  /** 本次会依次执行的动作 id（按执行顺序）。 */
+  sequence: string[]
+  /** 与 sequence 对齐的动作标题（确认框 / 提示行用）。 */
+  titles: string[]
+  /** 计划里有安装 / 启动引擎 / 覆盖 compose → 点「一键修复」要先确认。 */
+  needsConfirm: boolean
+  /** 第一个还没通过的步骤（全部通过时为 null）。 */
+  next: { id: string; title: string; status: string; detail: string } | null
+}
+
 /** 环境页状态（GET /api/env）：步骤 + 动作目录 + 日志尾部。 */
 export interface RelayEnvStatusView {
   supported: boolean
@@ -194,6 +206,8 @@ export interface RelayEnvStatusView {
   running: { action: string; startedAt: number } | null
   summary: RelayEnvSummaryView
   steps: RelayEnvStepView[]
+  /** 一键修复计划（旧 host 没有这个字段 → 空计划）。 */
+  fixPlan: RelayEnvFixPlanView
   actions: RelayEnvActionView[]
   log: { cursor: number; entries: RelayEnvLogEntryView[] }
 }
@@ -818,6 +832,31 @@ function asEnvLogEntries(value: unknown): RelayEnvLogEntryView[] {
   }))
 }
 
+/** 一键修复计划兜底（旧 host 没有 fixPlan → 空计划，页面不显示提示）。 */
+function asEnvFixPlan(value: unknown): RelayEnvFixPlanView {
+  const source = isRecord(value) ? value : {}
+  const sequence = Array.isArray(source.sequence)
+    ? source.sequence.filter((id): id is string => typeof id === 'string')
+    : []
+  const titles = Array.isArray(source.titles)
+    ? source.titles.filter((title): title is string => typeof title === 'string')
+    : []
+  const nextRaw = isRecord(source.next) ? source.next : null
+  return {
+    sequence,
+    titles: titles.length === sequence.length ? titles : sequence,
+    needsConfirm: source.needsConfirm === true,
+    next: nextRaw === null
+      ? null
+      : {
+          id: typeof nextRaw.id === 'string' ? nextRaw.id : '',
+          title: typeof nextRaw.title === 'string' ? nextRaw.title : '',
+          status: typeof nextRaw.status === 'string' ? nextRaw.status : '',
+          detail: typeof nextRaw.detail === 'string' ? nextRaw.detail : '',
+        },
+  }
+}
+
 /** 环境页状态兜底（旧 host / 不支持时返回 null，页面显示「不支持」）。 */
 function asEnvStatus(value: unknown): RelayEnvStatusView | null {
   if (!isRecord(value)) return null
@@ -845,6 +884,7 @@ function asEnvStatus(value: unknown): RelayEnvStatusView | null {
       skip: typeof summary.skip === 'number' ? summary.skip : 0,
     },
     steps: asEnvSteps(value.steps),
+    fixPlan: asEnvFixPlan(value.fixPlan),
     actions: asEnvActions(value.actions),
     log: {
       cursor: typeof log.cursor === 'number' ? log.cursor : 0,

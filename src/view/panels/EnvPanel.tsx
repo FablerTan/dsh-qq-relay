@@ -45,10 +45,10 @@ function ActionButton(props: {
   const handle = (): void => {
     if (action.confirm) {
       const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
-      if (typeof confirmFn === 'function') {
-        const approved = confirmFn(action.title + '\n\n' + action.description)
-        if (!approved) return
-      }
+      // 没有确认能力就不执行系统类动作（不能默认「同意」）。
+      if (typeof confirmFn !== 'function') return
+      const approved = confirmFn(action.title + '\n\n' + action.description)
+      if (!approved) return
     }
     env.run(action.id, { confirm: action.confirm, onDone })
   }
@@ -167,15 +167,50 @@ export function EnvPanel({ model }: { model: RelaySettingsModel }): ReactElement
     </div>
   )
 
+  const plan = status === null ? null : status.fixPlan
+  const planTitles = plan === null ? [] : plan.titles
+
+  /**
+   * 一键修复：host 会在计划里列出「这次会做什么」；含安装 / 启动引擎 / 覆盖 compose 时
+   * 先弹一次确认（host 侧同样强制校验 confirm:true，不只靠页面）。
+   */
+  const handleFixAll = (): void => {
+    const needsConfirm = plan !== null && plan.needsConfirm
+    if (needsConfirm) {
+      const confirmFn = (globalThis as { confirm?: (message: string) => boolean }).confirm
+      // 没有确认能力就不执行（不能默认「同意」系统类动作）。
+      if (typeof confirmFn !== 'function') return
+      const approved = confirmFn(
+        '一键修复会依次执行：\n' + planTitles.join(' → ')
+          + '\n\n其中安装 / 启动容器引擎或覆盖 compose 会修改系统，确认继续？',
+      )
+      if (!approved) return
+    }
+    env.run('fix-all', { confirm: needsConfirm, onDone })
+  }
+
+  const planHint = status === null || !status.supported || !status.enabled
+    ? null
+    : (
+      <p className="qqr-hint">
+        {planTitles.length > 0
+          ? '一键修复将依次执行：' + planTitles.join(' → ')
+          : '当前没有可自动修复的步骤。'}
+        {status.fixPlan.next !== null
+          ? ' 下一步：' + status.fixPlan.next.title + ' — ' + status.fixPlan.next.detail
+          : ''}
+      </p>
+    )
+
   const actionsBar = status === null || !status.supported || !status.enabled
     ? null
     : (
       <div className="qqr-headline">
         <Button
           variant="outline"
-          onClick={() => { env.run('fix-all', { onDone }) }}
+          onClick={handleFixAll}
           disabled={disabled}
-          title="按顺序生成 compose / 启动容器 / 写 OneBot / 回填配置；安装类步骤需手动确认"
+          title={planTitles.length > 0 ? '将执行：' + planTitles.join(' → ') : '当前没有可自动修复的步骤'}
         >
           {status.running !== null && status.running.action === 'fix-all' ? '一键修复执行中…' : '一键修复'}
         </Button>
@@ -233,6 +268,7 @@ export function EnvPanel({ model }: { model: RelaySettingsModel }): ReactElement
           <h4 className="qqr-subhead">检查清单</h4>
           {summary}
           {actionsBar}
+          {planHint}
         </Block>
         {table}
         {env.error !== null ? <Block><Line tone="error" role="alert">{env.error}</Line></Block> : null}
@@ -270,7 +306,8 @@ export function EnvPanel({ model }: { model: RelaySettingsModel }): ReactElement
           <h4 className="qqr-subhead">安全边界</h4>
           <ul className="qqr-list">
             <li>只跑白名单命令（<code>docker</code> / <code>docker compose</code> / <code>brew</code> / <code>colima</code>），参数固定、不经 shell，不 <code>sudo</code>，不下载可执行文件。</li>
-            <li>安装 Docker / Colima、启动容器引擎、写 OneBot 配置都会二次确认；写 OneBot 前先备份 <code>.bak-时间戳</code>。</li>
+            <li>「一键修复」逐步补全：每完成一步自动重新探测并继续下一个能做的步骤；安装 / 启动引擎 / 覆盖 compose 会先弹一次确认。</li>
+            <li>安装 Docker / Colima、启动容器引擎、写 OneBot 配置单独点击时都会二次确认（「一键修复」里的系统类动作同样先确认）；写 OneBot 前先备份 <code>.bak-时间戳</code>。</li>
             <li>「打开 WebUI」把 token 拼进链接返回给页面（仅本机 loopback 访问）；状态快照里永远不返回 token 明文。</li>
             <li>Windows / WSL 暂不支持：页面只显示说明，不执行动作。</li>
           </ul>
