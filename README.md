@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.25.3**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.25.4**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -31,7 +31,9 @@ token 两边都空时自动生成；v0.25.1 修探测可读性——docker / col
 （不再只有「退出码 1」），docker 直连失败自动改用 `--context colima` 兜底，
 Colima 在跑但 daemon 连不上时给「重启容器引擎」，动作没推进就跳过继续后面的步骤；v0.25.3 回滚
 了 v0.25.2 的「按 endpoint 识别 OrbStack / Docker Desktop」——环境页仍只认 Colima（docker 指向
-别的引擎时可用 `docker context use colima` 切换）。设计见
+别的引擎时可用 `docker context use colima` 切换）；v0.25.4 修「OneBot 没配好就存不了 WebUI
+token」——wsUrl / accessToken / selfId 留空只算「待补全」，配置照常保存（relay 暂不启动），
+新机器可以先存环境页 token 再一键修复。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 

@@ -40,6 +40,10 @@
 > 只写不读的实现与 `accessToken` 相同：`maskConfig` 不返回明文；保存覆盖时
 > `lib/index.js` 会把已有 `environment.webuiToken` 与本次提交的子项合并，避免「保存一次目录
 > 就清掉 token」。页面 token 输入框永远从空开始，留空表示不修改。
+>
+> **token 可以先于 OneBot 保存**（v0.25.4）：`wsUrl` / `accessToken` / `selfId` 留空时 host 仍然
+> 把 `environment` 段落盘（只是 relay 不启动）——新机器可以先填 WebUI token → 保存 →
+> 生成 Compose 文件 / 一键修复，不必等 OneBot 配好。
 
 ## 3. 页面结构
 

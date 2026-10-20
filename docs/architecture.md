@@ -21,7 +21,9 @@
 > （按计划逐轮执行 + 每步重探 + 系统类动作先确认 + `fixPlan` 下发，见 [env.md §4.1](./env.md)）已实现**；
 > **v0.25.1 环境探测可读化与兜底（docker stderr 原文 / `--context colima` 兜底 / `restart-daemon` /
 > 不推进就跳过，见 [env.md §4.1](./env.md)）已实现**；**v0.25.3 回滚 v0.25.2 的引擎识别
-> （环境页只认 Colima，不再提供 OrbStack / Docker Desktop 动作，见 [env.md §1](./env.md)）**。
+> （环境页只认 Colima，不再提供 OrbStack / Docker Desktop 动作，见 [env.md §1](./env.md)）**；
+> **v0.25.4 配置「待补全」与「无效」分离（连接信息留空可先保存草稿、relay 不启动，
+> 见 [config.md §2.1](./config.md) 与 [client.md §4](./client.md)）**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。

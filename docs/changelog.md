@@ -5,6 +5,23 @@
 > GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
 > `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
+## v0.25.4 修「OneBot 没配好就存不了 WebUI token」：连接信息可以「待补全」先存草稿（2026-10-20）
+
+- **问题**：新机器点「环境」页一键修复时，写 compose 需要 `environment.webuiToken`，但保存 token 走的是
+  整份配置保存——`normalizeConfig` 把空的 `wsUrl` / `accessToken` / `selfId` 当成「必填缺失」，
+  直接 400 且不写盘。于是死循环：没有 token 就没法一键修复，没配 OneBot 又存不了 token。
+- **host**：`normalizeConfig` 区分「配置无效」（真的写错，仍然 400）与「待补全」（三项连接信息留空）：
+  后者 `ok: true` 但 `ready: false`，照常落盘，`problems` 里逐条提示必填项；`lib/index.js` 改用
+  `ready` 决定是否启动 / 重建 relay（`reconnect` / `rebind` / 映射操作同步改判），保存日志写
+  「还没配全 OneBot 连接信息，relay 暂不启动」。
+- **client**：`buildConfigPatch` 允许 `wsUrl` / `selfId` 留空（填了但格式不对仍当场报错），
+  保存提示区分「已保存（待补全）」与「已保存并重连」。
+- 单测 297 → **298**（配置「待补全」vs「无效」/ 端到端：没配 OneBot 也能保存 WebUI token 且不启动 relay）；
+  `pnpm check` 全绿。
+- 文档同步：config / client / env / architecture / roadmap / README / AGENTS / 本文件；client 半身改了
+  `src/model/form.ts` 与 `src/viewmodel/settings.ts`，`lib/client.js` 已重建。
+- **需要重启 dwdev GUI** 才能生效。
+
 ## v0.25.3 回滚 v0.25.2：移除 OrbStack / Docker Desktop 引擎识别，环境页回到「只认 Colima」（2026-10-20）
 
 - **决定**：v0.25.2 的「按 docker endpoint 识别引擎并给 `start-orbstack` / `install-orbstack` 等动作」

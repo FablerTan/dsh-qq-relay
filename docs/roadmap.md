@@ -547,6 +547,19 @@
   `docker context use colima`。
 - **测试**：回滚掉两个用例，总数回到 **297**（`test/env.test.js` 14 个）。
 
+### 已落地（v0.25.4，2026-10-20）：连接信息允许「待补全」先存草稿
+
+- 用户真机反馈：新机器「环境」页的 WebUI token 存不了——保存走整份配置校验，空的
+  `wsUrl` / `accessToken` / `selfId` 被判「必填缺失」直接 400；而一键修复写 compose 又需要这个
+  token，形成死循环。
+- **host**：`normalizeConfig` 拆出 `pending`（连接信息留空）与 `problems`（真的写错），前者
+  `ok: true` / `ready: false`，配置照常落盘；`lib/index.js` 用 `ready` 决定是否启动 / 重建 relay，
+  状态 `problems` 里逐条提示必填项。
+- **client**：`buildConfigPatch` 允许 `wsUrl` / `selfId` 留空（格式写错仍当场报错），保存提示区分
+  「已保存（待补全）」与「已保存并重连」。
+- **测试**：`test/model.test.js` 的 fail-closed 用例改成「待补全 vs 无效」，`test/apply.test.js` 加
+  端到端用例（没配 OneBot 也能保存 WebUI token 且 relay 不启动）；总数 **298**。
+
 ### 设计草案（原始，2026-10-19）
 
 - 入口：插件面板新增「环境」二级页（连接 / 项目 / 行为 / 记录 / 环境）；「连接」页顶部在

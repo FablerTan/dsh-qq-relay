@@ -117,6 +117,10 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
   `chatRetentionDays` 有表单入口（0 / 7..3650，保存后自动清理按新值执行）。
 - **保存即生效**：host 用新配置重建 client + relay（单实例锁不重入），不需要重启 GUI。
 - 校验失败 → 返回 400，**不写盘、不改内存配置**；页面显示 host 的 problems。
+- **连接信息没配全也能保存**（v0.25.4）：`wsUrl` / `accessToken` / `selfId` 留空不算校验失败，
+  host 照常落盘、只是 relay 不启动（状态 `problems` 逐条提示「必填」）。新机器因此可以先在
+  「环境」页存 WebUI token / 目录，再点一键修复；页面保存提示会写成「已保存（OneBot 连接信息
+  还没配全，relay 暂不启动）」，不再谎称已重连。
 - `settings.json` 是普通 JSON（`{ version, updatedAt, config }`），原子写；手动改它
   需要重启 GUI 才生效（页面保存才会触发热替换）。
 - token 只写不读：`settings.json` 里可能存着配置页写入的 token；HTTP 响应永远只给

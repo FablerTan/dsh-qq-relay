@@ -30,9 +30,14 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 | 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
-| `wsUrl` | 必填 | `ws://` 或 `wss://` | NapCat 正向 WS 地址 | 可 | 保存后重连 |
-| `accessToken` | 必填 | 非空字符串 | OneBot access_token；patch 里建议 `!!js process.env.QQ_RELAY_TOKEN` | 可（只写） | 保存后重连 |
-| `selfId` | 必填 | 正整数 | bot 小号 QQ 号，连上后用 `get_login_info` 校验 | 可 | 保存后重连 |
+| `wsUrl` | 必填（可暂空） | `ws://` 或 `wss://` | NapCat 正向 WS 地址 | 可 | 保存后重连（暂空时只保存、不启动） |
+| `accessToken` | 必填（可暂空） | 非空字符串 | OneBot access_token；patch 里建议 `!!js process.env.QQ_RELAY_TOKEN` | 可（只写） | 保存后重连（暂空时只保存、不启动） |
+| `selfId` | 必填（可暂空） | 正整数 | bot 小号 QQ 号，连上后用 `get_login_info` 校验 | 可 | 保存后重连（暂空时只保存、不启动） |
+
+> **「待补全」不是「配置无效」**（v0.25.4）：三项连接信息留空时 host 仍校验其余字段并**落盘保存**，
+> 只是 `ready = false`、relay 不启动，状态里的 `problems` 会逐条提示「wsUrl 必填 / accessToken 必填 /
+> selfId 必填」。这样新机器可以先保存「环境」页的 WebUI token / 目录，再点一键修复；
+> 填了但写错（`http://`、selfId 不是正整数等）照旧 400 拒绝、不写盘。
 | `groups` | `[]` | 群号数组 | 群白名单；未列出的群全部丢弃 | 可 | 立即 |
 | `reconnect` | `{minMs:1000, maxMs:30000}` | 正整数，`maxMs >= minMs` | 断线重连的退避区间 | — | 重启 |
 

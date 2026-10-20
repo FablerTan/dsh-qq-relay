@@ -732,3 +732,60 @@ test('apply：设置页保存 jev key 后分类器热启用（v0.24.0）', async
   assert.equal(cleared.payload.value.config.gate.jevApiKeyConfigured, false)
   assert.equal(cleared.payload.value.gate.classifier, null, '清空 key 后分类器停用')
 })
+
+test('apply：OneBot 没配好时也能先保存 WebUI token（v0.25.4 草稿保存）', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-draft-'))
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+
+  // 完全没配 OneBot：wsUrl / accessToken / selfId 都空。
+  apply(ctx, { workspace: join(home, 'ws'), groups: [100] })
+
+  const initial = await call(routes, '/dsh-qq-relay/api/status')
+  assert.equal(initial.status, 200)
+  const status = initial.payload.value
+  assert.equal(status.started, false)
+  // 待补全项作为提示返回（页面据此显示「配置待补全」），而不是整页报错 / 空白。
+  assert.ok(status.problems.some((item) => item.includes('wsUrl')))
+  assert.ok(status.problems.some((item) => item.includes('accessToken')))
+  assert.ok(status.problems.some((item) => item.includes('selfId')))
+  assert.equal(status.config.environmentSupported, true)
+
+  // 关键回归：环境页 WebUI token 在 OneBot 配好之前也要能保存。
+  const saved = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ environment: { enabled: true, dir: '~/napcat-docker', webuiToken: 'webui-token-123' } }),
+  })
+  assert.equal(saved.status, 200)
+  assert.equal(saved.payload.ok, true)
+  assert.equal(saved.payload.value.config.environment.webuiTokenConfigured, true)
+  assert.equal(saved.payload.value.started, false, '还没配全连接信息时 relay 不应启动')
+  const settingsFile = join(home, '.dsh', 'storages', 'dsh-qq-relay', 'settings.json')
+  const stored = JSON.parse(readFileSync(settingsFile, 'utf8'))
+  assert.equal(stored.config.environment.webuiToken, 'webui-token-123')
+  assert.equal(JSON.stringify(saved.payload.value).includes('webui-token-123'), false, 'token 不回显')
+
+  // 真正写错的配置仍然被拒绝（不留「随便都能存」的口子）。
+  const invalid = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ wsUrl: 'http://nope' }),
+  })
+  assert.equal(invalid.status, 400)
+  assert.equal(invalid.payload.error.code, 'CONFIG_INVALID')
+
+  // 连接信息配全后才重建 / 启动 relay。
+  const connected = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ wsUrl: 'ws://127.0.0.1:1', accessToken: 't', selfId: 10001 }),
+  })
+  assert.equal(connected.status, 200)
+  assert.equal(connected.payload.value.started, true)
+})

@@ -226,14 +226,24 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
   const problems: string[] = []
   const patch: RelayConfigPatch = {}
 
+  // OneBot 连接信息允许留空（v0.25.4）：还没配好时也要能保存其它设置
+  // （典型：先存「环境」页的 WebUI token，再点一键修复）。host 会把它们当作「待补全」，
+  // relay 暂不启动；填了但格式不对仍然当场报错。
   const wsUrl = form.wsUrl.trim()
-  if (wsUrl === '') problems.push('wsUrl 必填')
-  else patch.wsUrl = wsUrl
+  if (wsUrl === '') {
+    // 留空 = 沿用现有值 / 暂不配置。
+  } else if (!/^wss?:\/\//u.test(wsUrl)) {
+    problems.push('wsUrl 必须是 ws:// 或 wss:// 地址')
+  } else {
+    patch.wsUrl = wsUrl
+  }
 
   if (form.accessToken.trim() !== '') patch.accessToken = form.accessToken.trim()
 
   const selfIdText = form.selfId.trim()
-  if (!/^\d+$/u.test(selfIdText) || Number(selfIdText) <= 0) {
+  if (selfIdText === '') {
+    // 留空 = 还没配 bot 小号 QQ 号。
+  } else if (!/^\d+$/u.test(selfIdText) || Number(selfIdText) <= 0) {
     problems.push('selfId 必须是正整数')
   } else {
     patch.selfId = Number(selfIdText)

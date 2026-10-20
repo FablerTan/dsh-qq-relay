@@ -6,7 +6,7 @@
 > [README.md](./README.md)，版本历史见 [docs/changelog.md](./docs/changelog.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.3**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.4**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -41,6 +41,9 @@
 > v0.25.3 **回滚 v0.25.2** 的「按 docker endpoint 识别 OrbStack / Docker Desktop」——环境页只认
 > Colima（`colima start` 会创建 context，指向别的引擎时用 `docker context use colima`），
 > 不再提供 `start-orbstack` / `install-orbstack` 动作；
+> v0.25.4 修「OneBot 没配好就存不了 WebUI token」：连接信息（`wsUrl` / `accessToken` / `selfId`）
+> 留空只算「待补全」（`ok: true` / `ready: false`），配置照常落盘、relay 暂不启动——新机器可以
+> 先在「环境」页存 WebUI token 再一键修复；写错的字段仍 400 拒绝；
 > 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）

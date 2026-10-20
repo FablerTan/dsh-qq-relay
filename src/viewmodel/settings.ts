@@ -324,7 +324,8 @@ export function useRelaySettings(): RelaySettingsModel {
     setBusy(false)
     if (result.ok) {
       applyStatus(result.value, true)
-      setNotice('已保存并重建连接。')
+      // 连接信息没配全时 host 只落盘、不重建（v0.25.4）：文案不承诺「已重连」。
+      setNotice(result.value.problems.length > 0 ? '已保存（OneBot 连接信息还没配全，relay 暂不启动）。' : '已保存并重建连接。')
     } else {
       setError(errorText(result))
     }

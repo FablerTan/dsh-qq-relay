@@ -52,12 +52,27 @@ test('config：合法配置被规范化', () => {
   assert.deepEqual(result.config.commandPrefixes, ['/dsh'])
 })
 
-test('config：缺必填项时 fail closed', () => {
+test('config：连接信息没配全时是「待补全」（可先保存其它设置）', () => {
   const result = normalizeConfig({})
-  assert.equal(result.ok, false)
-  assert.ok(result.problems.some((p) => p.includes('wsUrl')))
-  assert.ok(result.problems.some((p) => p.includes('accessToken')))
-  assert.ok(result.problems.some((p) => p.includes('selfId')))
+  // v0.25.4：空 wsUrl / accessToken / selfId 不算「配置无效」，而是「待补全」——
+  // 这样环境页的 WebUI token 才能在 OneBot 配好之前先保存。
+  assert.equal(result.ok, true)
+  assert.equal(result.ready, false)
+  assert.ok(result.pending.some((p) => p.includes('wsUrl')))
+  assert.ok(result.pending.some((p) => p.includes('accessToken')))
+  assert.ok(result.pending.some((p) => p.includes('selfId')))
+
+  // 填了但写错的仍然拒绝（wsUrl 协议不对 / selfId 不是正整数）。
+  const bad = normalizeConfig({ wsUrl: 'http://x', accessToken: 't', selfId: 'abc' })
+  assert.equal(bad.ok, false)
+  assert.ok(bad.problems.some((p) => p.includes('ws://')))
+  assert.ok(bad.problems.some((p) => p.includes('selfId')))
+
+  // 三项配全后 ready（relay 才会启动）。
+  const full = normalizeConfig({ wsUrl: 'ws://127.0.0.1:3001', accessToken: 't', selfId: 10001 })
+  assert.equal(full.ok, true)
+  assert.equal(full.ready, true)
+  assert.deepEqual(full.pending, [])
 })
 
 test('config：commandPrefixes 可覆盖且拒绝非法值', () => {
