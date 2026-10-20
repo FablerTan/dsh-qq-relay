@@ -2,8 +2,8 @@
 
 > 供 AI 代理与人类开发者共用：**在本插件里动手前先读本文件**。
 > 本文件只放**本插件自己的入口与硬性纪律**（文档在哪、改完怎么验收）；
-> 仓库级规则见上级 [`../../AGENTS.md`](../../AGENTS.md)，功能 / 用法 / 版本历史见
-> [README.md](./README.md)。
+> 仓库级规则见上级 [`../../AGENTS.md`](../../AGENTS.md)，功能 / 用法见
+> [README.md](./README.md)，版本历史见 [docs/changelog.md](./docs/changelog.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
 > 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.24.0**：P1 @ 直通
@@ -95,9 +95,9 @@
 
 | 用途 | 位置 | 何时看 |
 |---|---|---|
-| 本插件总览 / 用途 / 用法 / 版本历史 | [README.md](./README.md) | 任何任务第一步 |
-| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / client / tools / poke / approval / commands / reply / config / persona / comfy / env） | 动功能前对齐方向 |
-| 某行为是哪个版本引入 / 为何如此 | README「版本历史」 | 追历史与动机 |
+| 本插件总览 / 用途 / 用法 | [README.md](./README.md) | 任何任务第一步 |
+| 版本历史 / 某行为何时引入 | [docs/changelog.md](./docs/changelog.md) | 追历史与动机 |
+| 机制细节 / 设计取舍 / 协议端选型 / 已知问题 | `docs/`（一文档一主题，kebab-case 命名；已建立：architecture / onebot-channel / gate / chat-context / media / roadmap / changelog / client / tools / poke / approval / commands / reply / config / persona / comfy / env） | 动功能前对齐方向 |
 | 仓库纪律 / 渲染树选座 / 工程基线 | 上级 [../../AGENTS.md](../../AGENTS.md)、[../../docs/](../../docs/) | 跨插件协作、装入 profile、选 slot |
 
 - `docs/` 就在**本插件目录下**；新增文档时在 README 的「文档索引」登记一行（路径 + 一句话 +
@@ -108,7 +108,7 @@
 ## 2. 硬性纪律
 
 1. **文档同步**：改了行为 / 交互 / 工具 schema / 路由契约 / 版本号 → 在**同一次变更**里同步
-   README（版本历史 + 文档索引）与 `docs/` 对应文档，不留「先写代码、文档后补」的债。
+   README（文档索引）与 `docs/` 对应文档（版本历史写 `docs/changelog.md`），不留「先写代码、文档后补」的债。
 2. **提交前跑 `pnpm check`**：本插件的验收闸门 =
    `node scripts/check-syntax.mjs`（`lib/` 与 `scripts/` 全部 JS 语法 + `dsh.bundle.patch` /
    `dsh.client` 元数据 + patch 行齐备）
