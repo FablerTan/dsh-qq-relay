@@ -46,6 +46,12 @@ export interface RelayFormState {
   comfyTimeout: string
   /** 连接成功后加载画图 skill（v0.21.0）：布尔，走 setComfySkillEnabled。 */
   comfySkillEnabled: boolean
+  /** 环境页开关（v0.23.0）：布尔，走 setEnvEnabled。 */
+  envEnabled: boolean
+  /** NapCat Docker 环境目录（绝对路径或 ~/ 开头；host 会校验）。 */
+  envDir: string
+  /** NapCat WebUI token（v0.23.0）：只写不读，留空表示不修改。 */
+  envWebuiToken: string
 }
 
 /** 解析结果：成功带值，失败带可逐条显示的问题。 */
@@ -78,6 +84,9 @@ export function emptyForm(): RelayFormState {
     comfyBaseUrl: '',
     comfyTimeout: '30s',
     comfySkillEnabled: true,
+    envEnabled: true,
+    envDir: '',
+    envWebuiToken: '',
   }
 }
 
@@ -106,6 +115,10 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     comfyBaseUrl: config.comfy.baseUrl,
     comfyTimeout: formatDurationMs(config.comfy.timeoutMs),
     comfySkillEnabled: config.comfy.skillEnabled,
+    envEnabled: config.environment.enabled,
+    envDir: config.environment.dir,
+    // token 只写不读：表单永远从空开始，留空表示不修改。
+    envWebuiToken: '',
   }
 }
 
@@ -301,6 +314,25 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
       timeoutMs: comfyTimeoutMs,
       skillEnabled: form.comfySkillEnabled,
     }
+  }
+
+  // 环境配置（v0.23.0）：目录必填且必须是绝对路径 / ~ 开头；token 留空表示不修改。
+  const envDir = form.envDir.trim()
+  if (envDir === '') {
+    problems.push('环境目录必填（默认 ~/napcat-docker）')
+  } else if (envDir !== '~' && !envDir.startsWith('~/') && !envDir.startsWith('/')) {
+    problems.push('环境目录必须是绝对路径或 ~/ 开头')
+  } else if (envDir.split('/').includes('..')) {
+    problems.push('环境目录不能包含 ..')
+  }
+  if (envDir !== '' && !problems.some((problem) => problem.startsWith('环境目录'))) {
+    const environment: NonNullable<RelayConfigPatch['environment']> = {
+      enabled: form.envEnabled,
+      dir: envDir,
+    }
+    const token = form.envWebuiToken.trim()
+    if (token !== '') environment.webuiToken = token
+    patch.environment = environment
   }
 
   const gate: NonNullable<RelayConfigPatch['gate']> = {}

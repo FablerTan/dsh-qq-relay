@@ -1,5 +1,5 @@
 /**
- * 配置页外壳（client View 层）：状态行 + 六个二级页面导航（含「画图 / 视频」）。
+ * 配置页外壳（client View 层）：状态行 + 七个二级页面导航（v0.23.0 起含「环境」）。
  *
  * 注册落点是插件面板里 dsh-qq-relay 组合包自己的页面（`plugins.bundle.config`，
  * key = 包名），页面标题 / 描述 / 启动开关由插件页负责，这里只画表单内容。
@@ -14,6 +14,7 @@ import { SETTINGS_TABS, useRelaySettings } from '../viewmodel/settings.js'
 import { BehaviorPanel } from './panels/BehaviorPanel.js'
 import { ComfyPanel } from './panels/ComfyPanel.js'
 import { ConnectionPanel } from './panels/ConnectionPanel.js'
+import { EnvPanel } from './panels/EnvPanel.js'
 import { PresetsPanel } from './panels/PresetsPanel.js'
 import { ProjectPanel } from './panels/ProjectPanel.js'
 import { RecordsPanel } from './panels/RecordsPanel.js'
@@ -25,7 +26,9 @@ export function RelaySettingsPage(): ReactElement {
 
   const panel = model.tab === 'connection'
     ? <ConnectionPanel model={model} />
-    : model.tab === 'project'
+    : model.tab === 'env'
+      ? <EnvPanel model={model} />
+      : model.tab === 'project'
       ? <ProjectPanel model={model} />
       : model.tab === 'behavior'
         ? <BehaviorPanel model={model} />
@@ -69,6 +72,13 @@ export function RelaySettingsPage(): ReactElement {
           </button>
         ))}
       </nav>
+
+      {model.tab === 'env' ? (
+        <Line tone="muted">
+          环境页把 NapCat 的 Docker 安装步骤收敛成 7 个检查：环境目录、Docker CLI、容器引擎、
+          compose 文件、NapCat 容器、QQ 登录、OneBot 配置与插件回填。安装类动作执行前会二次确认。
+        </Line>
+      ) : null}
 
       {model.tab === 'comfy' ? (
         <Line tone="muted">

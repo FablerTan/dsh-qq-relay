@@ -44,11 +44,12 @@ import {
 const api = createRelaySettingsApi({ fetch: (input, init) => globalThis.fetch(input, init) })
 
 /** 配置页的二级页面。 */
-export type SettingsTab = 'connection' | 'project' | 'behavior' | 'comfy' | 'presets' | 'records'
+export type SettingsTab = 'connection' | 'env' | 'project' | 'behavior' | 'comfy' | 'presets' | 'records'
 
 /** 二级页面导航（顺序即渲染顺序）。 */
 export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'connection', label: '连接' },
+  { id: 'env', label: '环境' },
   { id: 'project', label: '项目' },
   { id: 'behavior', label: '行为' },
   { id: 'comfy', label: '画图 / 视频' },
@@ -62,7 +63,7 @@ export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = 
  */
 export type RelayFormTextField = Exclude<
   keyof RelayFormState,
-  'proxyEnabled' | 'personaEnabled' | 'comfyEnabled' | 'comfySkillEnabled'
+  'proxyEnabled' | 'personaEnabled' | 'comfyEnabled' | 'comfySkillEnabled' | 'envEnabled'
 >
 
 /** 状态点的色调（View 层只认这个，不认具体颜色）。 */
@@ -211,6 +212,8 @@ export interface RelaySettingsModel {
   setComfyEnabled: (enabled: boolean) => void
   /** 「连接成功后加载画图 skill」开关（v0.21.0）。 */
   setComfySkillEnabled: (enabled: boolean) => void
+  /** 环境页开关（v0.23.0）。 */
+  setEnvEnabled: (enabled: boolean) => void
   /** 用表单里的地址 / 超时探测一次 ComfyUI（不保存配置）。 */
   testComfy: () => void
   updateProjectRow: (groupId: number, projectDir: string) => void
@@ -294,6 +297,10 @@ export function useRelaySettings(): RelaySettingsModel {
 
   const setComfySkillEnabled = useCallback((enabled: boolean) => {
     setForm((previous) => ({ ...previous, comfySkillEnabled: enabled }))
+  }, [])
+
+  const setEnvEnabled = useCallback((enabled: boolean) => {
+    setForm((previous) => ({ ...previous, envEnabled: enabled }))
   }, [])
 
   const updateProjectRow = useCallback((groupId: number, projectDir: string) => {
@@ -602,6 +609,7 @@ export function useRelaySettings(): RelaySettingsModel {
     setPersonaEnabled,
     setComfyEnabled,
     setComfySkillEnabled,
+    setEnvEnabled,
     testComfy: () => { void testComfy() },
     updateProjectRow,
     refresh,

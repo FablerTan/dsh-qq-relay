@@ -130,7 +130,7 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     commandPrefixes: ['/dsh'],
   })
 
-  assert.equal(routes.length, 11, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条 / presets 二条 / comfy test 一条路由')
+  assert.equal(routes.length, 13, '应注册 status / config / reconnect / rebind / cleanup / messages / mapping 二条 / presets 二条 / comfy test / env 二条路由')
 
   const initial = await call(routes, '/dsh-qq-relay/api/status')
   assert.equal(initial.status, 200)
@@ -503,7 +503,7 @@ test('apply：注册 qq_send / qq_poke 工具，离线时返回 queued / 报错'
     groups: [100],
     workspace: join(home, 'ws'),
   })
-  assert.equal(routes.length, 11)
+  assert.equal(routes.length, 13)
   assert.equal(tools.length, 2)
   const send = tools.find((tool) => tool.name === 'qq_send')
   const poke = tools.find((tool) => tool.name === 'qq_poke')

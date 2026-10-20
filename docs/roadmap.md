@@ -20,7 +20,9 @@
 > 已落地（v0.21.0，v0.21.1 修 `qq_send` 出向图片 / 文件转发），见 [comfy.md](./comfy.md)；
 > **P15 视频生成（MiniMax H3 + comfy-video skill + qq_send videos）** 已落地（v0.22.0），
 > 见 [comfy.md](./comfy.md) §8。
-> **P12 环境一键安装 / P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，状态：**规划中**。
+> **P12 环境一键安装** 已落地基础版（v0.23.0，2026-10-20：7 步诊断 + 白名单动作 + 一键修复 +
+> 动作日志，见 [env.md](./env.md)）；**P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，
+> 状态：**规划中**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
 > [gate.md](./gate.md)。
@@ -471,13 +473,37 @@
 - 关闭代答 → @ 名单内的人也不触发。
 - 显式 `@全体成员` 的公告不触发会话。
 
-## P12 环境一键安装（规划中，2026-10-19 用户定为重点）
+## P12 环境一键安装（v0.23.0 基础版已落地，2026-10-19 用户定为重点）
 
 目标：把「装 Docker / 起 Colima / 拉 NapCat / 扫码登录 / 写 OneBot 配置 / 回填插件配置」从
 [onebot-channel.md §3](./onebot-channel.md) 的手工步骤，收敛成插件面板里的**「环境」页**：
 每步一个状态和按钮，新机器从零到 relay 连上；已装好的机器只做诊断，「一键修复」只补缺的步骤。
 
-### 设计草案
+### 已落地（v0.23.0，2026-10-20）
+
+规格细节见 [env.md](./env.md)；与下方原始草案的差异：
+
+- **页签位置**：连接 / **环境** / 项目 / 行为 / 画图·视频 / 预设 / 记录（七页）；「连接」页顶部的
+  环境未就绪横幅**未做**（环境页本身已足够显眼，留作后续）。
+- **步骤**：7 步全部实现，判定与动作见 [env.md §4](./env.md)；compose 文件默认写
+  `compose.yaml`（同时兼容既有 `docker-compose.yml`），容器名从 compose 解析（默认 `napcat`）；
+  OneBot 配置按「启用的第一个 websocketServers 条目」修正五个字段，写前备份 `.bak-<时间戳>`。
+- **动作**：白名单共 10 个（含 `refresh` / `fix-all` / `open-webui`），命令固定 argv、`shell: false`；
+  安装 / 启动引擎 / 写 OneBot 需 `confirm: true`；命令类动作后台执行，超时 10 分钟 SIGKILL。
+  `fix-all` 只补可自动完成的步骤（`write-compose → compose-up → restart-napcat → write-onebot →
+  backfill-config`），**不含**安装 / 启动引擎 / 扫码。
+- **路由**：`GET /api/env` + `POST /api/env/action`；日志尾部（60 条、已脱敏）直接放在状态快照里，
+  **没有**单开 `GET /api/env/log?since=`（一次轮询同时拿步骤与日志，少一条路由）。
+- **CSRF**：只接受 `content-type: application/json` 的 POST（跨站会触发预检），**没有** nonce——
+  与既有 11 条配置页路由同一套口径。
+- **配置**：`environment`（`enabled` / `dir` / `webuiToken` 只写不读）；非法目录 / token 只回退默认值，
+  不判死整份配置；只改 environment **不重建 relay**。
+- **平台**：macOS（Colima）与 Linux（已有 daemon）；Linux 不提供安装 / 启动引擎动作（无 sudo）。
+  Windows / WSL 只显示「暂不支持」，不执行动作。
+- **测试**：`test/env.test.js` 9 个用例（配置 / compose / OneBot / 求值 / argv / 日志 / controller
+  探测 + 写 OneBot + 回填 + open-webui + 确认制 / 一键修复序列）；总数 291。
+
+### 设计草案（原始，2026-10-19）
 
 - 入口：插件面板新增「环境」二级页（连接 / 项目 / 行为 / 记录 / 环境）；「连接」页顶部在
   环境未就绪时显示横幅（去修 → 环境页）。
@@ -517,7 +543,9 @@
      配置页要能看到**运行状态**与 **WebUI 链接**（`http://127.0.0.1:6099/webui?token=…`）。
   2. 环境目录在设置页可改（默认 `~/napcat-docker`）。
   3. 只支持 Docker + NapCat（macOS 用 Colima）；macOS 原生 Shell 不列入。
-- **待定**：「卸载 / 重置环境」入口（删容器 + 数据卷，危险操作二次确认）是否需要。
+- **已落地后的待定**：「卸载 / 重置环境」入口（删容器 + 数据卷，危险操作二次确认）是否需要；
+  NapCat 镜像更新（`docker compose pull`）是否做成动作——当前故意不做，避免「一键修复」意外
+  升级镜像导致登录态失效。
 
 ## P13 会话上下文增强：表情包与角色预设（P13.1 v0.19.0 已实现，2026-10-19）
 

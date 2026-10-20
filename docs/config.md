@@ -175,6 +175,19 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
   **只探测、不保存**），契约见 [client.md](./client.md) §5。
 - 旧 host 缺 `comfy` 段时页面按关闭兜底（`config.comfySupported = false`），提示重启 GUI。
 
+### 2.13 环境一键配置（v0.23.0）
+
+| 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
+|---|---|---|---|---|---|
+| `environment.enabled` | `true` | 布尔 | 「环境」页是否探测 / 允许动作；关闭后按钮全部禁用 | 可 | 保存后立即重探 |
+| `environment.dir` | `~/napcat-docker` | 绝对路径或 `~/` 开头、无 `..`、≤200 字符 | NapCat 的 Docker 环境目录（`compose.yaml` + `data/`） | 可 | 保存后立即重探 |
+| `environment.webuiToken` | `''` | ≤200 字符 | NapCat `WEBUI_TOKEN`（**只写不读**：状态只给 `webuiTokenConfigured`） | 可 | 保存后立即重探 |
+
+- 非法目录 / token **不会**把整份配置判死（只回退默认值），避免环境页笔误让 relay 停摆；
+  页面保存前会先做同样的格式校验。
+- `environment` 变化**不重建 relay 连接**（与 `comfy` 同理），只触发一次重新探测。
+- 步骤语义、动作白名单与 HTTP 契约见 [env.md](./env.md)。
+
 ## 3. 写死的常量（想调得先改成配置段）
 
 这些目前是代码里的常量，**不在配置里**；下表列出位置与含义，作为"要不要顺手做成配置"的参考。
@@ -204,20 +217,21 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 ## 4. 配置页覆盖矩阵
 
-- **现在可改（14 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项 +
-  4 个 comfy 子项）**：
+- **现在可改（15 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项 +
+  4 个 comfy 子项 + 3 个 environment 子项）**：
   `wsUrl`、`accessToken`、`selfId`、`groups`、`workspace`、`groupWorkspaces`（表格）、
   `chatRetentionDays`、`sessionTitle`、`replyChunkSize`、`commandPrefixes`、
   `proxyReply`（`enabled` / `targets` / `silenceWindow`）、`agentPreset`、
-  `persona`（`enabled` / `text`）、`comfy`（`enabled` / `baseUrl` / `timeoutMs` / `skillEnabled`），
+  `persona`（`enabled` / `text`）、`comfy`（`enabled` / `baseUrl` / `timeoutMs` / `skillEnabled`）、
+  `environment`（`enabled` / `dir` / `webuiToken`），
   以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
 - **patch 只读（26 项）**：`reconnect`（2 子项）、`commands`（3）、`reply`（3）、`poke`（3）、
   `files`（2）、`approval`（3）、`gate` 其余 10 项（`enabled` / `mentionBypass` / `fastWindow` /
   `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` /
   `jevEndpoint` / `jevApiKeyEnv`）。
 - 白名单在两处：`model/settings.js` 的 `EDITABLE_KEYS`（+ `EDITABLE_GATE_KEYS` /
-  `EDITABLE_PROXY_KEYS` / `EDITABLE_PERSONA_KEYS` / `EDITABLE_COMFY_KEYS` 与 `pickGate` /
-  `pickProxyReply` / `pickPersona` / `pickComfy`）
+  `EDITABLE_PROXY_KEYS` / `EDITABLE_PERSONA_KEYS` / `EDITABLE_COMFY_KEYS` / `EDITABLE_ENV_KEYS` 与
+  `pickGate` / `pickProxyReply` / `pickPersona` / `pickComfy` / `pickEnvironment`）
   决定**哪些字段能被页面覆盖并写盘**；`maskConfig` 决定**页面上能看到哪些值**。
   两处都要加，否则出现"能保存但看不到"或反之。
 
@@ -232,7 +246,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
    `isFormDirty` 自动跟随；
 4. `src/viewmodel/settings.ts`：把新动作挂进 `RelaySettingsModel`（如果它需要按钮 / 保存时提交）；
 5. `src/view/`：控件（开关 / 时长输入 / 数字 / 多选）落在对应二级页面
-   （`panels/{Connection,Project,Behavior,Comfy,Presets,Records}Panel.tsx`）或 `controls.tsx`；
+   （`panels/{Connection,Env,Project,Behavior,Comfy,Presets,Records}Panel.tsx`）或 `controls.tsx`；
 6. `src/model/api.ts`：`RelayConfigView` / `RelayConfigPatch` 类型；
 7. 测试：`test/settings.test.js`（白名单 / 脱敏 / 合并）、`test/apply.test.js`（保存 → 重建）；
 8. 文档：`docs/client.md` §2/§4、`docs/architecture.md` §2.1、本文 §4。
@@ -248,3 +262,4 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 - 闸门参数含义 / 触发规则 / 代答：[gate.md](./gate.md) · 回复体验：[reply.md](./reply.md)
 - 戳一戳：[poke.md](./poke.md) · 群文件：[media.md §5.2](./media.md) · 命令：[commands.md](./commands.md)
 - 审批：[approval.md](./approval.md) · 工具上限：[tools.md](./tools.md) · 画图 / 视频：[comfy.md](./comfy.md)
+- 环境一键配置：[env.md](./env.md)

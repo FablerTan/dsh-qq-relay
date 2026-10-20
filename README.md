@@ -1,8 +1,8 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.22.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
-搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
+当前 **v0.23.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
@@ -21,7 +21,9 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 ComfyUI，连上后把插件自带的 `comfy-image` skill 动态注册给 DSH，群里出图 / 改图后产物用 `qq_send`
 发回群；v0.22.0 加**视频生成**——同一个 ComfyUI 再动态注册 `comfy-video` skill（MiniMax H3），
 `qq_send` 新增 `videos`（内联视频消息），群里可文生视频 / 首帧 / 参考图转视频（见
-[docs/comfy.md](./docs/comfy.md)）。设计见
+[docs/comfy.md](./docs/comfy.md)）；v0.23.0 加**环境一键配置**——配置页「环境」页把
+Docker / Colima / NapCat / 扫码登录 / OneBot 配置 / 插件回填收敛成 7 个检查与白名单动作，
+新机器可从零装到 relay 连上（见 [docs/env.md](./docs/env.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -84,22 +86,23 @@ dsh-qq-relay/
 │   ├── controller/
 │   │   ├── onebot/       # codec（事件编解码）· client（WS）· api（action 封装）
 │   │   ├── runtime.js    # relay 运行实例：整份配置热替换（配置页保存后重建连接）
-│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping / presets / comfy test）
+│   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping / presets / comfy test / env）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
 │   │   ├── tools.js      # qq_send（文本 / 图片 / 视频 / 文件）/ qq_poke 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   ├── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   │   └── comfy.js      # ComfyUI 探测 + 动态注册 comfy-image / comfy-video 两个 skill（v0.21.0 / v0.22.0）
-│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批 / comfy 配置与 skill 模板渲染
+│   │   ├── comfy.js      # ComfyUI 探测 + 动态注册 comfy-image / comfy-video 两个 skill（v0.21.0 / v0.22.0）
+│   │   └── env.js        # 环境页探测 + 白名单动作（Docker / Colima / compose / NapCat / OneBot / 回填，v0.23.0）
+│   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批 / comfy 配置与 skill 模板渲染 / environment 配置与步骤求值
 │   ├── skills/comfy-image/ # 插件自带画图 / 视频 skill（SKILL.md / SKILL-video.md 模板 / 运行器 / 7 个工作流 / 参考），随包发布
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ viewmodel（呈现态与动作）→ view（组件）
 │   ├── client.tsx        # 组合根：把配置页注册进 plugins.bundle.config（key = 包名）
 │   ├── model/            # api.ts（HTTP）· form.ts（表单 ↔ patch 纯逻辑）
-│   ├── viewmodel/        # settings.ts（状态 / 动作 hook、状态文案、二级页面定义）
-│   └── view/             # SettingsPage（外壳 + 状态行 + 二级页面导航）· controls · theme（CSS）· panels/*（含 ComfyPanel）
+│   ├── viewmodel/        # settings.ts（状态 / 动作 hook、状态文案、二级页面定义）· env.ts（环境页轮询 / 动作）
+│   └── view/             # SettingsPage（外壳 + 状态行 + 二级页面导航）· controls · theme（CSS）· panels/*（含 ComfyPanel / EnvPanel）
 ├── scripts/              # wrap-client（产物包装）· check-syntax · check-docs
 ├── docs/                 # 设计文档（一文档一主题：架构 / 通道 / 闸门 / 画图 / 路线…）
 ├── README.md             # 本文件
@@ -113,7 +116,7 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
-| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
+| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
 | [docs/config.md](./docs/config.md) | 配置总表：每个字段的默认值 / 范围 / 现在能否在配置页改 / 生效方式 + 写死常量清单 + 加字段的改动面 | 调配置 / 决定哪些进配置页时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
@@ -121,6 +124,7 @@ dsh-qq-relay/
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
 | [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 视频 / 文件与画图 / 视频产物 | 改媒体 / 排查媒体收发时 |
 | [docs/comfy.md](./docs/comfy.md) | 画图与视频：ComfyUI 配置 / 探测、动态注册 `comfy-image` / `comfy-video` 两个 skill 的生命周期与模板渲染、图片 + 视频工作流、QQ 群用法与安全边界 | 开画图 / 视频、排查生成不生效时 |
+| [docs/env.md](./docs/env.md) | 环境一键配置（v0.23.0）：`environment` 配置段、7 个检查步骤、白名单动作与固定 argv、一键修复序列、HTTP 契约与安全边界 | 新机器装 NapCat / 排查「环境」页、改环境动作时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
 | [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送（文本 / 图片 / 视频 / 文件）/ `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
@@ -158,6 +162,35 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.23.0 环境一键配置：`environment` 配置段 + 「环境」页 7 步诊断与白名单动作（2026-10-20）
+
+- **配置页新增「环境」二级页**（顺序：连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录）：
+  把 [onebot-channel.md §3](./docs/onebot-channel.md) 的手工装环境步骤收敛成
+  **7 个检查 + 按钮**（Docker CLI / 容器引擎 / compose 文件 / NapCat 容器 / QQ 登录 /
+  OneBot 配置 / 插件回填），顶部有一键修复、重新检测、打开 WebUI 扫码与动作日志。
+- **host 新增** `lib/model/env.js`（纯逻辑：`environment` 配置规范化 / `webuiToken` 只写不读、
+  compose 生成与静态解析、OneBot 配置校验、步骤求值、动作白名单与固定 argv、日志环形缓冲）
+  与 `lib/controller/env.js`（探测 + 动作执行）；路由
+  `GET /api/env`、`POST /api/env/action`（`config-routes.js` 现共 13 条路由）。
+- **动作白名单、不经 shell**：`install-docker`（`brew install colima docker docker-compose`）、
+  `start-daemon`（`colima start …`）、`write-compose`、`compose-up`、`restart-napcat`、
+  `write-onebot`（先备份 `.bak-时间戳` 再原子写入 + 重启 NapCat）、`backfill-config`
+  （写插件 `wsUrl` / `accessToken` / `selfId` 并重连）、`fix-all`（按序补缺失步骤，不含安装类）、
+  `open-webui`（返回 `/webui?token=…` 链接）。命令用 `spawn` + 参数数组（`shell: false`），
+  安装 / 启动引擎 / 写 OneBot 必须 `confirm: true`；命令类动作后台执行并轮询日志。
+- **`environment` 配置段**：`enabled`（默认开）/ `dir`（默认 `~/napcat-docker`）/
+  `webuiToken`（只写不读，保存时与已有覆盖合并避免被目录保存清掉）。目录 / token 非法只回退
+  默认值，不判死整份配置；environment 变化不重建 relay 连接（与 comfy 同理）。
+- **一键修复**：`write-compose → compose-up → restart-napcat → write-onebot → backfill-config`
+  中缺失的步骤按序补；安装 Docker / 启动引擎 / 扫码仍由用户手动确认。
+- **安全边界**：只跑 `docker` / `docker compose` / `brew` / `colima`，不 `sudo`、
+  不下载可执行文件、不接受页面传来的命令 / 路径；日志写入前对 webuiToken / accessToken /
+  OneBot token 脱敏；WebUI 链接只在 `open-webui` 动作里返回。Windows / WSL 不支持（页面只提示）。
+- 单测 282 → **291**（新增 `test/env.test.js` 9 个；`test/apply.test.js` 路由数 11 → 13）。
+- 文档同步：新增 [docs/env.md](./docs/env.md)；更新 config / client / roadmap / architecture /
+  onebot-channel / README / AGENTS；`lib/client.js` 已含「环境」页。
+- **需要用户重启 dwdev GUI** 才能在面板里看到「环境」页。
 
 ### v0.22.0 视频生成：MiniMax H3 + 双 skill + qq_send videos（2026-10-20）
 

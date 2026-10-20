@@ -134,6 +134,73 @@ export interface RelayComfyTestValue {
   status: RelayStatusView
 }
 
+/** 环境配置（v0.23.0）：NapCat Docker 环境目录 + WebUI token（只写不读）。 */
+export interface RelayEnvConfigView {
+  enabled: boolean
+  dir: string
+  webuiTokenConfigured: boolean
+}
+
+/** 环境页的一个白名单动作（host 下发的动作目录）。 */
+export interface RelayEnvActionView {
+  id: string
+  title: string
+  kind: string
+  confirm: boolean
+  description: string
+}
+
+/** 环境检查的一步（ok / warn / error / skip）。 */
+export interface RelayEnvStepView {
+  id: string
+  title: string
+  status: string
+  detail: string
+  evidence: string[]
+  actions: string[]
+}
+
+/** 环境步骤汇总计数。 */
+export interface RelayEnvSummaryView {
+  ok: number
+  warn: number
+  error: number
+  skip: number
+}
+
+/** 一条动作日志。 */
+export interface RelayEnvLogEntryView {
+  seq: number
+  at: number
+  level: string
+  text: string
+}
+
+/** 环境页状态（GET /api/env）：步骤 + 动作目录 + 日志尾部。 */
+export interface RelayEnvStatusView {
+  supported: boolean
+  platform: string
+  enabled: boolean
+  dir: string
+  webuiTokenConfigured: boolean
+  checking: boolean
+  checkedAt: number
+  running: { action: string; startedAt: number } | null
+  summary: RelayEnvSummaryView
+  steps: RelayEnvStepView[]
+  actions: RelayEnvActionView[]
+  log: { cursor: number; entries: RelayEnvLogEntryView[] }
+}
+
+/** 环境动作的 value：最新状态 + 日志游标；open-webui 会带 url。 */
+export interface RelayEnvActionValue {
+  action: string
+  status: RelayEnvStatusView
+  logCursor: number
+  accepted?: boolean
+  url?: string
+}
+
 /** host 侧 agent preset 名册（服务缺失时 supported=false，页面隐藏选择器）。 */
 export interface RelayAgentPresetsView {
   supported: boolean
@@ -225,6 +292,10 @@ export interface RelayConfigView {
   comfy: RelayComfyConfigView
   /** host 是否已经返回 comfy 配置（旧版 host 为 false，页面应提示重启）。 */
   comfySupported: boolean
+  /** 环境配置（v0.23.0）；旧 host 缺字段时按默认值兜底。 */
+  environment: RelayEnvConfigView
+  /** host 是否已经返回 environment 段（旧版 host 为 false，页面应提示重启）。 */
+  environmentSupported: boolean
   sessionTitle: string
   replyChunkSize: number
   commandPrefixes: string[]
@@ -369,6 +440,12 @@ export interface RelayConfigPatch {
     timeoutMs?: number
     skillEnabled?: boolean
   }
+  /** 环境配置（v0.23.0）：webuiToken 留空表示不修改（只写不读）。 */
+  environment?: {
+    enabled?: boolean
+    dir?: string
+    webuiToken?: string
+  }
   sessionTitle?: string
   replyChunkSize?: number
   commandPrefixes?: string[]
@@ -405,6 +482,10 @@ export const PRESETS_PATH = '/dsh-qq-relay/api/presets'
 export const PRESETS_DELETE_PATH = '/dsh-qq-relay/api/presets/delete'
 /** ComfyUI 连通性测试（v0.21.0）；body 可选 { baseUrl?, timeoutMs? }。 */
 export const COMFY_TEST_PATH = '/dsh-qq-relay/api/comfy/test'
+/** 环境页状态（v0.23.0）。 */
+export const ENV_PATH = '/dsh-qq-relay/api/env'
+/** 环境页动作（v0.23.0）；body { action, confirm? }。 */
+export const ENV_ACTION_PATH = '/dsh-qq-relay/api/env/action'
 
 /** 配置页用到的能力面（组合根注入 `fetch` 后得到实例）。 */
 export interface RelaySettingsApi {
@@ -420,6 +501,10 @@ export interface RelaySettingsApi {
   deletePreset(id: string): Promise<RelayApiResult<RelayPresetsValue>>
   /** ComfyUI 连通性测试（v0.21.0）：只探测，不改配置 / skill 注册。 */
   testComfy(input?: { baseUrl?: string; timeoutMs?: number }): Promise<RelayApiResult<RelayComfyTestValue>>
+  /** 环境页状态（v0.23.0）：步骤 + 动作目录 + 日志尾部。 */
+  getEnv(): Promise<RelayApiResult<RelayEnvStatusView>>
+  /** 环境页动作（v0.23.0）：安装类必须带 confirm:true。 */
+  envAction(input: { action: string; confirm?: boolean }): Promise<RelayApiResult<RelayEnvActionValue>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -673,6 +758,93 @@ function asComfyProbe(value: unknown, fallback: RelayComfyStatusView): RelayComf
   }
 }
 
+/** 环境配置兜底（旧 host 没有 environment 段 → 默认开启 + 默认目录）。 */
+function asEnvConfig(value: unknown): RelayEnvConfigView {
+  if (!isRecord(value)) {
+    return { enabled: true, dir: '~/napcat-docker', webuiTokenConfigured: false }
+  }
+  return {
+    enabled: value.enabled !== false,
+    dir: typeof value.dir === 'string' && value.dir !== '' ? value.dir : '~/napcat-docker',
+    webuiTokenConfigured: value.webuiTokenConfigured === true,
+  }
+}
+
+/** 环境步骤数组兜底。 */
+function asEnvSteps(value: unknown): RelayEnvStepView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    id: typeof entry.id === 'string' ? entry.id : '',
+    title: typeof entry.title === 'string' ? entry.title : '',
+    status: typeof entry.status === 'string' ? entry.status : 'skip',
+    detail: typeof entry.detail === 'string' ? entry.detail : '',
+    evidence: Array.isArray(entry.evidence)
+      ? entry.evidence.filter((line): line is string => typeof line === 'string')
+      : [],
+    actions: Array.isArray(entry.actions)
+      ? entry.actions.filter((action): action is string => typeof action === 'string')
+      : [],
+  })).filter((entry) => entry.id !== '')
+}
+
+/** 环境动作目录兜底。 */
+function asEnvActions(value: unknown): RelayEnvActionView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    id: typeof entry.id === 'string' ? entry.id : '',
+    title: typeof entry.title === 'string' ? entry.title : '',
+    kind: typeof entry.kind === 'string' ? entry.kind : 'none',
+    confirm: entry.confirm === true,
+    description: typeof entry.description === 'string' ? entry.description : '',
+  })).filter((entry) => entry.id !== '')
+}
+
+/** 环境动作日志兜底。 */
+function asEnvLogEntries(value: unknown): RelayEnvLogEntryView[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((entry) => ({
+    seq: typeof entry.seq === 'number' ? entry.seq : 0,
+    at: typeof entry.at === 'number' ? entry.at : 0,
+    level: typeof entry.level === 'string' ? entry.level : 'info',
+    text: typeof entry.text === 'string' ? entry.text : '',
+  }))
+}
+
+/** 环境页状态兜底（旧 host / 不支持时返回 null，页面显示「不支持」）。 */
+function asEnvStatus(value: unknown): RelayEnvStatusView | null {
+  if (!isRecord(value)) return null
+  const summary = isRecord(value.summary) ? value.summary : {}
+  const running = isRecord(value.running) ? value.running : null
+  const log = isRecord(value.log) ? value.log : {}
+  return {
+    supported: value.supported === true,
+    platform: typeof value.platform === 'string' ? value.platform : '',
+    enabled: value.enabled !== false,
+    dir: typeof value.dir === 'string' ? value.dir : '',
+    webuiTokenConfigured: value.webuiTokenConfigured === true,
+    checking: value.checking === true,
+    checkedAt: typeof value.checkedAt === 'number' ? value.checkedAt : 0,
+    running: running === null
+      ? null
+      : {
+          action: typeof running.action === 'string' ? running.action : '',
+          startedAt: typeof running.startedAt === 'number' ? running.startedAt : 0,
+        },
+    summary: {
+      ok: typeof summary.ok === 'number' ? summary.ok : 0,
+      warn: typeof summary.warn === 'number' ? summary.warn : 0,
+      error: typeof summary.error === 'number' ? summary.error : 0,
+      skip: typeof summary.skip === 'number' ? summary.skip : 0,
+    },
+    steps: asEnvSteps(value.steps),
+    actions: asEnvActions(value.actions),
+    log: {
+      cursor: typeof log.cursor === 'number' ? log.cursor : 0,
+      entries: asEnvLogEntries(log.entries),
+    },
+  }
+}
+
 /**
  * 把未知 JSON 读成状态快照。
  * 只做形状兜底（页面不能因为 host 版本漂移白屏），字段级默认值给全。
@@ -748,6 +920,8 @@ function asStatus(value: unknown): RelayStatusView | null {
         : { enabled: false, text: '' },
       comfy: asComfyConfig(config.comfy),
       comfySupported: config.comfySupported === true,
+      environment: asEnvConfig(config.environment),
+      environmentSupported: isRecord(config.environment),
       sessionTitle: typeof config.sessionTitle === 'string' ? config.sessionTitle : '',
       replyChunkSize: typeof config.replyChunkSize === 'number' ? config.replyChunkSize : 0,
       commandPrefixes: Array.isArray(config.commandPrefixes)
@@ -920,6 +1094,31 @@ export function createRelaySettingsApi(options: { fetch: typeof fetch }): RelayS
       const status = isRecord(value) ? asStatus(value.status) : null
       if (status === null || !isRecord(value)) return badPayload<RelayPresetsValue>()
       return { ok: true, value: { presets: asPresets(value.presets), status } }
+    },
+    async getEnv() {
+      const result = await requestEnvelope(fetchImpl, ENV_PATH)
+      if (!result.ok) return result
+      const env = asEnvStatus(result.value)
+      return env !== null ? { ok: true, value: env } : badPayload<RelayEnvStatusView>()
+    },
+    async envAction(input) {
+      const body: { action: string; confirm?: boolean } = { action: input.action }
+      if (input.confirm === true) body.confirm = true
+      const result = await requestEnvelope(fetchImpl, ENV_ACTION_PATH, jsonPost(body))
+      if (!result.ok) return result
+      const value = result.value
+      const status = isRecord(value) ? asEnvStatus(value.status) : null
+      if (status === null || !isRecord(value)) return badPayload<RelayEnvActionValue>()
+      return {
+        ok: true,
+        value: {
+          action: typeof value.action === 'string' ? value.action : input.action,
+          status,
+          logCursor: typeof value.logCursor === 'number' ? value.logCursor : 0,
+          accepted: value.accepted === true,
+          url: typeof value.url === 'string' ? value.url : undefined,
+        },
+      }
     },
     async testComfy(input) {
       const body: { baseUrl?: string; timeoutMs?: number } = {}

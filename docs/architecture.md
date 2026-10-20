@@ -15,7 +15,8 @@
 > [comfy.md](./comfy.md)**；v0.21.1 修 `qq_send` 出向图片 / 文件转发（runtime 包装补
 > `sendImage` / `sendFile`）与 workspace 挂载（失败重试 + 启动补挂，见 §3 会话映射）；
 > **v0.22.0 视频生成（同一个 ComfyUI 动态注册 `comfy-video` skill + `qq_send` 的 `videos` 出向视频）
-> 已实现，见 [comfy.md](./comfy.md)**。
+> 已实现，见 [comfy.md](./comfy.md)**；**v0.23.0 环境一键配置（7 步诊断 + 白名单动作 + 一键修复，
+> 见 [env.md](./env.md)）已实现**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -24,8 +25,9 @@
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
 - **client 半身**在**插件面板的组合包页**里提供配置页（P1.5/P4/P7/P10）：连接状态、配置编辑、
-  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理、画图 / 视频（ComfyUI）配置与状态，按
-  「连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录」分二级页面（契约见 [client.md](./client.md)）；审批开关等仍在后续。
+  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理、画图 / 视频（ComfyUI）配置与状态、
+  NapCat Docker 环境诊断与修复，按「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」分二级页面
+  （契约见 [client.md](./client.md)）；审批开关等仍在后续。
 - 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
   插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
@@ -75,6 +77,7 @@
 | `agentPreset` | string | `''` | 群会话使用的 DSH agent preset id；空 = 宿主默认。插件自带 `qq-relay`（显示名「QQ 群聊」）。preset 在会话创建时固定，详见 [persona.md](./persona.md) |
 | `persona` | object | `{ enabled: false, text: '' }` | 轻量人设（v0.19.0）：每轮 prompt 头部 `[角色设定：…]`；≤4000 字符，默认关闭 |
 | `comfy` | object | `{ enabled: false, baseUrl: 'http://192.168.1.10:8188', timeoutMs: 30000, skillEnabled: true }` | 画图 / 视频（v0.21.0 / v0.22.0）：ComfyUI 探测开关 / 地址 / 探测超时（3s..120s）/ 连上后是否注册 `comfy-image` 与 `comfy-video` 两个 skill，详见 [comfy.md](./comfy.md) |
+| `environment` | object | `{ enabled: true, dir: '~/napcat-docker', webuiToken: '' }` | 环境一键配置（v0.23.0）：环境页开关 / NapCat Docker 环境目录 / WebUI token（只写不读）；非法值只回退默认值不判死配置，详见 [env.md](./env.md) |
 
 - 会话映射 / 闸门状态 / 决策日志落在 `~/.dsh/storages/dsh-qq-relay/`；**聊天日志（P4）落在各群项目下的
   `<项目>/.qq-relay/chat/<群号>/YYYY-MM-DD.jsonl`**（agent 可直接 read；目录内 `.gitignore` 为 `*` 自我忽略）。
@@ -98,14 +101,18 @@
   **与 preset 注册是两条独立链路**：preset 走 `ctx.agentPresets.register()`，影响新建会话的
   提示词 / 组合表；skill 走 `ctx.skills.register()`，影响所有会话的可用技能。两者都不重启 GUI，
   服务缺失时都软失败（`status.comfy.supported = false` / `presetService.supported = false`）。
+- **环境 controller（v0.23.0）**：组合根构造 `createEnvController({ getConfig, getRelayInfo, backfill })`；
+  探测由「环境」页轮询 `GET /api/env` 驱动（`ensureFresh`，无定时器），动作走
+  `POST /api/env/action`（白名单 + 固定 argv + `shell: false`）。命令类动作后台执行，状态快照
+  带 `running` 与日志尾部；`backfill-config` 复用配置页的 `saveConfig`（落盘 + 重连）。
 - **配置页覆盖（P1.5）**：插件面板 → dsh-qq-relay 组合包页保存的字段写入
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /
   sessionTitle / replyChunkSize / commandPrefixes / gate.{debounce,fastMinReplyInterval,jevThreshold} /
   proxyReply.{enabled,targets,silenceWindow} / agentPreset / persona.{enabled,text} /
-  comfy.{enabled,baseUrl,timeoutMs,skillEnabled}` 可覆盖，
-  其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI；仅 `comfy` 变化时不重建
-  relay，只重新探测并决定是否注册 skill。
+  comfy.{enabled,baseUrl,timeoutMs,skillEnabled} / environment.{enabled,dir,webuiToken}` 可覆盖，
+  其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI；仅 `comfy` / `environment`
+  变化时不重建 relay，只重新探测（画图 skill / 环境步骤）。
   `groupWorkspaces` 是整表替换；已映射群改项目后需在配置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
   契约、HTTP 面与安全边界见 [client.md](./client.md)。
 
@@ -126,7 +133,8 @@ lib/
 │   ├── tools.js              # qq_send（文本 / 图片 / 视频 / 文件）/ qq_poke 工具定义（P3 / v0.15.0 / v0.22.0：手写 ToolDefinition，零外部依赖）
 │   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
 │   ├── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）、出向视频 sendVideo（v0.22.0）
-│   └── comfy.js              # 画图 / 视频（v0.21.0 / v0.22.0）：探测 ComfyUI / 逐个注册两个 skill / 抖动保持 / 测试连接
+│   ├── comfy.js              # 画图 / 视频（v0.21.0 / v0.22.0）：探测 ComfyUI / 逐个注册两个 skill / 抖动保持 / 测试连接
+│   └── env.js                # 环境（v0.23.0）：7 步探测 / 固定 argv 动作 / 后台命令 + 日志 / 一键修复
 ├── skills/comfy-image/       # 插件自带画图 / 视频 skill（SKILL.md + SKILL-video.md 模板 / scripts / 7 个 workflows / references 含 video-workflows.md），随包发布
 └── model/
     ├── config.js             # 配置默认值与校验
@@ -145,12 +153,13 @@ lib/
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
     ├── jev.js                # jev 分类器（P2.3）：OpenRouter Decisions API / Noul / 阈值 / fail closed
     ├── reply.js              # 回复切分、退避、发送失败分类
-    └── comfy.js              # 画图 / 视频配置（v0.21.0 / v0.22.0）：comfy 段校验 / 脱敏视图 / COMFY_SKILLS / 模板渲染
+    ├── comfy.js              # 画图 / 视频配置（v0.21.0 / v0.22.0）：comfy 段校验 / 脱敏视图 / COMFY_SKILLS / 模板渲染
+    └── env.js                # 环境配置（v0.23.0）：environment 段 / compose 生成解析 / OneBot 校验 / 步骤求值 / 动作 argv / 日志缓冲
 ~~~
 
 client 半身（`src/`）只做配置页（MVVM 三层）：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch
-纯逻辑）→ `src/viewmodel/settings.ts`（状态 / 动作 hook、状态文案、二级页面定义）→ `src/view/`
-（`SettingsPage` 外壳、`controls`、`theme` 注入的 `--dsw-*` 样式、`panels/*` 六个二级页面）；
+纯逻辑）→ `src/viewmodel/{settings,env}.ts`（状态 / 动作 hook、状态文案、二级页面定义）→ `src/view/`
+（`SettingsPage` 外壳、`controls`、`theme` 注入的 `--dsw-*` 样式、`panels/*` 七个二级页面）；
 `src/client.tsx` 只做注册与装配（`plugins.bundle.config`，key = 包名）。host 半身只依赖 lib/model/。
 
 P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
@@ -169,7 +178,8 @@ v0.22.0 在同一 controller 注册 `comfy-video`，并接出向视频链路（`
 决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send`（含 v0.22.0 `videos`）/ `qq_poke`
 工具契约与注册、审批命令匹配与桥接、群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、
 媒体落盘（P4.1）、群文件下载（v0.16.0）、出向视频 `sendVideo`（v0.22.0）、双 skill 注册 / 单坏隔离
-（v0.22.0）、戳一戳识别 / 冷却 / 出向（v0.15.0），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
+（v0.22.0）、戳一戳识别 / 冷却 / 出向（v0.15.0）、环境页配置 / compose / OneBot 校验 / 步骤求值 /
+动作 argv / 日志脱敏 / controller 动作与一键修复（v0.23.0），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
 
@@ -258,6 +268,9 @@ ctx.on('agent/error', ...)          # 失败提示
 - **审批**：P3 用文本命令（同意 / 拒绝）实现 QQ 侧审批；v1 先依赖 DSH 现有审批。
 - **提示注入**：群成员文本一律视为不可信输入；工作目录限定；操作留审计日志。
 - **本地接口**：NapCat WS 只监听回环地址；启用 access_token；不暴露公网。
+- **环境动作（v0.23.0）**：只跑白名单命令（`docker` / `docker compose` / `brew` / `colima`），
+  固定 argv、`shell: false`、不 `sudo`；安装 / 启动引擎 / 写 OneBot 必须显式确认；
+  WebUI token 只写不读，动作日志写入前脱敏；详见 [env.md](./env.md) §8。
 - **画图 / 视频服务（v0.21.0 / v0.22.0）**：ComfyUI **无鉴权**，任何能访问 `comfy.baseUrl` 的人都能提交任务；
   `POST /prompt` 可提交任意节点图、自定义节点里能跑任意 Python，等于**远端执行权**。
   只放可信网络、不暴露公网；skill 运行器只允许 schema 白名单参数，不要绕过它直连。

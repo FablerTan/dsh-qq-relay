@@ -1,6 +1,6 @@
 # client 半身与配置页
 
-> 状态：**v0.22.0（2026-10-20）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
+> 状态：**v0.23.0（2026-10-20）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
 > 配置怎么分层、HTTP 面怎么调、保存后哪些东西立刻生效、样式怎么跟宿主主题一致。
 > 总体架构见 [architecture.md](./architecture.md)，配置项全表见 [config.md](./config.md)。
 
@@ -19,8 +19,8 @@
 - 排错顺序：插件面板里找不到这个组合包 → 没装入 profile / 没重启 GUI；组合包页里没有配置块 →
   client 半身没加载或注册失败（看浏览器控制台与插件页状态）。
 
-页面是**二级结构**：固定的状态行 + 保存动作，下面是「连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录」
-六个二级页面（下划线 tab，沿用宿主插件页的分区风格）。
+页面是**二级结构**：固定的状态行 + 保存动作，下面是「连接 / 环境 / 项目 / 行为 / 画图·视频 /
+预设 / 记录」七个二级页面（下划线 tab，沿用宿主插件页的分区风格）。
 
 ## 2. 页面内容
 
@@ -32,11 +32,12 @@
 | 动作 | 「刷新」「重新连接」「保存并重连」（主按钮）；任何二级页面都能直接保存 |
 | 提示 | host 校验问题逐条显示；保存成功 / 失败的提示；「有未保存的修改」 |
 
-### 2.2 六个二级页面
+### 2.2 七个二级页面
 
 | 页面 | 内容 | 动作 |
 |---|---|---|
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
+| 环境 | `environment.enabled` · `environment.dir` · `environment.webuiToken`（只写，留空不修改）；7 步检查表（Docker CLI / 容器引擎 / compose 文件 / NapCat 容器 / QQ 登录 / OneBot 配置 / 插件回填），每步状态 + 证据 + 按钮；动作日志（脱敏）；安全边界说明（v0.23.0） | 「一键修复」「重新检测」「打开 WebUI 扫码」+ 每步动作（安装 / 启动引擎 / 写 OneBot 需二次确认） |
 | 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读）；workspace 挂载失败告警（v0.21.1，会话显示「未分组」时） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
 | 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
 | 画图 / 视频 | ComfyUI 服务（启用画图 / 视频 / 服务地址 / 探测超时 3s..120s / 连接成功后加载 skill）+「测试连接」+ 运行状态（可达 / 版本 / GPU / 队列 / 最近检查 / **逐条** `comfy-image`、`comfy-video` 的加载状态与错误，v0.22.0） | 「测试连接」（只探测、不保存）；保存 `comfy` 后立即探测并决定是否注册两个 skill，不重建 relay |
@@ -51,6 +52,13 @@
   `agentPresets.list()`，`broken` 的项标「（不可用）」并禁用）+ 轻量人设开关 / 多行文本框。
   宿主没有 `agentPresets` 服务时下拉隐藏并提示；配置里的 preset 不在名册时提示 missing。
   保存后 preset 只影响新建会话（已有群要 `/new` 或「重新绑定」），人设下一条消息生效。
+- 「环境」（v0.23.0）：数据源是 `GET /api/env`（见 [env.md](./env.md) §6），页面挂着时每 5 秒轮询
+  （有动作在跑时 2 秒）；目录 / token 用顶部「保存并重连」落盘，保存后 host 用新目录重新探测。
+  步骤状态是 `ok / warn / error / skip` 四档；`skip` 表示前置缺失（不是失败）。
+  「一键修复」按序补 `write-compose → compose-up → restart-napcat → write-onebot → backfill-config`
+  里缺失的步骤，**不含**安装 Docker / 启动引擎 / 扫码；安装类动作执行前 `window.confirm` 二次确认。
+  「打开 WebUI」由 host 拼 `http://127.0.0.1:6099/webui?token=…` 返回，页面新开标签页并把链接
+  同时渲染出来（弹窗被浏览器拦截时可手点）。命令类动作后台执行，进度看 `status.running` 与日志。
 - 「画图 / 视频」（v0.22.0，页签文字就是「画图 / 视频」）：四个字段 `comfy.enabled` /
   `baseUrl` / `timeoutMs` / `skillEnabled`；「测试连接」用**表单里填的**地址与超时探测一次
   （不保存配置，返回 target / 可达 / 版本 / GPU / 队列 / 延迟 / 错误）；「运行状态」表展示后台探测
@@ -97,7 +105,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 - 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
   chatRetentionDays / gate.{debounce,fastMinReplyInterval,jevThreshold} /
   proxyReply.{enabled,targets,silenceWindow} / sessionTitle / replyChunkSize / commandPrefixes /
-  agentPreset / persona.{enabled,text} / comfy.{enabled,baseUrl,timeoutMs,skillEnabled}`；
+  agentPreset / persona.{enabled,text} / comfy.{enabled,baseUrl,timeoutMs,skillEnabled} /
+  environment.{enabled,dir,webuiToken}`；
   `reconnect` / `commands` / `reply` / `poke` / `files` / `approval` 等保持 patch 只读
   （完整矩阵见 [config.md](./config.md) §4）。
   群项目目录由「项目」页表格整表提交（空表 = 清空覆盖）；
@@ -132,6 +141,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 | GET / HEAD / POST | `/dsh-qq-relay/api/presets` | GET 返回状态（含 `presets` / `presetService` / `modelCatalog` / `permissionCatalog`）；POST body `{ preset }` 保存并动态注册，返回 `{ presets, status }`（v0.20.0） |
 | POST | `/dsh-qq-relay/api/presets/delete` | body `{ id }`：删除插件预设（正在使用的返回 409），返回 `{ presets, status }`（v0.20.0） |
 | POST | `/dsh-qq-relay/api/comfy/test` | body 可选 `{ baseUrl?, timeoutMs? }`：探测 ComfyUI（**只探测、不保存 / 不改 skill 注册**），返回 `{ probe: { target, reachable, version, device, queue, error, checkedAt, latencyMs }, status }`（v0.21.0） |
+| GET / HEAD | `/dsh-qq-relay/api/env` | 环境页状态：`{ supported, platform, enabled, dir, webuiTokenConfigured, checking, checkedAt, running, summary, steps[], actions[], log: { cursor, entries[] } }`（v0.23.0） |
+| POST | `/dsh-qq-relay/api/env/action` | body `{ action, confirm? }`：执行白名单动作，返回 `{ action, status, logCursor, accepted?, url? }`；安装 / 启动引擎 / 写 OneBot 需 `confirm: true`（v0.23.0） |
 
 状态快照字段（节选）：
 
@@ -183,9 +194,11 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 
 错误码：`CONFIG_INVALID` / `CONFIG_EMPTY` / `CONFIG_BAD_JSON` / `REBIND_GROUP_INVALID` /
 `CLEANUP_DAYS_INVALID` / `MESSAGES_GROUP_INVALID` / `MAPPING_GROUP_INVALID` /
-`COMFY_INVALID` → 400；`CONFIG_BODY_TOO_LARGE` → 413；
+`COMFY_INVALID` / `ENV_INVALID` / `ENV_ACTION_UNKNOWN` / `ENV_CONFIRM_REQUIRED` /
+`ENV_TOKEN_MISSING` / `ENV_PLATFORM_UNSUPPORTED` → 400；`CONFIG_BODY_TOO_LARGE` → 413；
 `RELAY_NOT_STARTED` / `RELAY_NOT_CONFIGURED` / `REBIND_NOT_STARTED` / `CLEANUP_NOT_CONFIGURED` /
-`MESSAGES_NOT_CONFIGURED` / `MAPPING_NOT_STARTED` → 409；`COMFY_TEST_FAILED` 等其余 → 500；
+`MESSAGES_NOT_CONFIGURED` / `MAPPING_NOT_STARTED` / `ENV_OVERWRITE_CONFIRM` / `ENV_NOT_READY` /
+`ENV_ACTION_RUNNING` → 409；`COMFY_TEST_FAILED` / `ENV_ACTION_FAILED` 等其余 → 500；
 当前实例没注入画图测试处理器时 `POST /comfy/test` → 501 `CONFIG_UNSUPPORTED`。请求体上限 64 KiB。
 
 ## 6. 热更新语义
@@ -200,6 +213,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 | 立即清理 | 只删文件（聊天日文件 / 媒体日期目录），不动映射、会话与配置；删除后不可恢复 |
 | 解除绑定 / 清空全部映射 | 删本机映射并重建 relay（清掉 relay 内的会话缓存）；GUI 里的旧会话保留，下条消息按当前项目目录重新建会话 |
 | `comfy` 四项 | 保存后立即按新配置探测一次：只有 `enabled && skillEnabled` 且连得上才注册 / 保持 `comfy-image` 与 `comfy-video` 两个 skill；仅 `comfy` 变化**不重建 relay**（比较配置时忽略 `comfy`），不重启 GUI。「测试连接」不保存、不改注册 |
+| `environment` 三项 | 保存后立即用新目录 / token 重新探测一次；**不重建 relay**（比较配置时同样忽略 `environment`）。动作执行中保存会等当前探测结束后再按新配置重探 |
 
 - 重连不重入单实例锁：锁属于进程，连接属于运行实例（`controller/runtime.js`）。
 - **保存会立即断开当前 WS**：进行中的 QQ 触发回合会被中止且不回发（配置改动属低频操作，
@@ -216,7 +230,8 @@ src/
 │   ├── api.ts              # HTTP 信封、状态视图类型、fetch 注入
 │   └── form.ts             # 表单 ↔ patch 纯逻辑（群号 / 前缀 / 数字解析、dirty、群项目行）
 ├── viewmodel/
-│   └── settings.ts         # useRelaySettings：页面状态 + 动作；状态文案 / token 提示 / 闸门摘要；二级页面定义
+│   ├── settings.ts         # useRelaySettings：页面状态 + 动作；状态文案 / token 提示 / 闸门摘要；二级页面定义
+│   └── env.ts              # useRelayEnv：「环境」页轮询 / 动作 / 日志 / WebUI 链接（v0.23.0）
 └── view/
     ├── SettingsPage.tsx    # 外壳：状态行 + 动作 + 二级页面 tab + 提示 + 页脚
     ├── controls.tsx        # Button / Card / Row / Block / Line / StatusLineView / TextInput / Toggle / Select / TextArea
@@ -226,6 +241,7 @@ src/
         ├── ProjectPanel.tsx  # 群项目目录 + 最近消息；v0.21.1 起显示 workspace attachIssues 告警
         ├── BehaviorPanel.tsx
         ├── ComfyPanel.tsx   # 「画图 / 视频」页：ComfyUI 开关 / 地址 / 超时 / skill 开关 / 测试连接 / 运行状态 + 两个 skill 逐条状态（v0.22.0）
+        ├── EnvPanel.tsx     # 「环境」页：环境目录 / WebUI token / 7 步检查表 / 一键修复 / 动作日志 / 安全说明（v0.23.0）
         ├── PresetsPanel.tsx
         └── RecordsPanel.tsx
 ~~~
@@ -236,10 +252,12 @@ src/
 ## 8. 验证
 
 - `pnpm test`：host 侧单测（`test/settings.test.js` 覆盖层序 / 脱敏 / 原子读写 / 路由面，
-  `test/apply.test.js` 假 ctx + 临时 HOME 跑通注册、状态、保存、重连）。
+  `test/apply.test.js` 假 ctx + 临时 HOME 跑通注册、状态、保存、重连，路由数 13；
+  `test/env.test.js` 覆盖环境配置 / compose / OneBot / 求值 / 动作 argv / 日志脱敏 /
+  controller 探测 + 写 OneBot + 回填 + open-webui + 确认制 + 一键修复）。291 个用例。
 - `pnpm check`：语法 + 元数据 + `tsc --noEmit` + 文档↔源码配对。
 - 客户端没有浏览器测试：改完 client 半身跑 `pnpm build` 后**刷新页面**即可看到（v0.17.0 起
-  这类改动不需要重启 GUI）；真机：左栏「插件」→ dsh-qq-relay → 六个二级页面都渲染、
+  这类改动不需要重启 GUI）；真机：左栏「插件」→ dsh-qq-relay → 七个二级页面都渲染、
   改一个字段保存 → 观察状态行与日志里 `[relay] 配置已保存…并已重连`；群里 @ 机器人确认转发未中断。
 - 画图 / 视频（v0.22.0）：`lib/client.js` 已含 ComfyPanel 文案，GUI 重启后「画图 / 视频」页可见；
   开 `comfy.enabled` 后点「测试连接」应看到 target / 可达 / 版本（错误地址则 `reachable=false`
@@ -263,6 +281,9 @@ src/
 - 旧 host（没有 `comfy` 配置 / 状态字段）时「画图 / 视频」页提示重启并按关闭兜底；旧 host 只返回
   单数 `comfy.skill` 时按单元素数组显示。host 有探测但没有 `skills` 服务时两个 skill 行都显示
   「未加载」，状态行提示 `supported=false`。
+- 「环境」页只在 macOS / Linux 可用；Windows / WSL 下整页只显示「暂不支持」，不执行动作。
+  安装 / 启动引擎 / 写 OneBot 这类会改系统的动作永远需要显式确认；其余动作失败只写日志，
+  不影响 relay 连接。
 - 停用插件的行后配置页随注册一起消失；这是插件管理器的契约，不是本插件的降级。
 - 不做 i18n（当前中文直出）；随插件一起演进。
 - 没有「恢复 profile 默认值」按钮：删掉 settings.json 后重启即可回到 patch 配置。
@@ -271,6 +292,7 @@ src/
 
 - 配置项全表与配置页覆盖矩阵：[config.md](./config.md)
 - 画图 / 视频页契约 / 测试连接语义 / skill 生命周期：[comfy.md](./comfy.md)
+- 环境页步骤 / 动作白名单 / 一键修复 / 安全边界：[env.md](./env.md)
 - 总体架构 / 配置层：[architecture.md](./architecture.md)
 - 聊天记录与清理：[chat-context.md](./chat-context.md) §7/§8
 - 宿主渲染树与选座：[../../docs/dsh-ui-render-tree.md](../../docs/dsh-ui-render-tree.md)
