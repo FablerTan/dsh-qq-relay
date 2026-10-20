@@ -106,8 +106,9 @@ dispatch 成功 → lastBotSpeakAt = now；cooldownUntil = now + 2h；清空 pen
 - **失败策略**：网络错误 / 超时（默认 8s）/ HTTP 非 2xx / 响应缺 `answers.reply.noul`
   或概率越界 → 一律 reply=false（fail closed），原因记 `jev-unavailable` /
   `jev-http-error` / `jev-invalid-response`，只写日志。
-- **凭证**：API key 从环境变量读取（默认 `OPENROUTER_API_KEY`，见 `gate.jevApiKeyEnv`）；
-  key 为空时不构造分类器，闸门按 fail closed 运行（只接 @ / 引用 / 命令）。
+- **凭证**：API key **优先读配置** `gate.jevApiKey`（v0.24.0：配置页「行为」页填，只写不读），
+  为空时回退环境变量 `gate.jevApiKeyEnv`（默认 `OPENROUTER_API_KEY`）；两者都没有时不构造分类器，
+  闸门按 fail closed 运行（只接 @ / 引用 / 命令）。key 变化只换分类器实现，不重建 relay 连接。
 - **决策日志**：时间、批次、输入摘要、输出、耗时；用于调阈值和回放。
 
 ## 5. 状态与持久化
@@ -167,7 +168,8 @@ gate:
   slowWindow: 2h             # jev 查看的消息范围
   model: typesafe/jev-1.14   # jev 模型 id
   jevEndpoint: https://openrouter.ai/api/alpha/decisions
-  jevApiKeyEnv: OPENROUTER_API_KEY   # 从环境变量取 key
+  jevApiKeyEnv: OPENROUTER_API_KEY   # 兜底：从环境变量取 key
+  jevApiKey: ''              # v0.24.0：设置页保存的 key（只写不读；留空回退环境变量）
   jevThreshold: 0.7          # Noul 概率 >= 该值才接话
   classifierTimeoutMs: 8s    # 单次 jev 请求超时
   retentionDays: 7
@@ -180,9 +182,10 @@ proxyReply:
   silenceWindow: 10m         # 目标多久没在本群发言才代答；0 = 不检查沉默
 ~~~
 
-- **配置页可改（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 三个参数在
-  插件面板 → dsh-qq-relay 组合包页 → 配置页「行为」里编辑，保存后立即重建闸门（无需重启）；
-  `jevThreshold` 由分类器每次判定时读取，同样即时生效。其余 gate 字段仍只读（改 profile patch + 重启）。
+- **配置页可改（v0.10.0 起，v0.24.0 扩展）**：`debounce` / `fastMinReplyInterval` /
+  `jevThreshold` / `jevApiKey` 四个参数在插件面板 → dsh-qq-relay 组合包页 → 配置页「行为」里编辑，
+  保存后立即重建闸门（无需重启）；`jevThreshold` 由分类器每次判定时读取，`jevApiKey` 直接换
+  分类器实现，同样即时生效。其余 gate 字段仍只读（改 profile patch + 重启）。
 - 时长可写 `500ms` / `3s` / `10m` / `2h`；配置页保存的值叠加在 patch 之上（同名字段覆盖）。
 
 ## 9. 测试要点
@@ -216,7 +219,7 @@ proxyReply:
 - **配置键**（`config.gate`，见 architecture §2.1）：`enabled`（默认 false）、`mentionBypass`、
   `fastWindow`（10m）、`fastMinReplyInterval`（45s）、`debounce`（5s）、`slowTimer`（2h）、
   `slowWindow`（2h）、`maxBatchMessages`（100）、`classifierTimeoutMs`（8s）、`model`、
-  `jevEndpoint`、`jevApiKeyEnv`、`jevThreshold`。
+  `jevEndpoint`、`jevApiKeyEnv`、`jevApiKey`（v0.24.0，只写不读）、`jevThreshold`。
   时长字段接受 `500ms` / `45s` / `10m` / `2h` 或毫秒数字，内部统一为毫秒；未知键 / 非法值直接
   进 `problems`（配置整体 fail closed）。
 - **分类器接口**：`createRelay({ classifier })` 注入
@@ -224,9 +227,11 @@ proxyReply:
   `trigger` 为 `fast` / `slow`。缺省 `createNullClassifier()` 永远返回
   `reply: false, reason: 'classifier-not-configured'`；超时或抛错按 `reply: false` 处理，且每次都写
   一条决策日志（批次条数 / reply / confidence / reason / 耗时）。
-- **jev 实现（P2.3）**：`lib/model/jev.js` 提供 `createJevClassifier`（OpenRouter Decisions API，
-  全局 `fetch`，零依赖）；组合根在 `gate.enabled === true` 且 `process.env[jevApiKeyEnv]` 非空时
-  构造，缺 key 只打警告并退化为 fail closed。请求 / 解析 / 阈值 / 超时的单测在 `test/jev.test.js`。
+- **jev 实现（P2.3；v0.24.0 key 可配置）**：`lib/model/jev.js` 提供 `createJevClassifier`
+  （OpenRouter Decisions API，全局 `fetch`，零依赖）；`model/gate.js` 的 `resolveJevApiKey`
+  按「配置 `jevApiKey` > 环境变量 `jevApiKeyEnv`」取 key。组合根把分类器包成稳定代理，
+  key / 阈值变化时只替换内部实现（不重建 relay）；gate 关闭或无 key 时退化为 fail closed。
+  请求 / 解析 / 阈值 / 超时的单测在 `test/jev.test.js`，key 解析与热切换在 model / apply 测试。
 - **状态与恢复**：每群一个 `state/<group_id>.json`；pending 随消息增量落盘，重启后重新装载；
   但**不重建慢路定时器**——重启后第一条消息才会重新起 2 小时计时（避免一启动就说话）。
 - **慢路时间窗（P2.2）**：慢路评估只取 `time >= now - slowWindow` 的 pending，更早的丢弃

@@ -110,10 +110,15 @@ async function call(routes, path, options) {
 test('apply：配置页路由注册、状态快照、保存校验与重连', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-'))
   const previousHome = process.env.HOME
+  const previousJevKey = process.env.OPENROUTER_API_KEY
   process.env.HOME = home
+  // jev key 的兜底环境变量：测试里清空，保证「未配置 → 设置页配置」路径确定。
+  delete process.env.OPENROUTER_API_KEY
   t.after(() => {
     if (previousHome === undefined) delete process.env.HOME
     else process.env.HOME = previousHome
+    if (previousJevKey === undefined) delete process.env.OPENROUTER_API_KEY
+    else process.env.OPENROUTER_API_KEY = previousJevKey
     rmSync(home, { recursive: true, force: true })
   })
 
@@ -150,6 +155,9 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   assert.equal(status.gate.enabled, false)
   assert.equal(status.gate.classifier, null)
   assert.equal(status.gate.threshold, 0.7)
+  assert.equal(status.config.gate.jevApiKeyConfigured, false)
+  assert.equal(status.config.gate.jevApiKeySource, 'none')
+  assert.equal(status.config.gate.jevApiKeyEnv, 'OPENROUTER_API_KEY')
   assert.deepEqual(status.agentPresets, { supported: false, items: [], missing: false })
   assert.equal(status.presets.length, 1)
   assert.equal(status.presets[0].id, 'qq-relay')
@@ -236,9 +244,36 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     debounceMs: 3000,
     fastMinReplyIntervalMs: 10000,
     jevThreshold: 0.6,
+    jevApiKeyConfigured: false,
+    jevApiKeySource: 'none',
+    jevApiKeyEnv: 'OPENROUTER_API_KEY',
   })
   const storedGate = JSON.parse(readFileSync(settingsFile, 'utf8'))
   assert.deepEqual(storedGate.config.gate, { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 })
+
+  // v0.24.0：jev key 只写不读；保存后只标记 configured/source，绝不回显 key。
+  const keySaved = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { jevApiKey: 'sk-or-test-key' } }),
+  })
+  assert.equal(keySaved.status, 200)
+  assert.equal(keySaved.payload.value.config.gate.jevApiKeyConfigured, true)
+  assert.equal(keySaved.payload.value.config.gate.jevApiKeySource, 'config')
+  assert.equal(JSON.stringify(keySaved.payload.value).includes('sk-or-test-key'), false, 'key 不得回显')
+  assert.equal(keySaved.payload.value.gate.classifier, null, 'gate 关闭时分类器不启用')
+  const storedKey = JSON.parse(readFileSync(settingsFile, 'utf8'))
+  assert.equal(storedKey.config.gate.jevApiKey, 'sk-or-test-key')
+  assert.equal(storedKey.config.gate.debounce, '3s', '补 key 时保留已有 gate 覆盖')
+
+  // 改阈值不能把已存 key 冲掉（页面不回传 key）。
+  const thresholdSaved = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { jevThreshold: 0.8 } }),
+  })
+  assert.equal(thresholdSaved.status, 200)
+  assert.equal(thresholdSaved.payload.value.config.gate.jevApiKeyConfigured, true)
+  const storedAfterThreshold = JSON.parse(readFileSync(settingsFile, 'utf8'))
+  assert.equal(storedAfterThreshold.config.gate.jevApiKey, 'sk-or-test-key')
 
   const badGate = await call(routes, '/dsh-qq-relay/api/config', {
     method: 'POST',
@@ -647,4 +682,53 @@ test('apply：插件预设 CRUD（v0.20.0）', async (t) => {
   })
   assert.equal(removed.status, 200)
   assert.equal(removed.payload.value.presets.some((preset) => preset.id === 'catgirl'), false)
+})
+test('apply：设置页保存 jev key 后分类器热启用（v0.24.0）', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-apply-jev-'))
+  const previousHome = process.env.HOME
+  const previousJevKey = process.env.OPENROUTER_API_KEY
+  process.env.HOME = home
+  delete process.env.OPENROUTER_API_KEY
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousJevKey === undefined) delete process.env.OPENROUTER_API_KEY
+    else process.env.OPENROUTER_API_KEY = previousJevKey
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const { ctx, routes, cleanups } = fakeCtx()
+  t.after(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+
+  apply(ctx, {
+    wsUrl: 'ws://127.0.0.1:1',
+    accessToken: 'patch-token',
+    selfId: 999,
+    groups: [100],
+    workspace: join(home, 'ws'),
+    gate: { enabled: true },
+  })
+
+  const initial = await call(routes, '/dsh-qq-relay/api/status')
+  assert.equal(initial.status, 200)
+  assert.equal(initial.payload.value.config.gate.jevApiKeyConfigured, false)
+  assert.equal(initial.payload.value.config.gate.jevApiKeySource, 'none')
+  assert.equal(initial.payload.value.gate.classifier, null, '没有 key 时 fail closed')
+
+  const saved = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { jevApiKey: 'sk-or-live-key' } }),
+  })
+  assert.equal(saved.status, 200)
+  assert.equal(saved.payload.value.gate.classifier, 'jev', '保存 key 后无需重启即启用分类器')
+  assert.equal(saved.payload.value.config.gate.jevApiKeySource, 'config')
+  assert.equal(JSON.stringify(saved.payload.value).includes('sk-or-live-key'), false)
+
+  const cleared = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { jevApiKey: '' } }),
+  })
+  assert.equal(cleared.status, 200)
+  assert.equal(cleared.payload.value.config.gate.jevApiKeyConfigured, false)
+  assert.equal(cleared.payload.value.gate.classifier, null, '清空 key 后分类器停用')
 })

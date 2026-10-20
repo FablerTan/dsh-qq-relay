@@ -93,7 +93,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 | `gate.classifierTimeoutMs` | `8000` | `100ms..60s` | 单次 jev 请求超时 | — | 重启 |
 | `gate.model` | `typesafe/jev-1.14` | 模型 id | jev 模型 | — | 重启 |
 | `gate.jevEndpoint` | OpenRouter decisions | `https://` 地址 | 分类器地址 | — | 重启 |
-| `gate.jevApiKeyEnv` | `OPENROUTER_API_KEY` | 环境变量名（大写 + 下划线） | 从哪个环境变量取 key | — | 重启 |
+| `gate.jevApiKeyEnv` | `OPENROUTER_API_KEY` | 环境变量名（大写 + 下划线） | 兜底：从哪个环境变量取 key（v0.24.0 起配置优先） | — | 重启 |
+| `gate.jevApiKey` | `''` | ≤256 字符 | jev API key（v0.24.0；**只写不读**，状态只给 `jevApiKeyConfigured` / `jevApiKeySource`） | **可**（只写） | 保存后立即热切换分类器 |
 | `gate.jevThreshold` | `0.7` | `0..1` | 接话阈值 | **可** | 立即 |
 
 > 时长字段都接受 `500ms` / `45s` / `10m` / `2h` 或毫秒数字；`gate` 里的未知键会直接报错
@@ -217,14 +218,14 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 
 ## 4. 配置页覆盖矩阵
 
-- **现在可改（15 个顶层字段 + 3 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项 +
+- **现在可改（15 个顶层字段 + 4 个 gate 子项 + 3 个 proxyReply 子项 + 3 个 persona 子项 +
   4 个 comfy 子项 + 3 个 environment 子项）**：
   `wsUrl`、`accessToken`、`selfId`、`groups`、`workspace`、`groupWorkspaces`（表格）、
   `chatRetentionDays`、`sessionTitle`、`replyChunkSize`、`commandPrefixes`、
   `proxyReply`（`enabled` / `targets` / `silenceWindow`）、`agentPreset`、
   `persona`（`enabled` / `text`）、`comfy`（`enabled` / `baseUrl` / `timeoutMs` / `skillEnabled`）、
   `environment`（`enabled` / `dir` / `webuiToken`），
-  以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold`。
+  以及 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` / `gate.jevApiKey`（只写）。
 - **patch 只读（26 项）**：`reconnect`（2 子项）、`commands`（3）、`reply`（3）、`poke`（3）、
   `files`（2）、`approval`（3）、`gate` 其余 10 项（`enabled` / `mentionBypass` / `fastWindow` /
   `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` /

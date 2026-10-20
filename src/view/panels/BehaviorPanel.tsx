@@ -70,6 +70,13 @@ export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactEl
   if (form.agentPreset !== '' && !presetItems.some((preset) => preset.id === form.agentPreset)) {
     presetOptions.push({ value: form.agentPreset, label: form.agentPreset + '（不在名册中）', disabled: false })
   }
+  const gateConfig = model.status?.config.gate ?? null
+  const keySource = gateConfig?.jevApiKeySource ?? 'none'
+  const keyHint = keySource === 'env'
+    ? '当前来自环境变量 ' + (gateConfig?.jevApiKeyEnv ?? 'OPENROUTER_API_KEY')
+    : keySource === 'config'
+      ? '当前来自本页保存的配置'
+      : '当前未配置'
   const presetNote = presets === null || !presets.supported
     ? <Line tone="warn">当前宿主没有提供 agent preset 服务（可能版本过旧或不是 Web bundle）：预设选择不会生效，轻量人设仍可用。</Line>
     : presets.missing
@@ -127,6 +134,19 @@ export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactEl
             ariaLabel="jev 接话阈值"
           />
         </Row>
+        <Row label="OpenRouter API key" hint="只写不读；留空表示不修改，保存后立即生效（不用重启）">
+          <TextInput
+            value={form.gateJevApiKey}
+            onChange={(value) => { updateField('gateJevApiKey', value) }}
+            type="password"
+            autoComplete="new-password"
+            placeholder={gateConfig?.jevApiKeyConfigured ? '已配置；留空表示不修改' : '未配置'}
+            ariaLabel="OpenRouter API key"
+          />
+        </Row>
+        <Line tone={keySource === 'none' ? (model.status?.gate?.enabled ? 'warn' : 'muted') : 'ok'}>
+          jev API key：{keyHint}；不填时继续用环境变量兜底。
+        </Line>
       </Card>
       <Card>
         <Block>

@@ -179,11 +179,16 @@ test('settings：maskConfig 暴露群项目目录与保留天数', () => {
   assert.equal(JSON.stringify(view).includes('profile-token'), false)
 })
 
-test('settings：gate 三参数可编辑、与 patch 合并、校验与脱敏视图', () => {
+test('settings：gate 参数与 jev key 可编辑、与 patch 合并、校验与脱敏视图（v0.24.0）', () => {
   const picked = pickEditable({
     gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6, slowTimer: '1h', enabled: false },
   })
   assert.deepEqual(picked, { gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 } })
+  assert.deepEqual(
+    pickEditable({ gate: { jevApiKey: 'sk-or-page' } }),
+    { gate: { jevApiKey: 'sk-or-page' } },
+    'jev key 是设置页可写字段',
+  )
 
   const merged = mergeConfig(
     { ...PATCH_CONFIG, gate: { enabled: true, slowTimer: '2h', model: 'typesafe/jev-1.14' } },
@@ -205,7 +210,28 @@ test('settings：gate 三参数可编辑、与 patch 合并、校验与脱敏视
   assert.equal(resolved.config.gate.enabled, true)
 
   const view = maskConfig(resolved.config, {})
-  assert.deepEqual(view.gate, { debounceMs: 3000, fastMinReplyIntervalMs: 10000, jevThreshold: 0.6 })
+  assert.deepEqual(view.gate, {
+    debounceMs: 3000,
+    fastMinReplyIntervalMs: 10000,
+    jevThreshold: 0.6,
+    jevApiKeyConfigured: false,
+    jevApiKeySource: 'none',
+    jevApiKeyEnv: 'OPENROUTER_API_KEY',
+  })
+
+  // jev key 只写不读：视图只给 configured / source / 环境变量名，绝不回显 key。
+  const withKey = maskConfig(
+    { ...resolved.config, gate: { ...resolved.config.gate, jevApiKey: 'sk-or-secret-value' } },
+    { jevApiKeySource: 'config' },
+  )
+  assert.equal(JSON.stringify(withKey).includes('sk-or-secret-value'), false)
+  assert.equal(withKey.gate.jevApiKeyConfigured, true)
+  assert.equal(withKey.gate.jevApiKeySource, 'config')
+  const envKey = maskConfig(
+    { ...resolved.config, gate: { ...resolved.config.gate } },
+    { jevApiKeySource: 'env' },
+  )
+  assert.equal(envKey.gate.jevApiKeySource, 'env')
 
   const bad = resolveConfig(PATCH_CONFIG, { gate: { debounce: '90s', jevThreshold: 2 } })
   assert.equal(bad.ok, false)

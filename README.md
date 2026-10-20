@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.23.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.24.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -23,7 +23,9 @@ ComfyUI，连上后把插件自带的 `comfy-image` skill 动态注册给 DSH，
 `qq_send` 新增 `videos`（内联视频消息），群里可文生视频 / 首帧 / 参考图转视频（见
 [docs/comfy.md](./docs/comfy.md)）；v0.23.0 加**环境一键配置**——配置页「环境」页把
 Docker / Colima / NapCat / 扫码登录 / OneBot 配置 / 插件回填收敛成 7 个检查与白名单动作，
-新机器可从零装到 relay 连上（见 [docs/env.md](./docs/env.md)）。设计见
+新机器可从零装到 relay 连上（见 [docs/env.md](./docs/env.md)）；v0.24.0 把 **jev（OpenRouter）
+API key** 收进配置页「行为」页——保存即热启用分类器，环境变量 `OPENROUTER_API_KEY` 仍可兜底
+（只写不读）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -166,6 +168,18 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
 
 ## 版本历史
 
+### v0.24.0 jev API key 进配置页：`gate.jevApiKey` 只写不读 + 分类器热切换（2026-10-20）
+
+- **「行为」页新增「OpenRouter API key」密码框**：保存后立即热切换 jev 分类器，**不用重启 GUI**；
+  留空表示不修改，host 永不回显 key（`status.config.gate` 只给 `jevApiKeyConfigured` /
+  `jevApiKeySource` / `jevApiKeyEnv`）。
+- **解析优先级**：`gate.jevApiKey`（设置页保存）> 环境变量 `gate.jevApiKeyEnv`（默认
+  `OPENROUTER_API_KEY`）；两者都没有时保持 fail closed（普通消息不接话），只打告警。
+- **host**：`model/gate.js` 新增 `resolveJevApiKey`；组合根把分类器换成稳定代理对象，
+  key / 阈值变化只换内部实现、**不重建 relay**；`settings.json` 的 gate 子项按子项合并，
+  只改阈值不会冲掉已保存的 key。
+- 单测 291 → **292**（key 校验 / 优先级、mask 不回显、保存后分类器热启用、清空即停用）；`pnpm check` 全绿。
+- 文档同步：README / gate / config / client / architecture / AGENTS；`lib/client.js` 已重建。
 ### v0.23.0 环境一键配置：`environment` 配置段 + 「环境」页 7 步诊断与白名单动作（2026-10-20）
 
 - **配置页新增「环境」二级页**（顺序：连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录）：

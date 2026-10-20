@@ -23,6 +23,8 @@ export interface RelayFormState {
   gateDebounce: string
   gateFastMinReplyInterval: string
   gateJevThreshold: string
+  /** OpenRouter API key（v0.24.0）：只写不读，留空表示不修改。 */
+  gateJevApiKey: string
   sessionTitle: string
   replyChunkSize: string
   commandPrefixes: string
@@ -71,6 +73,7 @@ export function emptyForm(): RelayFormState {
     gateDebounce: '',
     gateFastMinReplyInterval: '',
     gateJevThreshold: '',
+    gateJevApiKey: '',
     sessionTitle: '',
     replyChunkSize: '',
     commandPrefixes: '',
@@ -102,6 +105,8 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     gateDebounce: formatDurationMs(config.gate.debounceMs),
     gateFastMinReplyInterval: formatDurationMs(config.gate.fastMinReplyIntervalMs),
     gateJevThreshold: String(config.gate.jevThreshold),
+    // key 只写不读：表单永远从空开始，留空表示不修改。
+    gateJevApiKey: '',
     sessionTitle: config.sessionTitle,
     replyChunkSize: config.replyChunkSize > 0 ? String(config.replyChunkSize) : '',
     commandPrefixes: config.commandPrefixes.join(', '),
@@ -356,6 +361,12 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
     problems.push('jev 阈值必须是 0..1 的数字（如 0.7）')
   } else {
     gate.jevThreshold = threshold
+  }
+  const jevApiKey = form.gateJevApiKey.trim()
+  if (jevApiKey.length > 256) {
+    problems.push('OpenRouter API key 最多 256 字符')
+  } else if (jevApiKey !== '') {
+    gate.jevApiKey = jevApiKey
   }
   patch.gate = gate
 

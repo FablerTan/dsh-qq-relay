@@ -10,11 +10,17 @@
  * `fetch` 由组合根注入：ViewModel / View 不碰全局，桩实现即可覆盖成功与失败两条路。
  */
 
-/** 闸门里可在设置页编辑的三个参数（时长单位：毫秒）。 */
+/** 闸门里可在设置页编辑的参数（时长单位：毫秒）。 */
 export interface RelayGateConfigView {
   debounceMs: number
   fastMinReplyIntervalMs: number
   jevThreshold: number
+  /** jev API key 是否已配置（v0.24.0；host **永不回显 key 本身**）。 */
+  jevApiKeyConfigured: boolean
+  /** key 来源：config = 设置页保存，env = 环境变量，none = 未配置。 */
+  jevApiKeySource: 'config' | 'env' | 'none'
+  /** 兜底环境变量名（gate.jevApiKeyEnv，默认 OPENROUTER_API_KEY）。 */
+  jevApiKeyEnv: string
 }
 
 /** 每群闸门状态（v0.14.0 面板；来自 state 文件，只读）。 */
@@ -419,6 +425,8 @@ export interface RelayConfigPatch {
     debounce?: string
     fastMinReplyInterval?: string
     jevThreshold?: number
+    /** v0.24.0：只写不读；留空 / 缺省表示不修改。 */
+    jevApiKey?: string
   }
   /** 代答（v0.18.0）：只提交这三个子项；沉默窗口用 10m 这类文本，host 校验。 */
   proxyReply?: {
@@ -897,8 +905,22 @@ function asStatus(value: unknown): RelayStatusView | null {
               ? config.gate.fastMinReplyIntervalMs
               : 45000,
             jevThreshold: typeof config.gate.jevThreshold === 'number' ? config.gate.jevThreshold : 0.7,
+            jevApiKeyConfigured: config.gate.jevApiKeyConfigured === true,
+            jevApiKeySource: config.gate.jevApiKeySource === 'env'
+              ? 'env'
+              : (config.gate.jevApiKeySource === 'config' || config.gate.jevApiKeyConfigured === true ? 'config' : 'none'),
+            jevApiKeyEnv: typeof config.gate.jevApiKeyEnv === 'string' && config.gate.jevApiKeyEnv !== ''
+              ? config.gate.jevApiKeyEnv
+              : 'OPENROUTER_API_KEY',
           }
-        : { debounceMs: 5000, fastMinReplyIntervalMs: 45000, jevThreshold: 0.7 },
+        : {
+            debounceMs: 5000,
+            fastMinReplyIntervalMs: 45000,
+            jevThreshold: 0.7,
+            jevApiKeyConfigured: false,
+            jevApiKeySource: 'none',
+            jevApiKeyEnv: 'OPENROUTER_API_KEY',
+          },
       gateSupported: isRecord(config.gate),
       proxyReply: isRecord(config.proxyReply)
         ? {

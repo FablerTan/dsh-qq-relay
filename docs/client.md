@@ -1,6 +1,6 @@
 # client 半身与配置页
 
-> 状态：**v0.23.0（2026-10-20）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
+> 状态：**v0.24.0（2026-10-20）**。本文是 client 半身的契约文档：配置页在哪、长什么样、
 > 配置怎么分层、HTTP 面怎么调、保存后哪些东西立刻生效、样式怎么跟宿主主题一致。
 > 总体架构见 [architecture.md](./architecture.md)，配置项全表见 [config.md](./config.md)。
 
@@ -39,7 +39,7 @@
 | 连接 | 运行状态卡（协议端地址 / 登录账号 / 单实例锁 / 群映射数 / problems）；`wsUrl` · `accessToken`（只写，留空不修改）· `selfId` · `groups` | 刷新 / 重连 / 保存 |
 | 环境 | `environment.enabled` · `environment.dir` · `environment.webuiToken`（只写，留空不修改）；7 步检查表（Docker CLI / 容器引擎 / compose 文件 / NapCat 容器 / QQ 登录 / OneBot 配置 / 插件回填），每步状态 + 证据 + 按钮；动作日志（脱敏）；安全边界说明（v0.23.0） | 「一键修复」「重新检测」「打开 WebUI 扫码」+ 每步动作（安装 / 启动引擎 / 写 OneBot 需二次确认） |
 | 项目 | 默认 `workspace` · `sessionTitle`；群项目目录表（群号 / 会话 / 项目目录 / 操作）；最近消息（按群展开，只读）；workspace 挂载失败告警（v0.21.1，会话显示「未分组」时） | 「重新绑定」「消息」「解除绑定」「清空全部映射」 |
-| 行为 | `replyChunkSize` · `commandPrefixes`；闸门三参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` + 闸门摘要（开关 / 分类器 / 阈值）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
+| 行为 | `replyChunkSize` · `commandPrefixes`；闸门参数 `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` / `gate.jevApiKey`（只写，留空不修改；保存即热切换分类器，v0.24.0）+ 闸门摘要（开关 / 分类器 / 阈值 / key 来源）；**角色与人设**（agent preset 下拉 + 轻量人设开关 / 文本，v0.19.0）；**代答**（开关 + 目标名单 + 沉默窗口，v0.18.0） | 保存（保存即重建 relay / 闸门，无需重启） |
 | 画图 / 视频 | ComfyUI 服务（启用画图 / 视频 / 服务地址 / 探测超时 3s..120s / 连接成功后加载 skill）+「测试连接」+ 运行状态（可达 / 版本 / GPU / 队列 / 最近检查 / **逐条** `comfy-image`、`comfy-video` 的加载状态与错误，v0.22.0） | 「测试连接」（只探测、不保存）；保存 `comfy` 后立即探测并决定是否注册两个 skill，不重建 relay |
 | 预设 | 插件管理的 QQ 预设列表（名称 / 模型 / 权限 / 编辑 / 删除）；新建 / 编辑表单：id · 名称 · 描述 · persona · provider / model / 思考层级 · 权限预设 · 排序（v0.20.0） | 保存预设 / 取消 / 删除（正在使用的预设在 host 侧拒绝删除） |
 | 记录 | `chatRetentionDays`（0 = 永不自动删除；7..3650 = 自动清理） | 「立即清理」（用输入框天数 1..3650，二次确认） |
@@ -103,7 +103,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 ~~~
 
 - 可覆盖字段：`wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces /
-  chatRetentionDays / gate.{debounce,fastMinReplyInterval,jevThreshold} /
+  chatRetentionDays / gate.{debounce,fastMinReplyInterval,jevThreshold,jevApiKey} /
   proxyReply.{enabled,targets,silenceWindow} / sessionTitle / replyChunkSize / commandPrefixes /
   agentPreset / persona.{enabled,text} / comfy.{enabled,baseUrl,timeoutMs,skillEnabled} /
   environment.{enabled,dir,webuiToken}`；
@@ -161,7 +161,10 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
     "workspace": "/Users/<user>/dsh/qq-relay-ws",
     "groupWorkspaces": { "10002": "/Users/<user>/projects/my-app" },
     "chatRetentionDays": 0,
-    "gate": { "debounceMs": 3000, "fastMinReplyIntervalMs": 10000, "jevThreshold": 0.6 },
+    "gate": {
+      "debounceMs": 3000, "fastMinReplyIntervalMs": 10000, "jevThreshold": 0.6,
+      "jevApiKeyConfigured": false, "jevApiKeySource": "none", "jevApiKeyEnv": "OPENROUTER_API_KEY"
+    },
     "sessionTitle": "QQ群：{groupName}",
     "replyChunkSize": 1500,
     "commandPrefixes": ["/dsh"],
@@ -209,6 +212,7 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页保存）
 | `groups` / `commandPrefixes` / `replyChunkSize` | 立即对新事件生效 |
 | `workspace` / `groupWorkspaces` / `sessionTitle` | 只影响**之后新建**的会话；已存在的群映射保持原项目 / 标题（表格可查）。改已映射群的项目后点「重新绑定」才会换会话；旧项目聊天记录不移动 |
 | `gate.debounce` / `gate.fastMinReplyInterval` / `gate.jevThreshold` | **立即生效**：保存后重建闸门，阈值由分类器每次判定时读取 |
+| `gate.jevApiKey` | **立即生效且不重建 relay**：只替换分类器内部实现（保存后新 key 立刻可用；清空则退回环境变量 / fail closed） |
 | `chatRetentionDays` | 立即写入配置；下一次自动清理（重启后 / 每日）按新值执行。「立即清理」只清一次，不改配置 |
 | 立即清理 | 只删文件（聊天日文件 / 媒体日期目录），不动映射、会话与配置；删除后不可恢复 |
 | 解除绑定 / 清空全部映射 | 删本机映射并重建 relay（清掉 relay 内的会话缓存）；GUI 里的旧会话保留，下条消息按当前项目目录重新建会话 |
@@ -254,7 +258,7 @@ src/
 - `pnpm test`：host 侧单测（`test/settings.test.js` 覆盖层序 / 脱敏 / 原子读写 / 路由面，
   `test/apply.test.js` 假 ctx + 临时 HOME 跑通注册、状态、保存、重连，路由数 13；
   `test/env.test.js` 覆盖环境配置 / compose / OneBot / 求值 / 动作 argv / 日志脱敏 /
-  controller 探测 + 写 OneBot + 回填 + open-webui + 确认制 + 一键修复）。291 个用例。
+  controller 探测 + 写 OneBot + 回填 + open-webui + 确认制 + 一键修复）。292 个用例。
 - `pnpm check`：语法 + 元数据 + `tsc --noEmit` + 文档↔源码配对。
 - 客户端没有浏览器测试：改完 client 半身跑 `pnpm build` 后**刷新页面**即可看到（v0.17.0 起
   这类改动不需要重启 GUI）；真机：左栏「插件」→ dsh-qq-relay → 七个二级页面都渲染、

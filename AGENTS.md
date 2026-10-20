@@ -6,7 +6,7 @@
 > [README.md](./README.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.23.0**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.24.0**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -30,7 +30,9 @@
 > `comfy-video` skill：MiniMax H3 `h3-t2v` / `h3-i2v` / `h3-r2v`；`qq_send` 新增 `videos`
 > 内联视频消息；skill 状态改为 `status.comfy.skills` 数组，见 [docs/comfy.md](./docs/comfy.md)）；
 > v0.23.0 加**环境一键配置**（配置页「环境」页：`environment` 配置段 + 7 步诊断 + 白名单动作 /
-> 一键修复 / 动作日志，见 [docs/env.md](./docs/env.md)）；上级 §0 已仅对本插件解除。
+> 一键修复 / 动作日志，见 [docs/env.md](./docs/env.md)）；v0.24.0 把 jev（OpenRouter）API key
+> 加进「行为」页（`gate.jevApiKey` 只写不读、保存即热切换分类器，环境变量仍兜底）；
+> 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
 

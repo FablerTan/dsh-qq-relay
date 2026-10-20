@@ -25,6 +25,7 @@ import {
   normalizeDecision,
   normalizeGateConfig,
   parseDuration,
+  resolveJevApiKey,
 } from '../lib/model/gate.js'
 
 function tempDir(t) {
@@ -504,6 +505,7 @@ test('config：gate 的 jev 分类器默认与校验', () => {
   assert.equal(defaults.config.gate.model, 'typesafe/jev-1.14')
   assert.equal(defaults.config.gate.jevEndpoint, 'https://openrouter.ai/api/alpha/decisions')
   assert.equal(defaults.config.gate.jevApiKeyEnv, 'OPENROUTER_API_KEY')
+  assert.equal(defaults.config.gate.jevApiKey, '')
   assert.equal(defaults.config.gate.jevThreshold, 0.7)
   assert.equal(defaults.config.gate.classifierTimeoutMs, 8000)
 
@@ -511,25 +513,44 @@ test('config：gate 的 jev 分类器默认与校验', () => {
     wsUrl: 'ws://x',
     accessToken: 't',
     selfId: 1,
-    gate: { model: 'typesafe/jev-1.14', jevThreshold: 0.55, jevEndpoint: 'https://proxy.example.com/decisions', jevApiKeyEnv: 'MY_JEV_KEY', classifierTimeoutMs: '10s' },
+    gate: { model: 'typesafe/jev-1.14', jevThreshold: 0.55, jevEndpoint: 'https://proxy.example.com/decisions', jevApiKeyEnv: 'MY_JEV_KEY', jevApiKey: '  sk-or-direct  ', classifierTimeoutMs: '10s' },
   })
   assert.equal(custom.ok, true)
   assert.equal(custom.config.gate.jevThreshold, 0.55)
   assert.equal(custom.config.gate.jevEndpoint, 'https://proxy.example.com/decisions')
   assert.equal(custom.config.gate.jevApiKeyEnv, 'MY_JEV_KEY')
+  assert.equal(custom.config.gate.jevApiKey, 'sk-or-direct', '首尾空白被裁掉')
   assert.equal(custom.config.gate.classifierTimeoutMs, 10000)
 
   const invalid = normalizeConfig({
     wsUrl: 'ws://x',
     accessToken: 't',
     selfId: 1,
-    gate: { model: '', jevThreshold: 1.5, jevEndpoint: 'http://x', jevApiKeyEnv: 'bad-key' },
+    gate: { model: '', jevThreshold: 1.5, jevEndpoint: 'http://x', jevApiKeyEnv: 'bad-key', jevApiKey: 42 },
   })
   assert.equal(invalid.ok, false)
   assert.ok(invalid.problems.some((p) => p.includes('gate.model')))
   assert.ok(invalid.problems.some((p) => p.includes('gate.jevThreshold')))
   assert.ok(invalid.problems.some((p) => p.includes('gate.jevEndpoint')))
   assert.ok(invalid.problems.some((p) => p.includes('gate.jevApiKeyEnv')))
+  assert.ok(invalid.problems.some((p) => p.includes('gate.jevApiKey')))
+
+  const tooLong = normalizeConfig({
+    wsUrl: 'ws://x', accessToken: 't', selfId: 1, gate: { jevApiKey: 'x'.repeat(257) },
+  })
+  assert.equal(tooLong.ok, false)
+  assert.ok(tooLong.problems.some((p) => p.includes('gate.jevApiKey')))
+
+  // 解析优先级：配置 > 环境变量；都没有 → none。
+  assert.deepEqual(
+    resolveJevApiKey({ jevApiKey: 'from-config', jevApiKeyEnv: 'MY_JEV_KEY' }, { MY_JEV_KEY: 'from-env' }),
+    { key: 'from-config', source: 'config' },
+  )
+  assert.deepEqual(
+    resolveJevApiKey({ jevApiKey: '', jevApiKeyEnv: 'MY_JEV_KEY' }, { MY_JEV_KEY: ' from-env ' }),
+    { key: 'from-env', source: 'env' },
+  )
+  assert.deepEqual(resolveJevApiKey({}, {}), { key: '', source: 'none' })
 })
 
 test('config：poke 段默认与校验（v0.15.0）', () => {
