@@ -17,7 +17,9 @@
 > **P9 入向群文件**：`group_upload` → 下载落盘 → 可选直通，v0.16.0 已实现（2026-10-19），见 [media.md](./media.md) §5.2。
 > **P10** 已落地（v0.17.0）；**P11** 已完成（v0.18.0）；**P13.1 角色预设** 已落地（v0.19.0），
 > 预设管理 + 模型 / 思考层级 / 权限已落地（v0.20.0）；**P14 画图能力（ComfyUI 探测 + 动态 skill）**
-> 已落地（v0.21.0，v0.21.1 修 `qq_send` 出向图片 / 文件转发），见 [comfy.md](./comfy.md)。
+> 已落地（v0.21.0，v0.21.1 修 `qq_send` 出向图片 / 文件转发），见 [comfy.md](./comfy.md)；
+> **P15 视频生成（MiniMax H3 + comfy-video skill + qq_send videos）** 已落地（v0.22.0），
+> 见 [comfy.md](./comfy.md) §8。
 > **P12 环境一键安装 / P13.2–P13.3 表情包** 是 2026-10-19 用户确认的后续重点，状态：**规划中**。
 > 上级 AGENTS.md §0 已按用户要求**仅对 `dsh-qq-relay` 解除**（2026-10-19）。
 > 设计见 [architecture.md](./architecture.md)、[onebot-channel.md](./onebot-channel.md)、
@@ -624,6 +626,43 @@
   `<群项目>/assets/comfy/output/` 后用 `qq_send images` 发回群。
 - 改图：先发参考图，再说「改成雪景」→ 走 `qwen-i2i`（人物一致性）或 `qwen-edit`（尺寸控制）。
 - 关闭 `enabled` / `skillEnabled` → 下一轮探测后 skill 注销；ComfyUI 抖动 / 重启 → skill 保持注册。
+
+## P15 视频生成：MiniMax H3 + 双 skill + qq_send videos（v0.22.0 已实现，2026-10-20）
+
+目标：在已有画图能力上补短视频——同一个 ComfyUI 服务、同一个运行器，agent 按群里的要求
+文生视频 / 让图片动起来 / 用参考图做角色一致的视频，并把 mp4 发回群。
+
+### 范围（v0.22.0）
+
+- **第二个动态 skill**：连接成功后按 `COMFY_SKILLS` 注册 `comfy-image`（`SKILL.md`）与
+  `comfy-video`（`SKILL-video.md`）；共用 `lib/skills/comfy-image/` 目录与 `resourceBase`，
+  各自记录 `status.comfy.skills[].loaded/error`；一个模板坏了不影响另一个。
+- **三个 H3 工作流**：`h3-t2v`（文生视频）/ `h3-i2v`（首帧转视频）/ `h3-r2v`
+  （参考图转视频，角色一致性）。registry 共 7 个（qwen 3 + `moss-t2i` + h3 3）；
+  产物 mp4 带原生音轨，落 `<群项目>/assets/comfy/output/`（runner 打印实际路径）。
+- **`qq_send` 新增 `videos`**：最多 1 个、本地绝对路径或 URL、MP4 / MOV / WEBM / FLV / AVI / MKV、
+  ≤30 MiB，本地文件转 base64 走 NapCat 的 video 段（内联播放）；离线不排队；
+  输出 `media` 增加 `videos` 计数。
+- **顺带修正**：MOSS-Image 登记为 `moss-t2i`（原文档写「未进 registry / runner 不认」），
+  现在 runner 可直接调用；registry 共 7 个工作流。
+
+### 验收状态（2026-10-20）
+
+- ✅ 真实 ComfyUI 0.39.0 / RTX 4070：`h3-t2v` 4 步 / 0.2MP / 3s 服务端 **29.1s**
+  （608×352、73 帧、3.04s、带音轨），`h3-r2v` **30.4s**；8 步为质量档、4 步为加速档。
+- ✅ `status.comfy.skills` 里 `comfy-image` 与 `comfy-video` 均加载；单测 **282** 全过
+  （新增 4 个：comfy 单坏不影响另一个、relay `sendVideo` 2 个、`qq_send` 只发视频；
+  既有用例同步改成双 skill / 视频断言）。
+- ⏳ `h3-i2v` 只做过 dry-run 接线校验，未单独真跑；QQ 侧视频内联播放的真机验收待做。
+
+### 验收
+
+- 群里说「生成一段夕阳下海边散步的视频」→ 触发 `comfy-video` → `h3-t2v`，产物 mp4 落在
+  `<群项目>/assets/comfy/output/video/`，用 `qq_send videos` 发回群（内联播放）。
+- 先发一张图再说「让这张图动起来」→ `h3-i2v`（首帧）；「用这张参考图做一段…」→ `h3-r2v`，
+  prompt 用 `<Subject 1>` 指代角色。
+- 关闭 `enabled` / `skillEnabled` → 两个 skill 都注销；ComfyUI 抖动 → 保持注册。
+- 视频超过 30 MiB / 格式不支持 / 离线 → 工具返回可读错误，不排队。
 
 ## 协议级联调验收（2026-10-19，AI 代理执行，非真机）
 

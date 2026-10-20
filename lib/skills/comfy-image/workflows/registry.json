@@ -23,6 +23,34 @@
       "schema": "qwen_image_2_1_image_edit.schema.json",
       "summary": "13 节点，用户 2026-10-13 从界面导出的原图。改提示词 / 换参考图 / 切尺寸模式，约 6-12s。",
       "source": "用户导出，sha256 ed671814c15cf78b，原样保存"
+    },
+    "moss-t2i": {
+      "title": "MOSS-Image SFT 文生图（int8 convrot / 20 步 / CFG 5）",
+      "file": "moss_image_t2i.api.json",
+      "schema": "moss_image_t2i.schema.json",
+      "summary": "19 节点，纯文生图；支持自然语言 / tag / JSON Layout 三种提示词。9:16 2.0MP ≈ 1088x1936，约 66-96s。",
+      "source": "assets/moss-image.api.json 登记（2026-10-19），节点图原样保存，只加参数白名单"
+    },
+    "h3-t2v": {
+      "title": "MiniMax H3 文生视频（turbo LoRA / 8 步 / 24fps / 带音频）",
+      "file": "minimax_h3_t2v.api.json",
+      "schema": "minimax_h3_t2v.schema.json",
+      "summary": "18 节点，纯文生视频；res_multistep/simple + turbo 8 步 LoRA；0.4MP 16:9 ≈ 864x480，5s ≈ 124 帧，产物 mp4 自带音轨。",
+      "source": "远端 ComfyUI /history 8fa55f32（2026-10-20 保存），BasicScheduler 统一为 8 步；对应用户界面工作流 H3_Turbo8步_pruned_int8_t2v.json"
+    },
+    "h3-i2v": {
+      "title": "MiniMax H3 图生视频（首帧 → 视频，turbo 8 步 / 带音频）",
+      "file": "minimax_h3_i2v.api.json",
+      "schema": "minimax_h3_i2v.schema.json",
+      "summary": "19 节点 = t2v 图 + LoadImage(140) → first_frame；画面从给定首帧开始，出图尺寸仍由 ResolutionSelector 决定。",
+      "source": "以 8fa55f32 t2v 图为基础，按 6124f9e9 的 first_frame 接法派生（LoadImage id 140，2026-10-20）"
+    },
+    "h3-r2v": {
+      "title": "MiniMax H3 参考生视频（ReferenceToVideo / turbo 8 步 / 带音频）",
+      "file": "minimax_h3_r2v.api.json",
+      "schema": "minimax_h3_r2v.schema.json",
+      "summary": "20 节点，LoadImage → ref_images.ref_image_0（ref_image_size=match）；prompt 走 PrimitiveStringMultiline，可写多行分镜。",
+      "source": "远端 ComfyUI /history 1f1a8e93（2026-10-20 保存），对应用户界面工作流 H3_r2v参考图_8步Turbo_pruned_int8.json"
     }
   }
 }

@@ -1,8 +1,8 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.21.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
-搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 画图 / 预设 / 记录」二级页面）；
+当前 **v0.22.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
 主动推送与 QQ 侧审批；P4 已落地**群项目目录 + 聊天记录 `.qq-relay/` + prompt 拼接**（2026-10-19）；
@@ -19,7 +19,9 @@ P4.1 已落地入向媒体落盘；P5 已落地 **QQ 侧命令层**（`/new` / `
 平台约定，见 [docs/persona.md](./docs/persona.md)）；v0.20.0 起预设可在配置页**新建 / 编辑 / 删除**，
 并逐预设设置**模型、思考层级、权限**（动态注册，无需改 profile）；v0.21.0 加**画图能力**——探测配置的
 ComfyUI，连上后把插件自带的 `comfy-image` skill 动态注册给 DSH，群里出图 / 改图后产物用 `qq_send`
-发回群（见 [docs/comfy.md](./docs/comfy.md)）。设计见
+发回群；v0.22.0 加**视频生成**——同一个 ComfyUI 再动态注册 `comfy-video` skill（MiniMax H3），
+`qq_send` 新增 `videos`（内联视频消息），群里可文生视频 / 首帧 / 参考图转视频（见
+[docs/comfy.md](./docs/comfy.md)）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -63,8 +65,9 @@ QQ 侧命令层（P5：`/new` 换会话 / `/stop` 中断 / `/status` 状态 / `/
 角色预设与轻量人设（v0.19.0：插件自带「QQ 群聊」agent preset / 配置页可选 preset / prompt 注入人设与
 平台约定，见 [persona.md](./docs/persona.md)）、预设管理与预设级模型 / 思考层级 / 权限（v0.20.0：
 配置页「预设」页可增删改，presets.json + 动态注册，见 [persona.md](./docs/persona.md) §2）、
-画图能力（v0.21.0：ComfyUI 探测 + 动态注册 `comfy-image` runtime skill，配置页「画图」页 +
-`POST /api/comfy/test`，见 [comfy.md](./docs/comfy.md)）。
+画图 / 视频能力（v0.21.0 / v0.22.0：ComfyUI 探测 + 动态注册 `comfy-image`（出图）/
+`comfy-video`（视频 MiniMax H3）两个 runtime skill，配置页「画图 / 视频」页 + `POST /api/comfy/test`；
+`qq_send` 支持 `images` / `videos`，见 [comfy.md](./docs/comfy.md)）。
 **仍未定案**：群审批（按钮）——先落 `docs/` 再实现。
 
 ## 目录结构
@@ -84,12 +87,12 @@ dsh-qq-relay/
 │   │   ├── config-routes.js # 配置页 HTTP 面（status / config / reconnect / rebind / cleanup / messages / mapping / presets / comfy test）
 │   │   ├── http.js       # JSON 信封与请求体读取共用件
 │   │   ├── gate.js       # 闸门调度：去抖批次 / 最小间隔 / 慢路定时（分类器注入）
-│   │   ├── tools.js      # qq_send / qq_poke 工具定义（手写 ToolDefinition，零外部依赖）
+│   │   ├── tools.js      # qq_send（文本 / 图片 / 视频 / 文件）/ qq_poke 工具定义（手写 ToolDefinition，零外部依赖）
 │   │   ├── approval.js   # QQ 侧审批桥：approval/request → 群消息 → 文本命令决定
 │   │   ├── relay.js      # 入向判定 + 会话映射 + 出向回发 + 断线发送队列 + 主动推送
-│   │   └── comfy.js      # ComfyUI 探测 + 动态注册 comfy-image skill（v0.21.0）
+│   │   └── comfy.js      # ComfyUI 探测 + 动态注册 comfy-image / comfy-video 两个 skill（v0.21.0 / v0.22.0）
 │   ├── model/            # 配置 / 设置覆盖 / 会话映射 / 状态+锁 / 群项目目录 / 聊天日志 / 清理 / 面板 / 媒体落盘 / prompt 拼接 / 决策日志 / 回复切分 / 闸门 / jev / 审批 / comfy 配置与 skill 模板渲染
-│   ├── skills/comfy-image/ # 插件自带画图 skill（SKILL.md 模板 / 运行器 / 工作流 / 参考），随包发布
+│   ├── skills/comfy-image/ # 插件自带画图 / 视频 skill（SKILL.md / SKILL-video.md 模板 / 运行器 / 7 个工作流 / 参考），随包发布
 │   └── client.js         # client 半身构建产物（已入库，clone 即可加载）
 ├── test/                 # host 单测（node:test，零依赖；含配置页 / apply 集成）
 ├── src/                  # client 半身源码：model（HTTP 信封、表单解析）→ viewmodel（呈现态与动作）→ view（组件）
@@ -110,17 +113,17 @@ dsh-qq-relay/
 | [README.md](./README.md) | 总览 / 用途 / 用法 / 版本历史 | 任何任务第一步 |
 | [AGENTS.md](./AGENTS.md) | 本插件纪律：文档位置速查 + `pnpm check` 闸门 | 动手前 |
 | [docs/architecture.md](./docs/architecture.md) | 总体架构：形态、模块、事件流、会话映射、安全、运行前提 | 动手前 / 改设计时 |
-| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 项目 / 行为 / 画图 / 预设 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
+| [docs/client.md](./docs/client.md) | client 半身：插件面板里的配置页（连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录）、注册落点、配置层序、HTTP 契约、热更新语义、主题化样式 | 改配置页 / 调保存逻辑时 |
 | [docs/config.md](./docs/config.md) | 配置总表：每个字段的默认值 / 范围 / 现在能否在配置页改 / 生效方式 + 写死常量清单 + 加字段的改动面 | 调配置 / 决定哪些进配置页时 |
 | [docs/onebot-channel.md](./docs/onebot-channel.md) | 真实 QQ 号通道：账号模型、NapCat 部署、WebSocket 事件与 API、封号风险 | 接协议端、部署 NapCat 时 |
 | [docs/official-bot-channel.md](./docs/official-bot-channel.md) | **备选（当前不采用）**：官方 QQ 机器人通道事实与限制 | 回退 / 对比时 |
 | [docs/gate.md](./docs/gate.md) | 消息闸门：快路 / 慢路、jev、去重幂等、状态持久化、配置 | 改群聊行为时 |
 | [docs/chat-context.md](./docs/chat-context.md) | 聊天记录落盘与消息拼接：`.qq-relay/` 隐藏目录、群项目目录、prompt 格式、迁移 | 改聊天记录 / prompt 拼接时 |
-| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 文件 / 画图产物 | 改媒体 / 排查媒体收发时 |
-| [docs/comfy.md](./docs/comfy.md) | 画图：ComfyUI 配置 / 探测、动态注册 `comfy-image` skill 的生命周期与模板渲染、三个工作流、QQ 群用法与安全边界 | 开画图 / 排查画图不生效时 |
+| [docs/media.md](./docs/media.md) | 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件落盘、聊天记录与 prompt 路径、`qq_send` 出向图片 / 视频 / 文件与画图 / 视频产物 | 改媒体 / 排查媒体收发时 |
+| [docs/comfy.md](./docs/comfy.md) | 画图与视频：ComfyUI 配置 / 探测、动态注册 `comfy-image` / `comfy-video` 两个 skill 的生命周期与模板渲染、图片 + 视频工作流、QQ 群用法与安全边界 | 开画图 / 视频、排查生成不生效时 |
 | [docs/commands.md](./docs/commands.md) | QQ 侧命令层：`/new` / `/stop` / `/status` / `/help`、解析与权限、与闸门的关系 | 改命令 / 排查群内命令不生效时 |
 | [docs/reply.md](./docs/reply.md) | 出向回复体验：引用触发消息、处理中占位、直通连发合并、`reply` 配置 | 改回复行为 / 排查回复对不上号时 |
-| [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送 / `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
+| [docs/tools.md](./docs/tools.md) | `qq_send` 主动推送（文本 / 图片 / 视频 / 文件）/ `qq_poke` 戳一戳：契约、安全、离线语义、验证 | 改工具 / 排查推送失败时 |
 | [docs/poke.md](./docs/poke.md) | 戳一戳：事件契约、被戳接话、冷却、聊天记录、`qq_poke` 工具 | 改戳一戳 / 排查戳没反应时 |
 | [docs/approval.md](./docs/approval.md) | QQ 侧审批：群里文本命令、角色限制、超时 / 取消 / 离线语义 | 改审批 / 排查审批不生效时 |
 | [docs/persona.md](./docs/persona.md) | 角色预设与轻量人设：插件自带 `qq-relay` agent preset、配置页选择、prompt 人设行与平台约定 | 调人设 / 选 preset / 排查回复风格时 |
@@ -155,6 +158,32 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   机制在浏览器刷新后生效。
 
 ## 版本历史
+
+### v0.22.0 视频生成：MiniMax H3 + 双 skill + qq_send videos（2026-10-20）
+
+- **同一 ComfyUI 动态注册两个 skill**：连接成功后 host 按 `COMFY_SKILLS` 注册
+  `comfy-image`（`SKILL.md` 出图）与 `comfy-video`（`SKILL-video.md` 视频）；两个 skill 共用
+  `lib/skills/comfy-image/` 目录与 `resourceBase`，各自记录加载状态与错误
+  （一个模板坏了不影响另一个）。状态快照的单数 `skill` 改为数组 `status.comfy.skills`；
+  抖动策略不变（连不上不注销、显式关闭 `enabled` / `skillEnabled` 才注销全部）。
+- **视频工作流（MiniMax H3）**：新增 `h3-t2v`（文生视频）/ `h3-i2v`（首帧转视频）/
+  `h3-r2v`（参考图转视频，角色一致性）三个工作流，registry 共 7 个；产物 mp4 带原生音轨，
+  落在 `<群项目>/assets/comfy/output/`（runner 打印实际路径）。实测（RTX 4070 / ComfyUI 0.39.0）：
+  `h3-t2v` 4 步 / 0.2MP / 3s 服务端 29.1s（608×352、73 帧、3.04s、带音轨），`h3-r2v` 30.4s；
+  8 步为质量档、4 步为加速档；0.4MP/16:9 ≈ 864×480；duration 秒 → 帧数对齐 5 mod 17（5s = 124 帧）。
+  `h3-i2v` 本次只做 dry-run 接线校验，未单独真跑。
+- **`qq_send` 新增 `videos`**：最多 1 个，本地绝对路径或 http(s) URL，MP4 / MOV / WEBM / FLV /
+  AVI / MKV，≤30 MiB；本地文件转 base64 走 NapCat 的 video 段（内联播放）。输出 `media` 增加
+  `videos` 计数（`{ images, videos, file }`）；离线时视频**不排队**、直接报错；发送成功算 bot 发言。
+  runtime 包装补 `sendVideo`，relay / OneBot API 分别接 `sendVideo` / `sendGroupVideo`。
+- **配置页「画图 / 视频」**：页签改名，ComfyPanel 逐条展示两个 skill 的加载状态与错误，
+  页脚注明 `SKILL.md` / `SKILL-video.md`；旧 host 只返回单数 `skill` 时 client 兜底成一个数组。
+- **顺带修正**：MOSS-Image 已登记为 registry 的 `moss-t2i`（此前文档写「未进 registry / runner 不认」），
+  `moss_image_t2i.api.json` / `.schema.json` 一并入库；现在 registry 共 7 个工作流。
+- 单测 278 → **282**（新增 4 个：comfy 单坏不影响另一个、relay `sendVideo` 成功 / 校验、
+  `qq_send` 只发视频；既有 comfy / 工具 / onebot / media / apply 用例同步改成双 skill / 视频断言）。
+- 文档同步：comfy / tools / media / client / config / architecture / roadmap / README / AGENTS；
+  `lib/client.js` 已含「画图 / 视频」页文案。
 
 ### v0.21.1 修复 qq_send 图片 / 文件发送与「未分组」会话（2026-10-19）
 

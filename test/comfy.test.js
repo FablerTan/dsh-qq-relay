@@ -25,12 +25,17 @@ import { normalizeConfig } from '../lib/model/config.js'
 import { maskConfig, mergeConfig, pickEditable } from '../lib/model/settings.js'
 import { createComfyController, probeComfy } from '../lib/controller/comfy.js'
 
-function tempSkill(t, text) {
+function tempSkill(t, text, videoText = '# 视频\nhost={{COMFY_HOST}}') {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-comfy-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const templatePath = join(dir, 'SKILL.md')
-  writeFileSync(templatePath, text, 'utf8')
-  return { dir, templatePath }
+  writeFileSync(join(dir, 'SKILL.md'), text, 'utf8')
+  writeFileSync(join(dir, 'SKILL-video.md'), videoText, 'utf8')
+  return { dir }
+}
+
+/** 按名字取 status.skills 里的一项。 */
+function skillState(status, name) {
+  return status.skills.find((item) => item.name === name)
 }
 
 /** 桩 fetch：routes 是 pathname → JSON 的函数 / 值；mode 可切换成失败。 */
@@ -202,8 +207,8 @@ test('comfy：probeComfy 成功 / 连接失败 / 超时', async () => {
   assert.equal(noFetch.reachable, false)
 })
 
-test('comfy：controller 探测成功 → 注册 skill；关闭配置 → 注销', async (t) => {
-  const { dir, templatePath } = tempSkill(t, [
+test('comfy：controller 探测成功 → 注册两个 skill；关闭配置 → 全部注销', async (t) => {
+  const { dir } = tempSkill(t, [
     '---',
     'name: comfy-image',
     'description: demo',
@@ -211,7 +216,7 @@ test('comfy：controller 探测成功 → 注册 skill；关闭配置 → 注销
     '# 画图',
     'host={{COMFY_HOST}}',
     'runner={{SKILL_DIR}}/scripts/comfy_run.py',
-  ].join('\n'))
+  ].join('\n'), '# 视频\nhost={{COMFY_HOST}}\nrunner={{SKILL_DIR}}/scripts/comfy_run.py')
   const registrations = []
   const disposals = []
   const skills = {
@@ -226,7 +231,6 @@ test('comfy：controller 探测成功 → 注册 skill；关闭配置 → 注销
     getConfig: () => config,
     fetchImpl: fakeFetch({ '/system_stats': STATS, '/queue': QUEUE }, state),
     skillDir: dir,
-    templatePath,
   })
   t.after(() => controller.dispose())
 
@@ -239,32 +243,37 @@ test('comfy：controller 探测成功 → 注册 skill；关闭配置 → 注销
   assert.equal(status.version, '0.3.9')
   assert.equal(status.device, 'NVIDIA GeForce RTX 4070')
   assert.deepEqual(status.queue, { running: 1, pending: 2 })
-  assert.equal(status.skill.loaded, true)
-  assert.equal(status.skill.error, '')
-  assert.equal(registrations.length, 1)
-  assert.equal(registrations[0].name, 'comfy-image')
-  assert.equal(registrations[0].source, 'custom')
-  assert.equal(registrations[0].provider, 'dsh-qq-relay')
-  assert.equal(registrations[0].resourceBase.kind, 'directory')
-  assert.equal(registrations[0].resourceBase.path, dir)
-  assert.equal(registrations[0].content.includes('host=http://192.168.1.10:8188'), true)
-  assert.equal(registrations[0].content.includes('runner=' + dir + '/scripts/comfy_run.py'), true)
+  assert.deepEqual(status.skills.map((item) => item.name), ['comfy-image', 'comfy-video'])
+  assert.equal(skillState(status, 'comfy-image').loaded, true)
+  assert.equal(skillState(status, 'comfy-video').loaded, true)
+  assert.equal(skillState(status, 'comfy-image').error, '')
+  assert.equal(registrations.length, 2)
+  assert.deepEqual(registrations.map((item) => item.name), ['comfy-image', 'comfy-video'])
+  for (const registration of registrations) {
+    assert.equal(registration.source, 'custom')
+    assert.equal(registration.provider, 'dsh-qq-relay')
+    assert.equal(registration.resourceBase.kind, 'directory')
+    assert.equal(registration.resourceBase.path, dir)
+    assert.equal(registration.content.includes('host=http://192.168.1.10:8188'), true)
+    assert.equal(registration.content.includes('runner=' + dir + '/scripts/comfy_run.py'), true)
+  }
 
-  // 关闭配置 → 下一轮 refresh 注销 skill
+  // 关闭配置 → 下一轮 refresh 注销两个 skill
   config.enabled = false
   await controller.refresh()
-  assert.equal(controller.status().skill.loaded, false)
-  assert.deepEqual(disposals, ['comfy-image'])
+  assert.equal(skillState(controller.status(), 'comfy-image').loaded, false)
+  assert.equal(skillState(controller.status(), 'comfy-video').loaded, false)
+  assert.deepEqual(disposals, ['comfy-image', 'comfy-video'])
 
   // 重新打开 → 再注册
   config.enabled = true
   await controller.refresh()
-  assert.equal(controller.status().skill.loaded, true)
-  assert.equal(registrations.length, 2)
+  assert.equal(skillState(controller.status(), 'comfy-video').loaded, true)
+  assert.equal(registrations.length, 4)
 })
 
-test('comfy：ComfyUI 抖动时保持已注册 skill（不反复进出目录）', async (t) => {
-  const { dir, templatePath } = tempSkill(t, '# x\nhost={{COMFY_HOST}}')
+test('comfy：ComfyUI 抖动时保持两个已注册 skill（不反复进出目录）', async (t) => {
+  const { dir } = tempSkill(t, '# x\nhost={{COMFY_HOST}}')
   const registrations = []
   const disposals = []
   const skills = {
@@ -279,31 +288,33 @@ test('comfy：ComfyUI 抖动时保持已注册 skill（不反复进出目录）'
     getConfig: () => config,
     fetchImpl: fakeFetch({ '/system_stats': STATS, '/queue': QUEUE }, state),
     skillDir: dir,
-    templatePath,
   })
   t.after(() => controller.dispose())
 
   controller.attachSkills(skills)
   await controller.refresh()
-  assert.equal(controller.status().skill.loaded, true)
+  assert.equal(skillState(controller.status(), 'comfy-image').loaded, true)
+  assert.equal(skillState(controller.status(), 'comfy-video').loaded, true)
 
   // 连不上：保持注册，但状态变成不可达
   state.mode = 'throw'
   await controller.refresh()
   assert.equal(controller.status().reachable, false)
-  assert.equal(controller.status().skill.loaded, true)
+  assert.equal(skillState(controller.status(), 'comfy-image').loaded, true)
+  assert.equal(skillState(controller.status(), 'comfy-video').loaded, true)
   assert.equal(disposals.length, 0)
-  assert.equal(registrations.length, 1)
+  assert.equal(registrations.length, 2)
 
   // 显式关掉 skillEnabled → 注销
   config.skillEnabled = false
   await controller.refresh()
-  assert.equal(controller.status().skill.loaded, false)
-  assert.deepEqual(disposals, ['comfy-image'])
+  assert.equal(skillState(controller.status(), 'comfy-image').loaded, false)
+  assert.equal(skillState(controller.status(), 'comfy-video').loaded, false)
+  assert.deepEqual(disposals, ['comfy-image', 'comfy-video'])
 })
 
-test('comfy：测试连接只探测，不改状态 / 不动注册；无 skills 服务时明确报错', async (t) => {
-  const { dir, templatePath } = tempSkill(t, '# x\nhost={{COMFY_HOST}}')
+test('comfy：测试连接只探测，不改状态 / 不动注册', async (t) => {
+  const { dir } = tempSkill(t, '# x\nhost={{COMFY_HOST}}')
   const registrations = []
   const skills = {
     register(definition) {
@@ -317,7 +328,6 @@ test('comfy：测试连接只探测，不改状态 / 不动注册；无 skills �
     getConfig: () => config,
     fetchImpl: fakeFetch({ '/system_stats': STATS, '/queue': QUEUE }, state),
     skillDir: dir,
-    templatePath,
   })
   t.after(() => controller.dispose())
 
@@ -327,15 +337,18 @@ test('comfy：测试连接只探测，不改状态 / 不动注册；无 skills �
   assert.equal(controller.status().checkedAt, 0, '测试连接不写状态')
   assert.equal(registrations.length, 0, '测试连接不注册 skill')
 
-  // 没有 skills 服务：状态 supported=false，注册被跳过并给出可读错误
+  // 没有 skills 服务：状态 supported=false，两个 skill 都给出可读错误
   await controller.refresh()
-  assert.equal(controller.status().supported, false)
-  assert.equal(controller.status().skill.loaded, false)
-  assert.equal(controller.status().skill.error.includes('skills 服务'), true)
+  const status = controller.status()
+  assert.equal(status.supported, false)
+  assert.equal(skillState(status, 'comfy-image').loaded, false)
+  assert.equal(skillState(status, 'comfy-video').loaded, false)
+  assert.equal(skillState(status, 'comfy-image').error.includes('skills 服务'), true)
+  assert.equal(skillState(status, 'comfy-video').error.includes('skills 服务'), true)
   assert.equal(registrations.length, 0)
 })
 
-test('comfy：skill 模板缺失时注册失败但探测状态仍可用', async (t) => {
+test('comfy：skill 模板缺失时两个都失败但探测状态仍可用', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-comfy-empty-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const skills = { register() { return () => {} } }
@@ -349,9 +362,38 @@ test('comfy：skill 模板缺失时注册失败但探测状态仍可用', async 
 
   controller.attachSkills(skills)
   await controller.refresh()
-  assert.equal(controller.status().reachable, true)
-  assert.equal(controller.status().skill.loaded, false)
-  assert.equal(controller.status().skill.error.includes('加载失败'), true)
+  const status = controller.status()
+  assert.equal(status.reachable, true)
+  assert.equal(skillState(status, 'comfy-image').loaded, false)
+  assert.equal(skillState(status, 'comfy-video').loaded, false)
+  assert.equal(skillState(status, 'comfy-image').error.includes('加载失败'), true)
+  assert.equal(skillState(status, 'comfy-video').error.includes('加载失败'), true)
+})
+
+test('comfy：一个 skill 模板坏了不影响另一个注册', async (t) => {
+  const { dir } = tempSkill(t, '# 图片\nhost={{COMFY_HOST}}', '{{UNKNOWN}}')
+  const registrations = []
+  const skills = {
+    register(definition) {
+      registrations.push(definition)
+      return () => {}
+    },
+  }
+  const config = { enabled: true, baseUrl: 'http://h:1', timeoutMs: 3000, skillEnabled: true }
+  const controller = createComfyController({
+    getConfig: () => config,
+    fetchImpl: fakeFetch({ '/system_stats': STATS, '/queue': QUEUE }),
+    skillDir: dir,
+  })
+  t.after(() => controller.dispose())
+
+  controller.attachSkills(skills)
+  await controller.refresh()
+  const status = controller.status()
+  assert.equal(skillState(status, 'comfy-image').loaded, true)
+  assert.equal(skillState(status, 'comfy-video').loaded, false)
+  assert.equal(skillState(status, 'comfy-video').error.includes('加载失败'), true)
+  assert.deepEqual(registrations.map((item) => item.name), ['comfy-image'])
 })
 test('comfy：/api/comfy/test 路由会 await 异步探测结果并回传（回归：Promise 被当成同步结果）', async () => {
   const { createConfigRoutes, COMFY_TEST_PATH } = await import('../lib/controller/config-routes.js')

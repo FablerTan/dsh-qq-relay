@@ -1,6 +1,6 @@
 {
   "name": "dsh-qq-relay",
-  "version": "0.21.1",
+  "version": "0.22.0",
   "description": "把 DeepSeek Harness（DSH）接入 QQ 机器人的桥插件：host 半身连 OneBot 11 正向 WebSocket 做消息闸门 / 工具 / 审批，client 半身在插件面板「dsh-qq-relay」组合包页面提供配置页。",
   "private": true,
   "type": "module",

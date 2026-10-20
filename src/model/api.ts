@@ -87,14 +87,17 @@ export interface RelayComfyQueueView {
   pending: number
 }
 
-/** 画图 skill 的动态注册状态（v0.21.0）。 */
-export interface RelayComfySkillStatusView {
+/** 一个画图 / 视频 skill 的动态注册状态（v0.22.0 起 status.comfy.skills 数组的元素）。 */
+export interface RelayComfySkillStateView {
   name: string
   loaded: boolean
   error: string
 }
 
-/** ComfyUI 运行状态（v0.21.0；旧 host 缺字段时按「未连接 / 不支持」兜底，页面不白屏）。 */
+/**
+ * ComfyUI 运行状态（v0.22.0 起含 `skills` 数组：comfy-image / comfy-video）。
+ * 旧 host 缺字段时按「未连接 / 不支持」兜底，页面不白屏。
+ */
 export interface RelayComfyStatusView {
   enabled: boolean
   baseUrl: string
@@ -109,7 +112,8 @@ export interface RelayComfyStatusView {
   version: string
   device: string
   queue: RelayComfyQueueView
-  skill: RelayComfySkillStatusView
+  /** 连接成功后 host 尝试注册的 skill（每项带自己的加载状态与错误）；坏数据回落空数组。 */
+  skills: RelayComfySkillStateView[]
 }
 
 /** 一次连通性探测的结果（`POST /api/comfy/test` 的 probe）。 */
@@ -583,6 +587,30 @@ function asComfyConfig(value: unknown): RelayComfyConfigView {
   }
 }
 
+/**
+ * skill 列表兜底：优先读新字段 `skills`（数组），回退旧 host 的单数 `skill`
+ * （生成单元素数组）；坏数据一律回落空数组。
+ */
+function asComfySkills(value: Record<string, unknown>): RelayComfySkillStateView[] {
+  if (Array.isArray(value.skills)) {
+    return value.skills.filter(isRecord).map((entry) => ({
+      name: typeof entry.name === 'string' ? entry.name : '',
+      loaded: entry.loaded === true,
+      error: typeof entry.error === 'string' ? entry.error : '',
+    })).filter((entry) => entry.name !== '')
+  }
+  // 旧 host（v0.21.x）只有 comfy.skill 单数对象。
+  const legacy = isRecord(value.skill) ? value.skill : null
+  if (legacy === null) return []
+  const name = typeof legacy.name === 'string' ? legacy.name : ''
+  if (name === '') return []
+  return [{
+    name,
+    loaded: legacy.loaded === true,
+    error: typeof legacy.error === 'string' ? legacy.error : '',
+  }]
+}
+
 /** ComfyUI 运行状态兜底（旧 host 缺字段 → 全部关闭，页面不白屏）。 */
 function asComfyStatus(value: unknown): RelayComfyStatusView {
   if (!isRecord(value)) {
@@ -599,10 +627,9 @@ function asComfyStatus(value: unknown): RelayComfyStatusView {
       version: '',
       device: '',
       queue: { running: 0, pending: 0 },
-      skill: { name: '', loaded: false, error: '' },
+      skills: [],
     }
   }
-  const skill = isRecord(value.skill) ? value.skill : {}
   return {
     enabled: value.enabled === true,
     baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : '',
@@ -616,11 +643,7 @@ function asComfyStatus(value: unknown): RelayComfyStatusView {
     version: typeof value.version === 'string' ? value.version : '',
     device: typeof value.device === 'string' ? value.device : '',
     queue: asComfyQueue(value.queue),
-    skill: {
-      name: typeof skill.name === 'string' ? skill.name : '',
-      loaded: skill.loaded === true,
-      error: typeof skill.error === 'string' ? skill.error : '',
-    },
+    skills: asComfySkills(value),
   }
 }
 

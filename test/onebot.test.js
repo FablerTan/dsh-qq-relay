@@ -338,14 +338,23 @@ test('api：封装 action 与响应判定', async () => {
     params: { group_id: 1, user_id: 2 },
   })
 
-  await api.getGroupFileUrl(1, 'file-id', 0)
+  await api.sendGroupVideo(10002, 'base64://AAAA')
   assert.deepEqual(calls[3], {
+    action: 'send_group_msg',
+    params: {
+      group_id: '10002',
+      message: [{ type: 'video', data: { file: 'base64://AAAA' } }],
+    },
+  })
+
+  await api.getGroupFileUrl(1, 'file-id', 0)
+  assert.deepEqual(calls[4], {
     action: 'get_group_file_url',
     params: { group_id: 1, file_id: 'file-id', busid: 0 },
   })
 
   await api.getGroupFileUrl(1, 'file-id', 102)
-  assert.deepEqual(calls[4], {
+  assert.deepEqual(calls[5], {
     action: 'get_group_file_url',
     params: { group_id: 1, file_id: 'file-id', busid: 102 },
   })

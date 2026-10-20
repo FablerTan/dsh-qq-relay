@@ -25,7 +25,7 @@ Base 与 SFT 共用同一套提示词/JSON Layout 规则；本部署用的是 SF
 | 主干 | `模型/diffusion_models/moss_image_sft_int8_convrot.safetensors`（5.2G，int8_tensorwise + convrot） |
 | 文本编码器 | `模型/text_encoders/moss_image_qwen35_9b_int8_convrot.safetensors`（8.9G，Qwen3.5-9B） |
 | VAE | `模型/vae/moss_image_sft_vae.safetensors`（250M，标准 `VAELoader` 可读，128 通道 / 16×） |
-| 界面工作流 | `ComfyUI/user/default/workflows/MOSS-Image-SFT_int8.json`（拆件版，不用 HF Loader；**未注册进 `workflows/registry.json`**，`tools/comfy_run.py` 目前不认它，从脚本跑需自己提交 API 图） |
+| 界面工作流 | `ComfyUI/user/default/workflows/MOSS-Image-SFT_int8.json`（拆件版，不用 HF Loader）；已按 `moss-t2i` 登记进 `workflows/registry.json`，可直接用 `comfy_run.py` 跑 |
 | 画布 | `ResolutionSelector` = 9:16 / 2.0 MP / 16 倍数 → **1088×1936**（1.5 MP 档是 944×1680） |
 | 采样 | 20 步 / CFG 5 / `euler` + `sgm_uniform` / shift 5 / SLG `single_layers=22` / `comfy kitchen attention` |
 | 耗时 | 66–68s（单条短提示词）· 72–76s（19 项 layout）· 90–96s（48 项 / 3966 tokens） |
@@ -303,7 +303,7 @@ while True:                                   # 轮询 /history，成功后从 o
 - 节点 5 是实测用的负向词（`worst quality, low quality, ...`）；官方推荐换成
   `nsfw, worst quality, bad anatomy, watermark, jpeg artifact`。
 - 节点 20 的 `comfy kitchen attention` 是 N 卡/AMD 的 INT8 注意力后端；报错就换成 `pytorch attention`。
-- 这是**一次性快照**，不是 registry 工作流；`tools/comfy_run.py` 不认它。
+- `assets/moss-image.api.json` 是原始快照；已复制为 `workflows/moss_image_t2i.api.json` 并登记 `moss-t2i`，runner 可跑。
 
 ---
 

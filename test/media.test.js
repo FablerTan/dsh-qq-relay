@@ -13,6 +13,7 @@ import {
   attachMedia,
   decodeEntities,
   GROUP_FILE_MAX_BYTES,
+  isVideoExt,
   mediaDateKey,
   mediaRelativePath,
   normalizeMediaRecords,
@@ -281,6 +282,13 @@ test('media：sniffMediaExt 识别视频 / 语音头，图片优先', () => {
   assert.equal(sniffMediaExt(ogg), '.ogg')
   assert.equal(sniffMediaExt(PNG), '.png', '图片仍然优先识别')
   assert.equal(sniffMediaExt(Buffer.from([1, 2, 3])), '')
+
+  // v0.22.0：qq_send videos 的格式白名单（只认视频扩展，不认图片 / 音频）
+  assert.equal(isVideoExt('.mp4'), true)
+  assert.equal(isVideoExt('.MOV'), true)
+  assert.equal(isVideoExt('.webm'), true)
+  assert.equal(isVideoExt('.png'), false)
+  assert.equal(isVideoExt(''), false)
 })
 
 test('media：视频 / 语音落盘按真实内容定扩展名', async (t) => {

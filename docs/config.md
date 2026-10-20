@@ -155,18 +155,20 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 - 每会话首次派发时应用预设的模型（追加 `model/selection`，不覆盖用户手动选择）与权限
   （`permissionPresets.set`），详见 [persona.md](./persona.md) §4。
 
-### 2.12 画图（ComfyUI，v0.21.0）
+### 2.12 画图 / 视频（ComfyUI，v0.21.0 / v0.22.0）
 
 | 字段 | 默认 | 取值 | 作用 | 配置页 | 生效 |
 |---|---|---|---|---|---|
-| `comfy.enabled` | `false` | 布尔 | 画图总开关；关闭时停止探测并注销 `comfy-image` skill | 可 | 保存后立即探测 |
+| `comfy.enabled` | `false` | 布尔 | 画图 / 视频总开关；关闭时停止探测并注销两个 skill | 可 | 保存后立即探测 |
 | `comfy.baseUrl` | `http://192.168.1.10:8188` | 非空 `http://` / `https://` URL | ComfyUI 地址（无鉴权，只放可信网络）；尾部斜杠会被去掉 | 可 | 同上 |
 | `comfy.timeoutMs` | `30000` | 整数 `3000..120000`（毫秒） | 探测 / 连接测试超时 | 可 | 同上 |
-| `comfy.skillEnabled` | `true` | 布尔 | 连上后是否把 `comfy-image` runtime skill 注册给 DSH | 可 | 同上 |
+| `comfy.skillEnabled` | `true` | 布尔 | 连上后是否注册 `comfy-image`（出图）/ `comfy-video`（视频）两个 runtime skill | 可 | 同上 |
 
 - 语义：host 探测 `<baseUrl>/system_stats` + `/queue`；**首次连上**且 `enabled && skillEnabled`
-  才注册插件自带的 `comfy-image` skill；之后探测失败**不注销**（避免目录抖动），
-  关闭 `enabled` 或 `skillEnabled` 才注销。详见 [comfy.md](./comfy.md)。
+  才注册插件自带的两个 skill（`comfy-image` 出图 / `comfy-video` 视频，共用
+  `lib/skills/comfy-image` 目录）；两个 skill 各自记录加载状态与错误，一个模板坏了不影响另一个。
+  之后探测失败**不注销**（避免目录抖动），关闭 `enabled` 或 `skillEnabled` 才注销全部。
+  详见 [comfy.md](./comfy.md)。
 - **保存后行为**：先按新配置探测，再决定是否注册；仅 `comfy` 变化**不重建 relay 连接**，
   也不需要重启 GUI（skill 注册在运行时完成）。
 - 「测试连接」走 `POST /dsh-qq-relay/api/comfy/test`（body 可带未保存的 `baseUrl` / `timeoutMs`；
@@ -184,7 +186,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 | `model/media.js` | `MEDIA_MAX_PER_MESSAGE` | 10 | 单条消息最多下载几个媒体 |
 | `model/media.js` | `OUTBOUND_IMAGE_MAX_BYTES` | 10 MiB | `qq_send` 出向单张图片上限 |
 | `model/media.js` | `OUTBOUND_FILE_MAX_BYTES` | 30 MiB | `qq_send` 出向单个文件上限 |
-| `controller/tools.js` | `MAX_TEXT_LENGTH` / `MAX_IMAGES` | 20000 字符 / 4 张 | `qq_send` 参数上限 |
+| `model/media.js` | `OUTBOUND_VIDEO_MAX_BYTES` | 30 MiB | `qq_send` 出向单个视频上限（v0.22.0；MP4 / MOV / WEBM / FLV / AVI / MKV） |
+| `controller/tools.js` | `MAX_TEXT_LENGTH` / `MAX_IMAGES` / `MAX_VIDEOS` | 20000 字符 / 4 张 / 1 个 | `qq_send` 参数上限 |
 | `model/reply.js` | `ACK_TEXT` | 「收到，处理中…」 | 占位文案（不可配） |
 | `model/reply.js` | `SEND_QUEUE_MAX` / `SEND_QUEUE_MAX_AGE_MS` | 50 条 / 30min | 断线期间出向消息队列上限与过期 |
 | `model/state.js` | `SEEN_LIMIT` / `PENDING_LIMIT` | 500 / 200 | 去重 id 与待评估消息的持久化上限 |
@@ -196,8 +199,8 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 | `model/commands.js` | 命令别名 | `newchat`/`reset`、`cancel`、`info`、`?`/`菜单` | 命令识别（改不了，除改代码） |
 | `model/approval.js` | 同意 / 拒绝词 | 同意 / 允许 / ok / yes…、拒绝 / no / deny… | 审批文本判定词表 |
 | `model/cleanup.js` | 手动清理区间 | `1..3650` 天 | 「立即清理」允许比自动清理（`0` / `7..3650`）更激进 |
-| `controller/comfy.js` | `COMFY_CHECK_INTERVAL_MS` | 60s | 画图探测周期（状态轮询另有 30s 的补探阈值） |
-| `model/comfy.js` | `COMFY_SKILL_NAME` / `COMFY_SKILL_DESCRIPTION` | `comfy-image` / 约 100 字 | 动态注册的 skill 名与目录描述（DSH 目录只显示前 500 字符） |
+| `controller/comfy.js` | `COMFY_CHECK_INTERVAL_MS` | 60s | 画图 / 视频探测周期（状态轮询另有 30s 的补探阈值） |
+| `model/comfy.js` | `COMFY_SKILLS`（`comfy-image` / `comfy-video`） | 每个含 name / template / description / whenToUse | 连接后动态注册的 skill 清单；描述在 DSH 目录只显示前 500 字符 |
 
 ## 4. 配置页覆盖矩阵
 
@@ -244,4 +247,4 @@ settings.json（~/.dsh/storages/dsh-qq-relay/settings.json，配置页「保存�
 - 字段设计动机：[architecture.md §2.1](./architecture.md)
 - 闸门参数含义 / 触发规则 / 代答：[gate.md](./gate.md) · 回复体验：[reply.md](./reply.md)
 - 戳一戳：[poke.md](./poke.md) · 群文件：[media.md §5.2](./media.md) · 命令：[commands.md](./commands.md)
-- 审批：[approval.md](./approval.md) · 工具上限：[tools.md](./tools.md) · 画图：[comfy.md](./comfy.md)
+- 审批：[approval.md](./approval.md) · 工具上限：[tools.md](./tools.md) · 画图 / 视频：[comfy.md](./comfy.md)

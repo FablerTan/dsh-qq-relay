@@ -10,8 +10,10 @@ description: >
   注册表里有三个：`qwen-t2i`（纯文生图，只要提示词）、`qwen-i2i`（参考图编辑，人物一致性最好）
   与 `qwen-edit`（另一种编辑流，尺寸控制更细）。
 
-  另含 MOSS-Image（独立模型 + 远端界面工作流，未进 registry）：**仅该模型**支持 JSON Layout
+  另含 MOSS-Image（独立模型，registry 里的 moss-t2i）：**仅该模型**支持 JSON Layout
   提示词，规则见 references/moss-image.md，不要套用到上面三个 qwen 工作流。
+
+  视频生成（MiniMax H3）不在本 skill 里：用 comfy-video skill（h3-t2v / h3-i2v / h3-r2v）。
 
   NOT for: 启动/重启远端 ComfyUI 进程；改动远端 ComfyUI/ 内的代码；装模型或 custom_nodes。
 whenToUse: 需要出图、改图、或在脚本里复现某次生成时。
@@ -29,7 +31,7 @@ whenToUse: 需要出图、改图、或在脚本里复现某次生成时。
 |---|---|
 | 服务端 | `{{COMFY_HOST}}`（ComfyUI，**无鉴权**，只允许可信网络） |
 | 运行器 | `{{SKILL_DIR}}/scripts/comfy_run.py`（只依赖 Python 3 标准库） |
-| 工作流注册表 | `{{SKILL_DIR}}/workflows/registry.json`（`qwen-t2i` / `qwen-i2i` / `qwen-edit`） |
+| 工作流注册表 | `{{SKILL_DIR}}/workflows/registry.json`（`qwen-t2i` / `qwen-i2i` / `qwen-edit` / `moss-t2i`） |
 | 本机产物 | `<会话工作目录>/assets/comfy/output/`（runner 默认目录，已按 DSH 写沙箱限制） |
 | 本机参考图 | `<会话工作目录>/assets/comfy/input/`（`--input-dir` / `COMFY_INPUT_DIR` 可改） |
 
@@ -67,6 +69,7 @@ python3 "{{SKILL_DIR}}/scripts/comfy_run.py" --host {{COMFY_HOST}} qwen-edit \
 
 1. **产物必须发回群**：runner 打印的 `已下载：/绝对路径/...` 就是本地绝对路径，
    用 `qq_send({ images: ["<绝对路径>"], text: "…" })` 发回去；一次最多 4 张。
+   视频产物用 `qq_send({ videos: ["<绝对路径>"] })`（见 comfy-video skill）。
 2. 提示词要短（`qwen-i2i` 尤其）：一句短命令最有效，长句 + 一堆「禁止…」会被忽略。
 3. 改图时参考图优先用**会话里最近收到的图片**（`.qq-relay/media/` 下的本地路径），
    不要让用户重新上传；`--set image=@<绝对路径>` 会自动上传到远端。
@@ -111,5 +114,5 @@ python3 "{{SKILL_DIR}}/scripts/comfy_run.py" --host {{COMFY_HOST}} qwen-edit \
 - [`references/workflow-contracts.md`](references/workflow-contracts.md)：qwen 三件套的细节与契约。
 - [`references/moss-image.md`](references/moss-image.md)：**仅 MOSS-Image**（JSON Layout、文字、倾斜、密度上限），
   不要套到 `qwen-t2i` / `qwen-i2i` / `qwen-edit`。
-- [`assets/moss-image.api.json`](assets/moss-image.api.json)：MOSS-Image 的 API 图（未进 registry，runner 不认）。
+- [`assets/moss-image.api.json`](assets/moss-image.api.json)：MOSS-Image 的原始 API 图（已按 `moss-t2i` 登记进 registry，可直接用 runner 跑）。
 - 远端工作流导出与新增流程见 `references/workflow-contracts.md`「新增工作流」一节。

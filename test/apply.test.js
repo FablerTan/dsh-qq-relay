@@ -165,7 +165,8 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
   })
   assert.equal(status.comfy.enabled, false)
   assert.equal(status.comfy.supported, false, '假 ctx 没有 skills 服务')
-  assert.equal(status.comfy.skill.loaded, false)
+  assert.deepEqual(status.comfy.skills.map((item) => item.name), ['comfy-image', 'comfy-video'])
+  assert.equal(status.comfy.skills.every((item) => item.loaded === false), true)
 
   // v0.21.0：测试连接路由必须 await 异步探测（回归：Promise 被当成同步结果 → CONFIG_FAILED）
   const comfyTest = await call(routes, '/dsh-qq-relay/api/comfy/test', {
@@ -515,6 +516,16 @@ test('apply：注册 qq_send / qq_poke 工具，离线时返回 queued / 报错'
   // 「sendImage is not a function」。离线时应是 relay 的可读错误，而不是 TypeError。
   await assert.rejects(
     () => send.execute({ images: ['/tmp/not-a-real-image.png'] }, {}),
+    (error) => {
+      const message = String(error?.message ?? error)
+      assert.equal(message.includes('is not a function'), false)
+      assert.equal(message.includes('当前离线'), true)
+      return true
+    },
+  )
+  // v0.22.0：视频走同一套 runtime 包装（sendVideo），漏转发会在这里退化成 TypeError
+  await assert.rejects(
+    () => send.execute({ videos: ['/tmp/not-a-real-video.mp4'] }, {}),
     (error) => {
       const message = String(error?.message ?? error)
       assert.equal(message.includes('is not a function'), false)

@@ -13,7 +13,9 @@
 > 已实现（v0.17.0，见 [client.md](./client.md)）；角色预设（v0.19.0/v0.20.0，见 [persona.md](./persona.md)）；
 > **v0.21.0 画图能力（ComfyUI 探测 + 动态注册 `comfy-image` runtime skill）已实现，见
 > [comfy.md](./comfy.md)**；v0.21.1 修 `qq_send` 出向图片 / 文件转发（runtime 包装补
-> `sendImage` / `sendFile`）与 workspace 挂载（失败重试 + 启动补挂，见 §3 会话映射）。
+> `sendImage` / `sendFile`）与 workspace 挂载（失败重试 + 启动补挂，见 §3 会话映射）；
+> **v0.22.0 视频生成（同一个 ComfyUI 动态注册 `comfy-video` skill + `qq_send` 的 `videos` 出向视频）
+> 已实现，见 [comfy.md](./comfy.md)**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -22,8 +24,8 @@
 
 - **host 半身单进程插件**，随 DSH profile 的 GUI 启动；relay 在线 = 该 GUI 进程在线。
 - **client 半身**在**插件面板的组合包页**里提供配置页（P1.5/P4/P7/P10）：连接状态、配置编辑、
-  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理、画图（ComfyUI）配置与状态，按
-  「连接 / 项目 / 行为 / 画图 / 预设 / 记录」分二级页面（契约见 [client.md](./client.md)）；审批开关等仍在后续。
+  群项目目录编辑与重新绑定、闸门状态 / 最近消息 / 映射管理、画图 / 视频（ComfyUI）配置与状态，按
+  「连接 / 项目 / 行为 / 画图·视频 / 预设 / 记录」分二级页面（契约见 [client.md](./client.md)）；审批开关等仍在后续。
 - 不引入外部协议端进程（NapCat 跑在用户侧的 Docker 容器里，插件只连 OneBot WS）；
   插件运行期**零外部依赖**（只用 node: 内置模块与 Node 24 的全局 WebSocket）。
 - **插件不管理 profile**：由用户在目标 profile 安装，插件只读取 apply(ctx, config) 的配置。
@@ -72,7 +74,7 @@
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 | `agentPreset` | string | `''` | 群会话使用的 DSH agent preset id；空 = 宿主默认。插件自带 `qq-relay`（显示名「QQ 群聊」）。preset 在会话创建时固定，详见 [persona.md](./persona.md) |
 | `persona` | object | `{ enabled: false, text: '' }` | 轻量人设（v0.19.0）：每轮 prompt 头部 `[角色设定：…]`；≤4000 字符，默认关闭 |
-| `comfy` | object | `{ enabled: false, baseUrl: 'http://192.168.1.10:8188', timeoutMs: 30000, skillEnabled: true }` | 画图（v0.21.0）：ComfyUI 探测开关 / 地址 / 探测超时（3s..120s）/ 连上后是否注册 `comfy-image` skill，详见 [comfy.md](./comfy.md) |
+| `comfy` | object | `{ enabled: false, baseUrl: 'http://192.168.1.10:8188', timeoutMs: 30000, skillEnabled: true }` | 画图 / 视频（v0.21.0 / v0.22.0）：ComfyUI 探测开关 / 地址 / 探测超时（3s..120s）/ 连上后是否注册 `comfy-image` 与 `comfy-video` 两个 skill，详见 [comfy.md](./comfy.md) |
 
 - 会话映射 / 闸门状态 / 决策日志落在 `~/.dsh/storages/dsh-qq-relay/`；**聊天日志（P4）落在各群项目下的
   `<项目>/.qq-relay/chat/<群号>/YYYY-MM-DD.jsonl`**（agent 可直接 read；目录内 `.gitignore` 为 `*` 自我忽略）。
@@ -84,13 +86,15 @@
   `ctx.agentPresets.register()` 动态注册成 DSH agent preset，保存后立即重新注册。组合表来自
   `lib/model/preset-template.js`（内置 `standard` 快照），见 [persona.md](./persona.md)。
   每群会话首次派发前应用预设的模型（追加 `model/selection`）与权限（`permissionPresets.set`）。
-- **画图 comfy controller（v0.21.0）**：组合根构造 `createComfyController({ getConfig })` 后
-  `start()` + 启动探测；`skills` 服务晚于插件就绪（或不存在）时，
-  `ctx.inject(['skills'], (skillsCtx) => comfyController.attachSkills(skillsCtx.skills))` 再挂载。
-  控制器周期探测 ComfyUI（`/system_stats` + `/queue`），**首次连上**且配置允许时调用
-  `ctx.skills.register({ name: 'comfy-image', source: 'custom', provider: 'dsh-qq-relay',
+- **画图 / 视频 comfy controller（v0.21.0；v0.22.0 起两个 skill）**：组合根构造
+  `createComfyController({ getConfig })` 后 `start()` + 启动探测；`skills` 服务晚于插件就绪
+  （或不存在）时，`ctx.inject(['skills'], (skillsCtx) => comfyController.attachSkills(skillsCtx.skills))`
+  再挂载。控制器周期探测 ComfyUI（`/system_stats` + `/queue`），**首次连上**且配置允许时遍历
+  `COMFY_SKILLS` 逐个调用 `ctx.skills.register({ name, source: 'custom', provider: 'dsh-qq-relay',
   resourceBase: { kind: 'directory', path: '<插件>/lib/skills/comfy-image' }, content })`
-  注册 runtime skill；探测失败**不注销**（避免目录抖动），显式关闭 `enabled` / `skillEnabled` 才注销。
+  注册 `comfy-image`（`SKILL.md`）与 `comfy-video`（`SKILL-video.md`）两个 runtime skill
+  （共用目录 / resourceBase，各自记录 `skills[].loaded/error`，一个坏了不影响另一个）；
+  探测失败**不注销**（避免目录抖动），显式关闭 `enabled` / `skillEnabled` 才注销全部。
   **与 preset 注册是两条独立链路**：preset 走 `ctx.agentPresets.register()`，影响新建会话的
   提示词 / 组合表；skill 走 `ctx.skills.register()`，影响所有会话的可用技能。两者都不重启 GUI，
   服务缺失时都软失败（`status.comfy.supported = false` / `presetService.supported = false`）。
@@ -119,11 +123,11 @@ lib/
 │   ├── config-routes.js      # 配置页 HTTP 面：status / config / reconnect / rebind / cleanup / messages / mapping / presets / comfy test
 │   ├── http.js               # JSON 信封、请求体读取（配置页共用件）
 │   ├── gate.js               # 闸门调度（P2.1）：快路去抖 / 慢路定时 / 最小间隔 / 分类器注入
-│   ├── tools.js              # qq_send / qq_poke 工具定义（P3 / v0.15.0：手写 ToolDefinition，零外部依赖）
+│   ├── tools.js              # qq_send（文本 / 图片 / 视频 / 文件）/ qq_poke 工具定义（P3 / v0.15.0 / v0.22.0：手写 ToolDefinition，零外部依赖）
 │   ├── approval.js           # QQ 侧审批桥（P3：approval/request → 群消息 → 文本命令）
-│   ├── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）
-│   └── comfy.js              # 画图（v0.21.0）：探测 ComfyUI / ctx.skills.register 动态注册 / 抖动保持 / 测试连接
-├── skills/comfy-image/       # 插件自带画图 skill（SKILL.md 模板 / scripts / workflows / references），随包发布
+│   ├── relay.js              # 入向投 DSH、出向收 turn 结果并回复、断线发送队列、主动推送、命令层分发（P5）、戳一戳（v0.15.0）、出向视频 sendVideo（v0.22.0）
+│   └── comfy.js              # 画图 / 视频（v0.21.0 / v0.22.0）：探测 ComfyUI / 逐个注册两个 skill / 抖动保持 / 测试连接
+├── skills/comfy-image/       # 插件自带画图 / 视频 skill（SKILL.md + SKILL-video.md 模板 / scripts / 7 个 workflows / references 含 video-workflows.md），随包发布
 └── model/
     ├── config.js             # 配置默认值与校验
     ├── settings.js           # 配置页覆盖：层序合并、token 脱敏、settings.json 原子读写
@@ -131,7 +135,7 @@ lib/
     ├── chat-log.js           # 群消息 JSONL（按群项目路由）/ 读取 / 清理 / 旧日志迁移
     ├── cleanup.js            # 清理（v0.13.0）：立即清理天数校验 + 聊天 / 媒体一次性清理（自动清理共用）
     ├── panel.js              # 配置页面板（v0.14.0）：最近消息查询校验 + 聊天记录 → 只读消息视图
-    ├── media.js              # 入向图片 / 表情 / 视频 / 语音 / 群文件落盘与清理、媒体类型识别（P4.1 / P4.2 / v0.16.0）
+    ├── media.js              # 入向图片 / 表情 / 视频 / 语音 / 群文件落盘与清理、媒体类型识别、出向图片 / 视频 / 文件格式与上限（P4.1 / P4.2 / v0.16.0 / v0.22.0）
     ├── project.js            # 群项目目录解析、`.qq-relay/` 创建与自忽略 .gitignore（P4）
     ├── prompt.js             # 消息拼接：群名 / 时间 / 条数 / @ 与引用标记 / 历史指针（P4）
     ├── gate-log.js           # 闸门决策日志 JSONL（P2.2，不含正文，保留 7 天）
@@ -141,7 +145,7 @@ lib/
     ├── state.js              # 每群状态按群分文件 + 旧 state.json 迁移 + 单实例锁
     ├── jev.js                # jev 分类器（P2.3）：OpenRouter Decisions API / Noul / 阈值 / fail closed
     ├── reply.js              # 回复切分、退避、发送失败分类
-    └── comfy.js              # 画图配置（v0.21.0）：comfy 段校验 / 脱敏视图 / SKILL.md 模板渲染
+    └── comfy.js              # 画图 / 视频配置（v0.21.0 / v0.22.0）：comfy 段校验 / 脱敏视图 / COMFY_SKILLS / 模板渲染
 ~~~
 
 client 半身（`src/`）只做配置页（MVVM 三层）：`src/model/{api,form}.ts`（HTTP 信封、表单 ↔ patch
@@ -153,16 +157,19 @@ P1 实现 `controller/onebot/{client,api,codec}.js`、`controller/relay.js` 与
 `model/{config,mapping,state,chat-log,reply}.js`；P1.5 新增 `controller/{runtime,config-routes,http}.js`
 与 `model/settings.js`；P2.1/P2.3 新增 `controller/gate.js` 与 `model/{gate,jev,gate-log}.js`；
 P3 新增 `controller/{tools,approval}.js` 与 `model/approval.js`；v0.21.0 新增
-`controller/comfy.js`、`model/comfy.js` 与 `lib/skills/comfy-image/`（画图 runtime skill）；P4 新增 `model/{project,prompt}.js`，
+`controller/comfy.js`、`model/comfy.js` 与 `lib/skills/comfy-image/`（画图 runtime skill）；
+v0.22.0 在同一 controller 注册 `comfy-video`，并接出向视频链路（`relay.sendVideo` /
+`api.sendGroupVideo` / `tools.videos` / `media.isVideoExt`）；P4 新增 `model/{project,prompt}.js`，
 聊天日志改由群项目路由（`chat-log.js` 的 `rootFor` + `migrateLegacyChatLogs`）；P5 新增
 `model/commands.js`，命令分发与 `createSessionForGroup` / `sendSystemReply` 在 `controller/relay.js`。
 
 `test/` 放 `node:test` 单测（零依赖，`pnpm test`），当前覆盖：配置校验、映射 / 状态持久化、
 单实例锁、聊天日志读写清理、立即清理、面板最近消息、回复切分与退避、设置覆盖与脱敏、配置页路由面、闸门纯逻辑与
 调度器（假时钟：去抖合并 / 最小间隔 / 慢路时间窗 / dshBusy 延后 / fail closed / 重启恢复）、
-决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send` / `qq_poke` 工具契约与注册、审批命令匹配与桥接、
-群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、媒体落盘（P4.1）、群文件下载（v0.16.0）、
-戳一戳识别 / 冷却 / 出向（v0.15.0），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
+决策日志、断线发送队列、jev 请求 / 响应 fail closed、`qq_send`（含 v0.22.0 `videos`）/ `qq_poke`
+工具契约与注册、审批命令匹配与桥接、群项目目录解析 / 聊天日志迁移 / prompt 拼接（P4）、
+媒体落盘（P4.1）、群文件下载（v0.16.0）、出向视频 `sendVideo`（v0.22.0）、双 skill 注册 / 单坏隔离
+（v0.22.0）、戳一戳识别 / 冷却 / 出向（v0.15.0），以及 `apply()` 组合根集成（假 ctx + 临时 HOME）。
 
 ## 4. 事件流
 
@@ -209,15 +216,17 @@ ctx.on('agent/error', ...)          # 失败提示
   「收到，处理中…」（不刷新闸门窗口）；见 [reply.md](./reply.md)。
 - **主动推送（P3）**：`qq_send` 工具（见 [tools.md](./tools.md)）走同一个发送队列，
   供任意会话发通知；白名单双重校验，离线排队。
-- **出向媒体（P4.2）**：`qq_send` 的 `images` / `file` 由 relay 校验本地文件（大小 / 图片格式）后
-  转 base64，经 `send_group_msg`（image 段）与 `upload_group_file` 发送；离线不排队，见 [media.md §5.1](./media.md)。
+- **出向媒体（P4.2；v0.22.0 补视频）**：`qq_send` 的 `images` / `videos` / `file` 由 relay 校验
+  本地文件（大小 / 图片或视频格式）后转 base64，经 `send_group_msg`（image / video 段）与
+  `upload_group_file` 发送；视频最多 1 个、≤30 MiB、NapCat 内联播放；离线不排队，
+  见 [media.md §5.1](./media.md) / [tools.md](./tools.md)。
 - **QQ 侧审批（P3）**：QQ 会话里的 `approval/request` 由审批桥发到群里，群主 / 管理员回复
   「同意 / 拒绝」；见 [approval.md](./approval.md)。
 - **戳一戳（v0.15.0）**：入向 `notice.notify.poke` 写聊天记录，戳 bot 时直通起一轮；`qq_poke`
   工具让 agent 回戳白名单群成员（`group_poke`，离线报错不排队）；见 [poke.md](./poke.md)。
-- **画图（v0.21.0）**：skill 由 skills 服务动态注册，agent 在任意会话（含 QQ 群会话）可触发；
-  产物落在群项目 `assets/comfy/output/`，再用 `qq_send` 的 `images` 发回群（见
-  [comfy.md](./comfy.md) / [media.md §5.3](./media.md)）。
+- **画图 / 视频（v0.21.0 / v0.22.0）**：skill 由 skills 服务动态注册，agent 在任意会话
+  （含 QQ 群会话）可触发；产物落在群项目 `assets/comfy/output/`，图片用 `qq_send` 的
+  `images`、视频用 `videos` 发回群（见 [comfy.md](./comfy.md) / [media.md §5.3](./media.md)）。
 - 失败 / 中断：按配置发简短提示或静默。
 
 ## 5. 会话映射
@@ -249,7 +258,7 @@ ctx.on('agent/error', ...)          # 失败提示
 - **审批**：P3 用文本命令（同意 / 拒绝）实现 QQ 侧审批；v1 先依赖 DSH 现有审批。
 - **提示注入**：群成员文本一律视为不可信输入；工作目录限定；操作留审计日志。
 - **本地接口**：NapCat WS 只监听回环地址；启用 access_token；不暴露公网。
-- **画图服务（v0.21.0）**：ComfyUI **无鉴权**，任何能访问 `comfy.baseUrl` 的人都能提交任务；
+- **画图 / 视频服务（v0.21.0 / v0.22.0）**：ComfyUI **无鉴权**，任何能访问 `comfy.baseUrl` 的人都能提交任务；
   `POST /prompt` 可提交任意节点图、自定义节点里能跑任意 Python，等于**远端执行权**。
   只放可信网络、不暴露公网；skill 运行器只允许 schema 白名单参数，不要绕过它直连。
 - **隐私**：聊天日志落在群项目内的 `.qq-relay/`（自忽略、不进 git），默认**永久保留**
@@ -270,8 +279,8 @@ ctx.on('agent/error', ...)          # 失败提示
 - ~~jev 的部署形态与模型~~ 已定：OpenRouter Decisions API + `typesafe/jev-1.14`（P2.3）；阈值调优待真实群聊数据。
 - ~~审批文本命令的具体交互与超时策略~~ 已落地（P3，见 [approval.md](./approval.md)）。
 - 单聊（private）是否与群共享同一会话映射体系。
-- 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件与出向图片 / 文件已落地（v0.12.0 / v0.16.0，见 [media.md](./media.md)）；
-  仍缺入向媒体转 DSH 附件、视频 / 语音转文字。
+- 媒体：入向图片 / 表情 / 视频 / 语音 / 群文件与出向图片 / 视频 / 文件已落地
+  （v0.12.0 / v0.16.0 / v0.22.0，见 [media.md](./media.md)）；仍缺入向媒体转 DSH 附件、视频 / 语音转文字。
 - ~~DSH → QQ 主动推送工具~~ 已落地为 `qq_send`（见 [tools.md](./tools.md)）。
 - client 面板增强：映射管理、审批开关、闸门可视化（基础配置页已在 P1.5 落地，见 [client.md](./client.md)）。
 - 多群并发时的资源上限与队列策略。

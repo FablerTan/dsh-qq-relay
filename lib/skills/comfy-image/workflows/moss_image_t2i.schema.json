@@ -1,0 +1,92 @@
+{
+  "title": "MOSS-Image SFT 文生图（int8 convrot / 20 步 / CFG 5）",
+  "file": "moss_image_t2i.api.json",
+  "source": "由 assets/moss-image.api.json 登记（2026-10-19），仅把参数白名单化，节点图原样保存",
+  "notes": [
+    "MOSS-Image 的提示词支持自然语言 / tag 序列 / JSON Layout 三种，直接用 prompt 覆盖节点 4 的 text。",
+    "JSON Layout 的 bbox 必须是中心原点绝对像素（[y1,x1,y2,x2]），且编译尺寸要和 ResolutionSelector 出的尺寸一致。",
+    "官方推荐 40–50 步，int8 SFT 实测工作点是 20 步 / CFG 5 / euler+sgm_uniform。",
+    "耗时约 66–96s，比 qwen 慢很多。"
+  ],
+  "params": {
+    "prompt": {
+      "node": "4",
+      "field": "text",
+      "type": "string",
+      "required": true,
+      "description": "正向提示词：自然语言一段、逗号 tag 序列，或 JSON Layout 字符串。"
+    },
+    "negative_prompt": {
+      "node": "5",
+      "field": "text",
+      "type": "string",
+      "default": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
+      "description": "负向提示词。"
+    },
+    "aspect": {
+      "node": "19",
+      "field": "aspect_ratio",
+      "type": "enum",
+      "default": "9:16 (Portrait Widescreen)",
+      "options": [
+        "1:1 (Square)",
+        "2:3 (Portrait Photo)",
+        "3:2 (Photo)",
+        "3:4 (Portrait Standard)",
+        "4:3 (Standard)",
+        "9:16 (Portrait Widescreen)",
+        "16:9 (Widescreen)",
+        "21:9 (Ultrawide)"
+      ],
+      "description": "宽高比，由 ResolutionSelector 换算像素。"
+    },
+    "megapixels": {
+      "node": "19",
+      "field": "megapixels",
+      "type": "number",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 8.0,
+      "description": "目标总像素（百万）。2.0 + 9:16 ≈ 1088x1936。"
+    },
+    "multiple": {
+      "node": "19",
+      "field": "multiple",
+      "type": "integer",
+      "default": 16,
+      "min": 8,
+      "max": 128,
+      "description": "尺寸对齐倍数，MOSS 是 16。"
+    },
+    "seed": {
+      "node": "16",
+      "field": "seed",
+      "type": "integer",
+      "default": 20261017,
+      "description": "随机种子；不指定时用图里的固定值，想换就显式给。"
+    },
+    "steps": {
+      "node": "16",
+      "field": "steps",
+      "type": "integer",
+      "default": 20,
+      "min": 1,
+      "description": "采样步数。官方推荐 40–50；20 是 int8 SFT 实测工作点。"
+    },
+    "cfg": {
+      "node": "16",
+      "field": "cfg",
+      "type": "number",
+      "default": 5.0,
+      "min": 0.0,
+      "description": "CFG。官方推荐 3，本部署实测 5。"
+    },
+    "filename_prefix": {
+      "node": "18",
+      "field": "filename_prefix",
+      "type": "string",
+      "default": "moss_image",
+      "description": "产物文件名前缀。"
+    }
+  }
+}

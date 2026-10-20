@@ -15,7 +15,7 @@ import { createStateStore } from '../lib/model/state.js'
 import { createChatLog, localDateKey } from '../lib/model/chat-log.js'
 import { chatRootFor, ensureRelayDir, projectDirFor } from '../lib/model/project.js'
 import { ACK_TEXT } from '../lib/model/reply.js'
-import { OUTBOUND_FILE_MAX_BYTES, OUTBOUND_IMAGE_MAX_BYTES } from '../lib/model/media.js'
+import { OUTBOUND_FILE_MAX_BYTES, OUTBOUND_IMAGE_MAX_BYTES, OUTBOUND_VIDEO_MAX_BYTES } from '../lib/model/media.js'
 import { createRelay } from '../lib/controller/relay.js'
 
 const flush = async () => {
@@ -28,7 +28,7 @@ function createHarness(t, options = {}) {
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   const handlers = new Map()
-  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [], images: [], files: [], pokes: [], memberInfo: [], groupInfo: [], fileUrls: [] }
+  const calls = { create: [], rename: [], prompt: [], attach: [], workspace: [], sends: [], replies: [], cancel: [], images: [], videos: [], files: [], pokes: [], memberInfo: [], groupInfo: [], fileUrls: [] }
 
   const ctx = {
     logger: () => ({ info() {}, warn() {}, error() {} }),
@@ -100,6 +100,11 @@ function createHarness(t, options = {}) {
       calls.images.push({ groupId, file, summary })
       if (options.imageFails === true) return { status: 'failed', retcode: 1200, message: '图片发送失败', data: null }
       return { status: 'ok', retcode: 0, data: { message_id: 'i' + String(calls.images.length) } }
+    },
+    async sendGroupVideo(groupId, file) {
+      calls.videos.push({ groupId, file })
+      if (options.videoFails === true) return { status: 'failed', retcode: 1200, message: '视频发送失败', data: null }
+      return { status: 'ok', retcode: 0, data: { message_id: 'v' + String(calls.videos.length) } }
     },
     async uploadGroupFile(groupId, file, name) {
       calls.files.push({ groupId, file, name })
@@ -1116,6 +1121,39 @@ test('relay：sendImage 支持 http(s) URL，交给 NapCat 下载', async (t) =>
   assert.deepEqual(calls.images, [{ groupId: 100, file: 'https://example.com/a.jpg', summary: '' }])
 })
 
+test('relay：sendVideo 把本地 mp4 读成 base64 发视频消息', async (t) => {
+  const { relay, calls, state, dir } = createHarness(t)
+  const mp4 = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 1, 2, 3, 4])
+  const file = join(dir, 'clip.mp4')
+  writeFileSync(file, mp4)
+
+  const value = await relay.sendVideo(100, file)
+  assert.equal(calls.videos.length, 1)
+  assert.equal(calls.videos[0].groupId, 100)
+  assert.ok(calls.videos[0].file.startsWith('base64://'))
+  assert.deepEqual(Buffer.from(calls.videos[0].file.slice('base64://'.length), 'base64'), mp4)
+  assert.deepEqual(value, { groupId: 100, chunks: 1, queued: false, messageIds: ['v1'] })
+  assert.ok(state.get(100).lastBotSpeakAt > 0, '发视频算一次发言')
+
+  await relay.sendVideo(100, 'https://example.com/clip.mp4')
+  assert.equal(calls.videos[1].file, 'https://example.com/clip.mp4')
+})
+
+test('relay：sendVideo 拒绝非视频 / 相对路径 / 超限 / 白名单外', async (t) => {
+  const { relay, dir } = createHarness(t)
+  const png = join(dir, 'a.png')
+  writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  await assert.rejects(() => relay.sendVideo(100, png), /不是支持的视频格式/)
+  await assert.rejects(() => relay.sendVideo(100, 'clip.mp4'), /必须是绝对路径/)
+  await assert.rejects(() => relay.sendVideo(100, join(dir, 'missing.mp4')), /不存在/)
+
+  const bigFile = join(dir, 'big.mp4')
+  writeFileSync(bigFile, Buffer.alloc(OUTBOUND_VIDEO_MAX_BYTES + 1, 0))
+  await assert.rejects(() => relay.sendVideo(100, bigFile), /过大/)
+
+  await assert.rejects(() => relay.sendVideo(999, 'https://example.com/clip.mp4'), /不在白名单/)
+})
+
 test('relay：sendImage 拒绝非图片 / 相对路径 / 超限 / 白名单外', async (t) => {
   const { relay, dir } = createHarness(t)
   const textFile = join(dir, 'notes.txt')
@@ -1163,14 +1201,18 @@ test('relay：离线时出向媒体直接报错（不排队）', async (t) => {
   const png = join(dir, 'a.png')
   writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
   await assert.rejects(() => relay.sendImage(100, png), /当前离线/)
+  await assert.rejects(() => relay.sendVideo(100, png), /当前离线/)
   await assert.rejects(() => relay.sendFile(100, png), /当前离线/)
 })
 
 test('relay：NapCat 明确拒绝时抛出可读错误', async (t) => {
-  const { relay, dir } = createHarness(t, { imageFails: true, fileFails: true })
+  const { relay, dir } = createHarness(t, { imageFails: true, videoFails: true, fileFails: true })
   const png = join(dir, 'a.png')
   writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
   await assert.rejects(() => relay.sendImage(100, png), /图片发送失败/)
+  const mp4 = join(dir, 'clip.mp4')
+  writeFileSync(mp4, Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]))
+  await assert.rejects(() => relay.sendVideo(100, mp4), /视频发送失败/)
   await assert.rejects(() => relay.sendFile(100, png), /文件上传失败/)
 })
 test('relay：被戳一戳（poke）写聊天日志并直通一轮', async (t) => {

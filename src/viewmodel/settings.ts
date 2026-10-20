@@ -51,7 +51,7 @@ export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = 
   { id: 'connection', label: '连接' },
   { id: 'project', label: '项目' },
   { id: 'behavior', label: '行为' },
-  { id: 'comfy', label: '画图' },
+  { id: 'comfy', label: '画图 / 视频' },
   { id: 'presets', label: '预设' },
   { id: 'records', label: '记录' },
 ]
@@ -127,22 +127,33 @@ export function describeGate(status: RelayStatusView | null): StatusLine {
   }
 }
 
-/** 画图状态：开关 / 连通性 / skill 加载情况（v0.21.0）。 */
+/** 画图 / 视频状态：开关 / 连通性 / skill 加载情况（v0.22.0：按 skills 数组汇总）。 */
 export function describeComfy(status: RelayStatusView | null): StatusLine {
-  if (status === null) return { tone: 'muted', text: '画图状态读取中…' }
+  if (status === null) return { tone: 'muted', text: '画图 / 视频状态读取中…' }
   const comfy = status.comfy
-  if (!comfy.enabled) return { tone: 'muted', text: '画图能力已关闭' }
+  if (!comfy.enabled) return { tone: 'muted', text: '画图 / 视频能力已关闭' }
   if (comfy.checking) return { tone: 'muted', text: '正在检查 ComfyUI…' }
   if (!comfy.reachable) {
     const detail = comfy.error !== '' ? comfy.error : '尚未检查'
     return { tone: 'warn', text: 'ComfyUI 连不上：' + detail }
   }
   if (!comfy.supported) {
-    return { tone: 'warn', text: '宿主没有 skills 服务，画图 skill 无法加载' }
+    return { tone: 'warn', text: '宿主没有 skills 服务，画图 / 视频 skill 无法加载' }
   }
   const version = comfy.version !== '' ? comfy.version : '未知版本'
-  const skill = comfy.skill.loaded ? 'skill 已加载' : 'skill 未加载'
-  return { tone: 'ok', text: 'ComfyUI ' + version + ' 可用 · ' + skill }
+  const total = comfy.skills.length
+  if (total === 0) return { tone: 'ok', text: 'ComfyUI ' + version + ' 可用 · skill 状态未知' }
+  const loaded = comfy.skills.filter((skill) => skill.loaded).map((skill) => skill.name)
+  if (loaded.length === total) {
+    return { tone: 'ok', text: 'ComfyUI ' + version + ' 可用 · 已加载 ' + loaded.join(' / ') }
+  }
+  if (loaded.length === 0) {
+    return { tone: 'warn', text: 'ComfyUI ' + version + ' 可用 · ' + String(total) + ' 个 skill 都未加载' }
+  }
+  return {
+    tone: 'warn',
+    text: 'ComfyUI ' + version + ' 可用 · ' + String(loaded.length) + '/' + String(total) + ' 个 skill 已加载',
+  }
 }
 
 /** 「测试连接」的页面状态（v0.21.0）。 */

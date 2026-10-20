@@ -1,5 +1,5 @@
 /**
- * 配置页外壳（client View 层）：状态行 + 二级页面导航（连接 / 项目 / 行为 / 画图 / 预设 / 记录）。
+ * 配置页外壳（client View 层）：状态行 + 六个二级页面导航（含「画图 / 视频」）。
  *
  * 注册落点是插件面板里 dsh-qq-relay 组合包自己的页面（`plugins.bundle.config`，
  * key = 包名），页面标题 / 描述 / 启动开关由插件页负责，这里只画表单内容。
@@ -70,6 +70,13 @@ export function RelaySettingsPage(): ReactElement {
         ))}
       </nav>
 
+      {model.tab === 'comfy' ? (
+        <Line tone="muted">
+          ComfyUI 出图 / 视频：连接成功后 host 会为 DSH 加载 comfy-image（出图）与
+          comfy-video（视频）两个 skill。
+        </Line>
+      ) : null}
+
       {model.error !== null ? <Line tone="error" role="alert">{model.error}</Line> : null}
       {model.notice !== null ? <Line tone="ok" role="status">{model.notice}</Line> : null}
       {model.dirty ? <Line tone="warn">有未保存的修改。</Line> : null}
@@ -85,9 +92,9 @@ export function RelaySettingsPage(): ReactElement {
       <p className="qqr-footer">
         配置来源：profile 的 <code>cordis.patch.yml</code>，本页保存的覆盖写入
         <code> ~/.dsh/storages/dsh-qq-relay/settings.json</code>；预设写入同目录的
-        <code>presets.json</code> 并在启动时动态注册；画图 skill 由 host 在 ComfyUI
-        连接成功后动态注册（<code>lib/skills/comfy-image</code>），不需要重启 GUI。
-        token 只写不读，页面永远看不到明文。
+        <code>presets.json</code> 并在启动时动态注册；画图 / 视频 skill 由 host 在 ComfyUI
+        连接成功后动态注册（<code>lib/skills/comfy-image</code> 下的 SKILL.md 出图、
+        SKILL-video.md 视频），不需要重启 GUI。token 只写不读，页面永远看不到明文。
       </p>
     </div>
   )

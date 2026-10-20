@@ -2,7 +2,8 @@
 
 > 状态：**v0.9.0 入向媒体落盘；v0.9.1 修正扩展名（按真实文件头识别）；
 > v0.12.0 扩展到视频 / 语音入向，并支持出向图片 / 文件；
-> v0.16.0 增加入向群文件（`group_upload`）；v0.21.0 补画图产物经 `qq_send` 的 `images` 回发**。
+> v0.16.0 增加入向群文件（`group_upload`）；v0.21.0 补画图产物经 `qq_send` 的 `images` 回发；
+> v0.22.0 补出向视频（`qq_send` 的 `videos` → NapCat video 段）与视频产物回发**。
 > 本文是媒体落盘、聊天记录 / prompt 引用与出向发送的现状记录。
 > 聊天记录与消息拼接见 [chat-context.md](./chat-context.md)，`qq_send` 契约见 [tools.md](./tools.md)。
 >
@@ -19,6 +20,8 @@
   NapCat 跑在 Docker 里看不到宿主路径，所以本地文件一律读成 base64 走 WS。
 - **画图产物回发**（v0.21.0）：ComfyUI 出图 / 改图的结果落在 `<项目>/assets/comfy/output/`，
   再由 `qq_send` 的 `images` 发回群（见 §5.3）。
+- **出向视频**（v0.22.0）：`qq_send` 的 `videos` 把本地 mp4（或 URL）转成 base64 / 交 NapCat 下载，
+  以 **video 消息段**发到群里（内联播放）；视频产物在 `<项目>/assets/comfy/output/video/`（见 §5.1 / §5.3）。
 - 不做：入向媒体转 DSH 附件、视频 / 语音转文字（见 §9 backlog）。
 
 ## 2. 存储布局
@@ -106,19 +109,25 @@
 - **纯媒体消息（无文本）也可以生成 prompt**（此前会被当作空消息跳过）——@ 带图时会真正转给 DSH；
 - 闸门仍只收有文本的消息（纯图片 / 表情不进 pending、不调分类器）。
 
-## 5.1 出向媒体（v0.12.0）
+## 5.1 出向媒体（v0.12.0；v0.22.0 补视频）
 
-- 入口：`qq_send` 工具（`text` / `images` / `file` / `fileName`，见 [tools.md](./tools.md)）。
+- 入口：`qq_send` 工具（`text` / `images` / `videos` / `file` / `fileName`，见 [tools.md](./tools.md)）。
 - **图片**（`images`，最多 4 张）：
   - 本地绝对路径：校验存在 / 普通文件 / ≤ 10 MiB / 文件头是支持的图片格式，然后读成
     `base64://…` 交给 `send_group_msg` 的 image 段；
   - `http(s)://` URL：直接交给 NapCat 下载（不经过宿主）。
+- **视频**（`videos`，最多 1 个，v0.22.0）：
+  - 本地绝对路径：校验存在 / 普通文件 / ≤ 30 MiB / 文件头或扩展名是支持的类型
+    （MP4 / MOV / WEBM / FLV / AVI / MKV），读成 `base64://…` 交给 `send_group_msg` 的 video 段，
+    由 NapCat 转成**内联视频消息**（QQ 里可直接播放）；
+  - `http(s)://` URL：直接交给 NapCat 下载；
+  - 发送成功算一次 bot 发言（刷新闸门窗口 / 清 pending）；离线**不排队**，直接报错。
 - **文件**（`file`，1 个）：本地绝对路径，≤ 30 MiB，读成 `base64://…` 交给
   `upload_group_file`（NapCat 解码后上传到群文件）；显示名默认取路径 basename，可用 `fileName` 覆盖。
 - 为什么必须 base64：NapCat 跑在 Docker（只挂载了 QQ 数据 / 配置 / 插件目录），**看不到宿主路径**；
   NapCat 的资源解析器支持 `base64://`，因此本地文件必须先转 base64。
 - 离线语义：出向媒体**不排队**（队列只存文本）；离线时直接报错，让调用方决定稍后重试。
-- 发送成功记一次 `markSpoken`（图片算 bot 发过言，刷新闸门窗口）；文件上传不改变闸门状态。
+- 发送成功记一次 `markSpoken`（图片 / 视频算 bot 发过言，刷新闸门窗口）；文件上传不改变闸门状态。
 - 失败语义：文件不存在 / 非图片 / 超限 / 白名单外 / NapCat 明确失败都会抛出可读错误，工具层可见。
 
 ## 5.2 入向群文件（v0.16.0）
@@ -140,18 +149,22 @@
   群里文件很多时把 files.react 设为 false，降成纯记录。
 - **清理**：群文件与消息媒体落在同一个日期目录，按 chatRetentionDays / 立即清理一起删除。
 
-## 5.3 画图产物经 `qq_send` 的 `images` 回发（v0.21.0）
+## 5.3 画图 / 视频产物经 `qq_send` 回发（v0.21.0 / v0.22.0）
 
-- **来源**：`comfy-image` skill 用 ComfyUI 出图 / 改图，runner 把产物下载到
-  `<群项目>/assets/comfy/output/`（默认目录，基于会话工作目录）。
-- **回发**：agent 用 `qq_send({ images: ["<本地绝对路径>"], text: "…" })` 发回群；
-  一次最多 4 张、单张 ≤ 10 MiB、必须是支持的图片格式；也可传 http(s) URL（由 NapCat 下载）。
-- **发送路径与 §5.1 完全相同**：本地文件读成 `base64://…` 交给 `send_group_msg` 的 image 段
+- **来源**：`comfy-image`（出图 / 改图）与 `comfy-video`（视频）两个 skill 用 ComfyUI 生成，
+  runner 把产物下载到 `<群项目>/assets/comfy/output/`（视频 mp4 带原生音轨；
+  若远端 subfolder 为 `video`，本地落在 `output/video/`，以 runner 打印路径为准）。
+- **回发**：图片用 `qq_send({ images: ["<本地绝对路径>"], text: "…" })`（最多 4 张、单张 ≤ 10 MiB、
+  必须是支持的图片格式）；视频用 `qq_send({ videos: ["<本地绝对路径>"], text: "…" })`
+  （最多 1 个、≤ 30 MiB、MP4 / MOV / WEBM / FLV / AVI / MKV，NapCat 内联播放）；
+  也都可以传 http(s) URL（由 NapCat 下载）。
+- **发送路径与 §5.1 完全相同**：本地文件读成 `base64://…` 交给 `send_group_msg` 的 image / video 段
   （NapCat 在 Docker 里看不到宿主路径）；离线**不排队**，直接报错让调用方决定重试。
-- **参考图**优先用群里最近收到的图片（`.qq-relay/media/` 下的本地路径），不要让用户重传；
-  改图时 runner 的 `--set image=@<绝对路径>` 会自动上传到远端 ComfyUI 的 input 目录。
-- 一次工作流只出一张；要多张候选就换 seed 多跑几次再挑，本轮最多发 4 张（避免刷屏）。
-- 画图能力与 skill 生命周期见 [comfy.md](./comfy.md)；工具契约见 [tools.md](./tools.md)。
+- **参考图 / 首帧 / 角色参考图**优先用群里最近收到的图片（`.qq-relay/media/` 下的本地路径），
+  不要让用户重传；`--set image=@<绝对路径>` 会自动上传到远端 ComfyUI 的 input 目录。
+- 一次工作流只出一个结果：图片要多张候选就换 seed 跑几次（本轮最多发 4 张），
+  视频换 seed 重跑再挑（一次只发 1 个，避免刷屏）。
+- 画图 / 视频能力与 skill 生命周期见 [comfy.md](./comfy.md)；工具契约见 [tools.md](./tools.md)。
 
 ## 6. 与 jev 的关系
 
@@ -181,7 +194,8 @@
 - ~~入向群文件（`group_upload` notice）~~ 已落地（v0.16.0，见 §5.2）；
   后续可做：按类型 / 文件夹区分、批量上传合并、单群开关；
 - 入向媒体转 DSH 附件（当前 agent 直接 read 路径即可看图片；视频 / 语音要自己解析）；
-- 媒体大小 / 类型 / 开关的配置项（当前是常量：入向 20 MiB / 上限 10 个，群文件 20 MiB，出向图片 10 MiB / 文件 30 MiB）；
+- 媒体大小 / 类型 / 开关的配置项（当前是常量：入向 20 MiB / 上限 10 个，群文件 20 MiB，
+  出向图片 10 MiB / 视频 30 MiB / 文件 30 MiB）；
 - 按消息 id 去重与失败重试（当前依赖 seen 去重，失败不重试）；
 - 私聊媒体。
 
@@ -193,6 +207,8 @@
   v0.16.0 的群文件落盘（原名 / 中文 / 路径穿越清洗 / 超限 / 缺 URL / HTTP 失败 / 归一化）。
 - `test/relay.test.js`：图片消息落盘 + 聊天记录带路径；@ 带图（无文本）prompt 带图片标记；
   v0.12.0 出向 `sendImage` / `sendFile`（本地转 base64 / URL / 大小与格式校验 / 离线报错 / 白名单）；
+  v0.22.0 出向 `sendVideo`（mp4 转 base64 发 video 段、非视频 / 相对路径 / 超限 / 白名单外拒绝）；
   v0.16.0 群文件（下载 + 直通 / react 关闭 / enabled 关闭 / 失败 / 超限 / 自上传 / 去重）。
 - `test/prompt.test.js`：媒体标记（图片 / 表情 / 视频 / 语音 / 群文件 / 失败）与纯媒体行。
-- `test/tools.test.js`：`qq_send` 的文本 / 图片 / 文件参数与输出摘要。
+- `test/tools.test.js`：`qq_send` 的文本 / 图片 / 视频 / 文件参数、输出摘要（`media.videos`）与
+  `videos` 上限（最多 1 个）。
