@@ -20,7 +20,9 @@
 > 分类器热切换，见 [gate.md §4](./gate.md)）已实现**；**v0.25.0 环境「一键修复」改为逐步补全
 > （按计划逐轮执行 + 每步重探 + 系统类动作先确认 + `fixPlan` 下发，见 [env.md §4.1](./env.md)）已实现**；
 > **v0.25.1 环境探测可读化与兜底（docker stderr 原文 / `--context colima` 兜底 / `restart-daemon` /
-> 不推进就跳过，见 [env.md §4.1](./env.md)）已实现**。
+> 不推进就跳过，见 [env.md §4.1](./env.md)）已实现**；**v0.25.2 环境探测识别实际容器引擎
+> （读 docker context 列表并逐个兜底、按 endpoint 判 Colima / OrbStack / Docker Desktop、
+> 给 `start-orbstack` / `install-orbstack` 等对应动作，见 [env.md §4.1](./env.md)）已实现**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。

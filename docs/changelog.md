@@ -5,6 +5,30 @@
 > GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
 > `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
+## v0.25.2 环境探测先认容器引擎：OrbStack / Docker Desktop 不再被当成 Colima（2026-10-20）
+
+- **问题**：v0.25.1 的兜底写死了 `docker --context colima`。另一台机器的 docker endpoint 被 context
+  指到 OrbStack（`unix:///Users/…/.orbstack/run/docker.sock`，socket 不存在），本机又**没有** colima
+  context，于是环境页显示
+  「failed to connect …: no such file；改用 --context colima 仍失败：context "colima": context not found」，
+  按钮却只有「启动容器引擎（colima start）」——对这台机器全是无效动作。
+- **探测泛化**：新增 `docker context ls --format '{{json .}}'` 读取 context 列表 / endpoint / 当前值；
+  `docker info` 直连失败时**逐个** `docker --context <name> info` 试（不再写死 colima），谁通了本轮
+  后续 docker 命令（inspect / compose up / restart）都带它。macOS 另增引擎探测：`colima status`、
+  `/Applications/OrbStack.app` 或 `~/.orbstack`、`/Applications/Docker.app`。
+- **按引擎给动作**：`lib/model/env.js` 新增 `engineOfEndpoint`（`/.colima/` → Colima、`/.orbstack/` →
+  OrbStack、`/.docker/run/docker.sock` → Docker Desktop）。失败说明改成「容器引擎未运行：docker
+  当前指向 OrbStack，endpoint 不存在：…」；装了对应引擎 → 新动作 `start-orbstack` /
+  `start-docker-desktop`（`open -a …`，执行后最多等 25 秒 daemon）；没装 → `install-orbstack`
+  （`brew install --cask orbstack`，需确认）；识别不出才退回 Colima 三件套。证据里列出
+  `--context <name>` 的失败原因与已知 context 列表。
+- **动作目录**：新增 `start-orbstack` / `start-docker-desktop` / `install-orbstack`，进
+  `ENV_FIX_ORDER` 与 `fixPlan.needsConfirm`（安装类）。
+- 单测 297 → **299**（endpoint 归属引擎 / 指向 OrbStack 的机器给「安装 OrbStack」/ 新 argv）；`pnpm check` 全绿。
+- 文档同步：env / client / architecture / roadmap / README / AGENTS / 本文件；client 半身未改
+  （`lib/client.js` 无需重建）。
+- **需要重启 dwdev GUI** 才能生效。
+
 ## v0.25.1 修「容器引擎未运行：退出码 1」：真实原因 + docker context 兜底 + 不再卡死（2026-10-20）
 
 - **问题**：环境页的探测失败只显示「退出码 1」，docker 写在 stderr 的真实原因（例如

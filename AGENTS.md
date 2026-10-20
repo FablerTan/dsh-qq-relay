@@ -6,7 +6,7 @@
 > [README.md](./README.md)，版本历史见 [docs/changelog.md](./docs/changelog.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.1**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.2**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -38,6 +38,9 @@
 > v0.25.1 修环境探测可读性与兜底：docker / colima 失败显示 stderr 原文（不再只给「退出码 1」），
 > `docker info` 直连失败自动改用 `--context colima`，Colima 在跑但 daemon 连不上时提供
 > `restart-daemon`（`colima restart`），动作没推进就跳过并继续后面的步骤；
+> v0.25.2 让探测先认引擎：读 `docker context ls` 并逐 context 兜底，按 endpoint 判断 docker 指向
+> Colima / OrbStack / Docker Desktop，给 `start-orbstack` / `start-docker-desktop` / `install-orbstack`
+> 等对应动作（`open -a …` 后最多等 25 秒 daemon），不再对 OrbStack 机器推销 `colima start`；
 > 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）
