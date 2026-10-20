@@ -18,6 +18,17 @@ import {
   presetFingerprint,
   presetView,
 } from '../lib/model/presets.js'
+import { PRESET_BASE_PLUGINS } from '../lib/model/preset-template.js'
+
+/** 递归收集组合表里的 config 字段名（组行的 config 是子行数组）。 */
+function configKeysOf(rows) {
+  const keys = []
+  for (const row of rows) {
+    if (Array.isArray(row.config)) keys.push(...configKeysOf(row.config))
+    else if (row.config !== null && typeof row.config === 'object') keys.push(...Object.keys(row.config))
+  }
+  return keys
+}
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-presets-'))
@@ -220,5 +231,57 @@ test('presets：会话已有模型选择时不再覆盖（v0.20.0）', async () 
   })
   await controller.applySession('session-2')
   assert.deepEqual(appended, [])
+  controller.dispose()
+})
+
+test('presets：组合表对齐 DSH 0.2.1-rc.2（不得出现 toolFilter / persona）', () => {
+  const keys = configKeysOf(PRESET_BASE_PLUGINS)
+  assert.equal(keys.includes('toolFilter'), false, '组合表不能带宿主已移除的 toolFilter')
+  assert.equal(keys.includes('persona'), false, '人设走插件注入的 persona 行，组合表里不能有 persona')
+
+  const delegation = PRESET_BASE_PLUGINS.find((row) => row.id === 'delegation')
+  assert.notEqual(delegation, undefined)
+  const spawn = delegation.config.find((row) => row.id === 'tool-subagent')
+  const fork = delegation.config.find((row) => row.id === 'tool-subagent-fork')
+  assert.deepEqual(Object.keys(spawn.config).sort(), ['modelSelectionSettings', 'provider', 'toolName'])
+  assert.deepEqual(Object.keys(fork.config).sort(), ['provider', 'toolName'])
+  assert.equal(spawn.config.toolName, 'subagent')
+  assert.equal(fork.config.toolName, 'subagent_fork')
+})
+
+test('presets：宿主移除字段时自动剔除并重新注册（v0.25.5）', async () => {
+  const { createPresetController } = await import('../lib/controller/presets.js')
+  const attempts = []
+  const warnings = []
+  const ctx = { get: () => undefined, sessionController: { resolveAgent: async () => ({ agent: null }) } }
+  const presets = [normalizePreset({ id: 'qq-relay', name: 'QQ', persona: '你是群友。' }).preset]
+  const registry = {
+    register: async (definition) => {
+      attempts.push(JSON.parse(JSON.stringify(definition)))
+      const delegation = definition.plugins.find((row) => row.id === 'delegation')
+      const spawn = delegation.config.find((row) => row.id === 'tool-subagent')
+      if ('modelSelectionSettings' in spawn.config) {
+        throw new Error('tool-subagent (@deepseek-ai/dsh-tool-subagent): modelSelectionSettings is no longer supported; configure persona and tool plugins in an Agent Preset and select it with agentPreset (spawn only)')
+      }
+      return async () => {}
+    },
+  }
+  const controller = createPresetController({
+    ctx,
+    log: { info() {}, warn: (message) => { warnings.push(message) }, error() {} },
+    getPresets: () => presets,
+    getSelectedPresetId: () => '',
+    getModelCatalog: () => null,
+  })
+  controller.attach(registry)
+  await controller.refresh()
+
+  assert.equal(attempts.length, 2)
+  const retriedSpawn = attempts[1].plugins.find((row) => row.id === 'delegation')
+    .config.find((row) => row.id === 'tool-subagent')
+  assert.equal('modelSelectionSettings' in retriedSpawn.config, false)
+  assert.deepEqual(retriedSpawn.config, { provider: 'spawn', toolName: 'subagent' })
+  assert.ok(warnings.some((message) => message.includes('modelSelectionSettings')))
+  assert.deepEqual(controller.registeredIds(), ['qq-relay'])
   controller.dispose()
 })

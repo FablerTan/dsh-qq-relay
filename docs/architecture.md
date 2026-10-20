@@ -94,7 +94,8 @@
 - 临时停用整行：`- id: dsh-qq-relay` + `disabled: true`。
 - **插件预设（v0.20.0）**：`presets.json` 存 persona + 模型 / 思考层级 / 权限；host 启动时
   `ctx.agentPresets.register()` 动态注册成 DSH agent preset，保存后立即重新注册。组合表来自
-  `lib/model/preset-template.js`（内置 `standard` 快照），见 [persona.md](./persona.md)。
+  `lib/model/preset-template.js`（内置 `standard` 快照；v0.25.5 起按宿主报错自动剔除已移除字段重试），
+  见 [persona.md](./persona.md)。
   每群会话首次派发前应用预设的模型（追加 `model/selection`）与权限（`permissionPresets.set`）。
 - **画图 / 视频 comfy controller（v0.21.0；v0.22.0 起两个 skill）**：组合根构造
   `createComfyController({ getConfig })` 后 `start()` + 启动探测；`skills` 服务晚于插件就绪

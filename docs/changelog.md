@@ -5,6 +5,28 @@
 > GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
 > `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
+## v0.25.5 修 DSH 0.2.1-rc.2 下预设注册失败：组合表不再带 `toolFilter`（2026-10-20）
+
+- **问题**：另一台 Mac mini 升级到 DSH **0.2.1-rc.2** 后，「QQ 群聊」预设（id `qq-relay`）在配置页显示
+  「未注册」、DSH 新建会话的 preset 列表里也选不到；宿主报两条注册错误
+  `tool-subagent: toolFilter is no longer supported; ...`（`tool-subagent` 与
+  `tool-subagent-fork` 各一条）——**一条错误就让整份 preset 变 broken**，不是某个字段的小警告。
+- **原因**：`lib/model/preset-template.js` 是 2026-10-19 抄的 `standard.patch.yml` 快照，委派两行
+  还带着 `toolFilter: { deny: [schedule_create, ...] }`；新版 `@deepseek-ai/dsh-tool-subagent` 的
+  `apply()` 已把 `toolFilter` / `persona` 从配置面移除，见到即抛错。新版 `standard` 这两行只剩
+  `provider` / `toolName`（spawn 行另有 `modelSelectionSettings`）。
+- **修法**：按 0.2.1-rc.2 的 `standard` 重新对齐组合表——删掉两处 `toolFilter`，行数不变（21 行，
+  persona 仍由插件在第一行注入）。`presets.json` 本身没问题，人设 / 模型 / 权限都保留。
+- **兜底**：`lib/controller/presets.js` 注册失败时解析宿主错误里的 `<字段> is no longer supported`，
+  深拷贝定义、剔除该字段后重试（最多 4 轮）并打警告——DSH 以后再删字段，预设不会立刻整份失效。
+- **可见性**：注册失败日志不再只猜「id 冲突」，改为同时提示「DSH 升级后组合表 schema 变化」并指向
+  [persona.md §2.2](./persona.md)。
+- 单测 298 → **300**（组合表 schema 守卫 + 「宿主移除字段自动剔除并重新注册」）；`pnpm check` 全绿。
+- 文档同步：persona / architecture / roadmap / README / AGENTS / 本文件；client 半身未改
+  （`lib/client.js` 无需重建）。
+- **需要重启 dwdev GUI** 才能生效；那台 Mac mini 更新到 v0.25.5 后重启 DSH，预设会重新注册
+  （日志 `[relay] 已注册 QQ 预设「qq-relay」`，配置页不再显示「未注册」）。
+
 ## v0.25.4 修「OneBot 没配好就存不了 WebUI token」：连接信息可以「待补全」先存草稿（2026-10-20）
 
 - **问题**：新机器点「环境」页一键修复时，写 compose 需要 `environment.webuiToken`，但保存 token 走的是

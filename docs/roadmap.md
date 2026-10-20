@@ -635,6 +635,9 @@
   **模型 / 思考层级 / 权限预设**：会话首次派发前追加 `model/selection`（不覆盖用户选择）+
   `permissionPresets.set`。新路由 `/api/presets`、`/api/presets/delete`；单测 258 → 266。
   详见 [persona.md](./persona.md)。
+- **v0.25.5 组合表对齐**：DSH 0.2.1-rc.2 把 `tool-subagent` 的 `toolFilter` / `persona`
+  从配置面移除，模板跟着改（见 [persona.md §2.2](./persona.md)），并加注册失败时剔除已移除字段重试；
+  组合表仍是手抄快照（无自动同步），升级 DSH 后按清单过一眼。
 - 延后：人设模板一键填表、按群覆盖 preset / persona（当前均为全局）——需要时再做。
 
 ### P13.2 表情包发送（拟人化第一步）

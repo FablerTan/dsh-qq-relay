@@ -32,21 +32,38 @@
 - 注册定义 = persona 行（`@deepseek-ai/dsh-persona`，`prefix` = 人设文本）+ DSH 内置 `standard`
   的 20 个插件行（`lib/model/preset-template.js`，工具 / 压缩 / 委派等）。**preset 没有继承机制**，
   组合表必须给全量。
-- 注册失败的常见原因：id 与 DSH 已有 preset 冲突（页面下拉会标「未注册」，日志有原因）。
+- 注册失败的常见原因：id 与 DSH 已有 preset 冲突；或 **DSH 升级后组合表 schema 变了**
+  （宿主报 `<字段> is no longer supported`，v0.25.5 前的 `toolFilter` 就是这类）。页面下拉会标
+  「未注册」，host 日志有原因；插件侧对「宿主移除字段」会自动剔除后重试（见 §2.2），
+  其余错误照旧拒绝注册。
   插件停用 / 宿主没有 `agentPresets` 服务时，预设仍保存在文件里，但 DSH 里选不到。
 
 ### 2.2 组合表维护（DSH 升级后）
 
 `lib/model/preset-template.js` 是 DSH `packages/bundle/web-app/presets/standard.patch.yml` 的
-2026-10-19 快照（去掉 persona 行）。DSH 升级后如果内置 `standard` 增删了插件行：
+快照（去掉 persona 行），**2026-10-20 已按 DSH 0.2.1-rc.2 重新对齐**：委派两行不再带
+`toolFilter: { deny: [schedule_*] }`——新版 `@deepseek-ai/dsh-tool-subagent` 的 `apply()` 已把
+`toolFilter` / `persona` 从配置面移除，见到就直接抛
+`toolFilter is no longer supported`，**一条错误就让整份 preset 注册失败**（那台 Mac mini 升级到
+0.2.1-rc.2 后「未注册」就是这么来的）。新版 `standard` 这两行只剩 `provider` / `toolName`
+（spawn 行另有 `modelSelectionSettings`）。
+
+维护清单（DSH 升级后）：
 
 1. 从 DSH 安装里取 `standard.patch.yml`（源码 checkout 在 `packages/bundle/web-app/presets/`；
    Desktop 在 `app.asar` 内，可用源码仓库）；
 2. 用同样的转换（删 persona 行、`!!js` 的 `disabled` 保留为 JS 表达式）重新生成
    `lib/model/preset-template.js`；
-3. 重启 GUI，在「预设」页确认列表里没有「未注册」告警。
+3. 重启 GUI，在「预设」页确认列表里没有「未注册」告警；
+4. `pnpm test`：`test/presets.test.js` 会断言组合表里**不得出现 `toolFilter` / `persona`**，
+   并校验委派两行的 config 字段集，防止再把旧 schema 抄回来。
 
-> 不做自动同步：preset 组合是显式的，升级后需要维护者过一眼。
+兜底：注册失败时若宿主报「`<字段> is no longer supported`」，`lib/controller/presets.js` 会深拷贝
+定义、剔除该字段后重试（最多 4 轮）并打警告「组合表含宿主已移除的字段 …」。这样 DSH 再删字段
+时预设不会整份 broken，但**兜底不是免维护的借口**——仍按上面清单同步模板。
+
+> 不做自动同步：preset 组合是显式的，升级后需要维护者过一眼。两版共存期（新旧 DSH 都有人用）
+> 也**不要**往组合表里加只有新版才有的插件行：旧宿主找不到包名，注册同样是硬失败。
 
 ## 3. 预设字段
 
