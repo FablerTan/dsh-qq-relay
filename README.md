@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.25.0**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.25.1**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -27,7 +27,9 @@ Docker / Colima / NapCat / 扫码登录 / OneBot 配置 / 插件回填收敛成 
 API key** 收进配置页「行为」页——保存即热启用分类器，环境变量 `OPENROUTER_API_KEY` 仍可兜底
 （只写不读）；v0.25.0 修「一键修复」——改成**逐步补全**（装 Docker / 起 Colima / 写 compose /
 起 NapCat 容器 / 写 OneBot / 回填），每完成一步自动重探再继续，不再跳过 NapCat 容器，
-token 两边都空时自动生成。设计见
+token 两边都空时自动生成；v0.25.1 修探测可读性——docker / colima 失败显示 stderr 原文
+（不再只有「退出码 1」），docker 直连失败自动改用 `--context colima` 兜底，
+Colima 在跑但 daemon 连不上时给「重启容器引擎」，动作没推进就跳过继续后面的步骤。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 

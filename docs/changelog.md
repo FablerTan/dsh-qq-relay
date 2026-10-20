@@ -5,6 +5,26 @@
 > GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
 > `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
+## v0.25.1 修「容器引擎未运行：退出码 1」：真实原因 + docker context 兜底 + 不再卡死（2026-10-20）
+
+- **问题**：环境页的探测失败只显示「退出码 1」，docker 写在 stderr 的真实原因（例如
+  `failed to connect to the docker API at unix:///var/run/docker.sock`）全丢了；同时
+  `colima start` 退出码 0（`already running, ignoring`）但 Docker daemon 仍连不上时，
+  一键修复会反复重试同一个动作、最后停住，步骤一直「未通过」。
+- **探测可读**：`lib/controller/env.js` 新增 `probeMessage`（stderr 末行优先）；docker / colima
+  探测失败时把原文写进步骤说明与证据（截断 300 字），不再只给退出码。
+- **docker endpoint 兜底**：`docker info` 直连失败时，在 macOS 上自动用
+  `docker --context colima` 再试；成功则本轮所有 docker 命令（inspect / compose up / restart）
+  都带该 context，证据里注明「直连失败：…；已自动改用 --context colima」。
+  覆盖插件进程环境里 `DOCKER_HOST` / docker context 配错的情况。
+- **区分「启动」与「重启」引擎**：新增探测 `colima status`；VM 没起 → `start-daemon`，
+  VM 在跑但 daemon 连不上 → 新动作 `restart-daemon`（`colima restart`，仅 macOS，需确认）。
+- **不推进就跳过**：一键修复把「执行后步骤仍未推进」或「动作失败」的动作标记为没能自动完成，
+  记录该步说明后继续执行后面**独立**的步骤（如生成 compose），收尾日志逐条列出没完成的动作与原因。
+- 单测 294 → **297**（引擎启停区分与可读错误 / context 兜底 / 动作不推进跳过）；`pnpm check` 全绿。
+- 文档同步：env / client / architecture / roadmap / README / AGENTS / 本文件；`lib/client.js` 已重建。
+- **需要重启 dwdev GUI** 才能生效。
+
 ## v0.25.0 修「一键修复」：逐步补全环境，不再跳过 NapCat 容器（2026-10-20）
 
 - **问题**：v0.23.0 的 `fix-all` 在**点按钮那一刻**算一次序列，只收集「未通过步骤」自己列出的动作。

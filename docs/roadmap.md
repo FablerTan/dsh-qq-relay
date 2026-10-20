@@ -522,6 +522,20 @@
 - **测试**：`test/env.test.js` 11 个（新增修复序列逐步展开 / 一键修复逐步补全 / token 双空生成）；
   总数 **294**。
 
+### 已落地（v0.25.1，2026-10-20）：探测可读 + docker context 兜底 + 不推进跳过
+
+- 用户真机反馈「容器引擎 未通过 / 容器引擎未运行：退出码 1」：探测失败吞掉了 docker 的 stderr，
+  且 `colima start` 退出码 0（already running）时一键修复会反复重试同一动作后停住。
+- **探测可读**：controller 新增 `probeMessage`，docker / colima 失败时把 stderr 末行写进说明与证据。
+- **endpoint 兜底**：`docker info` 直连失败时自动用 `docker --context colima` 重试，成功则本轮所有
+  docker 命令带该 context；证据写明「直连失败：…；已自动改用 --context colima」。
+- **启动 / 重启区分**：新增 `colima status` 探测；VM 没起 → `start-daemon`，VM 在跑但 daemon
+  连不上 → 新动作 `restart-daemon`（`colima restart`，需确认）。
+- **不推进就跳过**：动作失败或执行后步骤没推进时标记「没能自动完成」并继续独立步骤（如生成
+  compose），收尾日志逐条给出原因。
+- **测试**：`test/env.test.js` 14 个（新增引擎启停区分与可读错误 / context 兜底 / 不推进跳过）；
+  总数 **297**。
+
 ### 设计草案（原始，2026-10-19）
 
 - 入口：插件面板新增「环境」二级页（连接 / 项目 / 行为 / 记录 / 环境）；「连接」页顶部在

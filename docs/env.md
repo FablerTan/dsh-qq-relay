@@ -57,7 +57,7 @@
 | # | id | 判定 | ok / warn / error | 可用动作 |
 |---|---|---|---|---|
 | 1 | `docker-cli` | `docker --version` | ok = 退出码 0 | `install-docker`（仅 macOS，需确认） |
-| 2 | `docker-daemon` | `docker info --format {{.ServerVersion}}` | 失败 = error「容器引擎未运行」 | `start-daemon`（仅 macOS，需确认） |
+| 2 | `docker-daemon` | `docker info --format {{.ServerVersion}}`（失败时再用 `docker --context colima` 试一次） | 失败 = error「容器引擎未运行：<docker stderr 原文>」；Colima 在跑时会提示重启引擎 | `start-daemon` / `restart-daemon`（按 `colima status` 区分，仅 macOS，需确认） |
 | 3 | `compose-file` | 环境目录存在 `compose.yaml` / `docker-compose.yml`，且含非空 `WEBUI_TOKEN` | 无文件 = error；缺 token = warn | `write-compose` |
 | 4 | `container` | `docker inspect --format {{.State.Status}} <container_name>` | running = ok；存在但非 running = warn；不存在 = error | `compose-up` |
 | 5 | `login` | `<dir>/data/config/onebot11_<uin>.json` 是否存在 | 存在 = ok（QQ 已登录）；否则 warn | `open-webui`（配置了 token 时） |
@@ -85,8 +85,8 @@ v0.25.0 起 `fix-all` 改成**逐轮推进**：
 5. 收尾把「下一步」写进日志：例如「可自动完成的步骤已跑完；下一步（QQ 登录）：还没扫码登录……」，
    全部通过则记「环境已就绪」。
 
-安装 Docker / 启动容器引擎也进了计划（页面确认后执行），否则新机器一次点击只能写个 compose，
-永远到不了 NapCat。安装 / 启动引擎 / 覆盖已存在的 compose 需要 `confirm: true`：
+安装 Docker / 启动 / 重启容器引擎也进了计划（页面确认后执行），否则新机器一次点击只能写个 compose，
+永远到不了 NapCat。安装 / 启动 / 重启引擎 / 覆盖已存在的 compose 需要 `confirm: true`：
 页面按 `fixPlan.needsConfirm` 弹一次确认，host 侧同样强制校验（不只靠页面）。
 
 ## 5. 动作清单（白名单）
@@ -97,13 +97,14 @@ host 只执行下表动作；命令一律 `spawn(bin, args, { shell: false })`�
 |---|---|---|---|---|
 | `refresh` | none | 重新探测 | 否 | 不执行命令 |
 | `install-docker` | command | `brew install colima docker docker-compose` | ✅ | 仅 macOS；耗时数分钟 |
-| `start-daemon` | command | `colima start --cpu 4 --memory 4 --disk 60 --vm-type vz` | ✅ | 仅 macOS |
+| `start-daemon` | command | `colima start --cpu 4 --memory 4 --disk 60 --vm-type vz` | ✅ | 仅 macOS；`colima status` 显示 VM 未运行时用 |
+| `restart-daemon` | command | `colima restart` | ✅ | 仅 macOS；Colima 在跑但 Docker daemon 连不上时用（会重启 VM 与容器） |
 | `write-compose` | fs | 写 `<dir>/compose.yaml`（端口只绑 `127.0.0.1`，三个数据卷） | ✅ | 需要已配置 WebUI token；已存在文件时覆盖（页面总是先确认） |
 | `compose-up` | command | `docker compose -f <dir>/compose.yaml up -d` | 否 | 首次会拉镜像 |
 | `restart-napcat` | command | `docker compose -f <dir>/compose.yaml restart napcat` | 否 | 写 OneBot 配置后自动调用；**不在**「一键修复」序列里（避免多余重启） |
 | `write-onebot` | fs | 补 `token` / `port` / `messagePostFormat=array` / `reportSelfMessage=false`，先备份 `.bak-<时间戳>`，再重启 NapCat | ✅ | 需要登录后的 `onebot11_<uin>.json`；token 取插件 access_token → OneBot 现有 token → 两边都空时生成随机 32 位 hex（随后回填） |
 | `backfill-config` | callback | 用 OneBot 配置的端口 / token / 登录 QQ 号写插件 `wsUrl` / `accessToken` / `selfId`，然后重建连接 | 否 | 复用配置页的 `saveConfig`，两条路径一致 |
-| `fix-all` | chain | **逐轮推进**：探测 → 计划里第一个动作 → 再探测；计划含 `install-docker / start-daemon / write-compose / compose-up / write-onebot / backfill-config` | 计划含安装 / 启动引擎 / 覆盖 compose 时 ✅ | 不含打开 WebUI（扫码只能手动）；每轮之间自动重探 |
+| `fix-all` | chain | **逐轮推进**：探测 → 计划里第一个动作 → 再探测；计划含 `install-docker / start-daemon / restart-daemon / write-compose / compose-up / write-onebot / backfill-config` | 计划含安装 / 启动 / 重启引擎 / 覆盖 compose 时 ✅ | 不含打开 WebUI（扫码只能手动）；每轮之间自动重探 |
 | `open-webui` | link | 返回 `http://127.0.0.1:6099/webui?token=…` | 否 | token 来自 environment 配置 |
 
 - 命令类动作**后台执行**：HTTP 立即返回 `accepted:true`，页面靠 `status.running` +
@@ -111,8 +112,16 @@ host 只执行下表动作；命令一律 `spawn(bin, args, { shell: false })`�
 - 同时只允许一个动作在跑（`ENV_ACTION_RUNNING`）。
 - `write-onebot` 是唯一会改 NapCat 数据的动作：先 `copyFileSync` 备份，再临时文件 + rename
   原子写入；只动「启用的那个 websocketServers 条目」的五个字段，其余配置原样保留。
-- `fix-all` 的确认只针对系统类动作（安装 / 启动引擎 / 覆盖 compose）；链里的 `write-onebot`
-  不逐个弹窗（用户点整条链即是意图），但写前仍备份并重启 NapCat。
+- `fix-all` 的确认只针对系统类动作（安装 / 启动引擎 / 重启引擎 / 覆盖 compose）；链里的
+  `write-onebot` 不逐个弹窗（用户点整条链即是意图），但写前仍备份并重启 NapCat。
+- **动作没推进就跳过它**（v0.25.1）：命令退出码 0 不等于目标达成（例如 `colima start` 说
+  `already running, ignoring`，但 `docker info` 仍失败）。这时把该动作标记为「没能自动完成」、
+  记下该步骤的说明，然后继续执行后面**独立**的步骤（如生成 compose），不再整条链停在这一步；
+  收尾日志逐条列出没完成的动作与原因（含 docker / colima 的 stderr 原文，而不是「退出码 1」）。
+- **docker endpoint 兜底**（v0.25.1）：`docker info` 直连失败时，在 macOS 上自动用
+  `docker --context colima` 再试一次；成功则本轮后续所有 docker 命令（inspect / compose up /
+  restart）都带上该 context，并在步骤证据里写明「直连失败：<stderr>；已自动改用 --context colima」。
+  这覆盖插件进程环境里 `DOCKER_HOST` / docker context 配错的情况。
 
 ## 6. HTTP 契约
 
@@ -185,9 +194,10 @@ POST /dsh-qq-relay/api/env/action   → body { action, confirm? } → { ok, valu
 
 ## 10. 验证
 
-- `pnpm test`：**294** 个用例全过（`test/env.test.js` 11 个：配置 / compose / OneBot / 求值 /
+- `pnpm test`：**297** 个用例全过（`test/env.test.js` 14 个：配置 / compose / OneBot / 求值 /
   argv / 日志 / controller 刷新 + 写 OneBot + 回填 + open-webui + 确认制 / 修复序列逐步展开 /
-  一键修复逐步补全（装引擎 → 起容器）/ token 双空生成）。
+  一键修复逐步补全（装引擎 → 起容器）/ token 双空生成 / 引擎启停区分与可读错误 /
+  docker context 兜底 / 动作不推进时跳过继续）。
 - `pnpm check`：语法 + tsc + 文档配对全绿。
 - 真机验收清单（重启 dwdev GUI 后）：
   1. 「环境」页 7 步全绿（本机已有 NapCat 环境时）；
@@ -198,6 +208,10 @@ POST /dsh-qq-relay/api/env/action   → body { action, confirm? } → { ok, valu
   6. 停掉 Colima（`colima stop`）后刷新页面：NapCat 容器显示「跳过」且说明写明「先启动容器引擎」，
      修复计划提示「启动容器引擎 → …」，点「一键修复」弹确认 → 自动 `colima start` → 写 compose →
      `compose up -d`，日志给出「下一步：QQ 登录」；
-  7. 扫码登录后点「一键修复」：自动写 OneBot 配置（重启 NapCat）→ 回填插件配置 → 步骤 7 变 ok。
+  7. 扫码登录后点「一键修复」：自动写 OneBot 配置（重启 NapCat）→ 回填插件配置 → 步骤 7 变 ok；
+  8. Docker endpoint 连不上（插件进程里 `DOCKER_HOST` / context 配错）时：步骤显示 ok，证据里
+     有「直连失败：<stderr>；已自动改用 --context colima」，后续 docker 命令都带该 context；
+  9. Colima 在跑但 `docker info` 仍失败：出现「重启容器引擎」按钮；一键修复会尝试它，
+     仍失败时日志写明 stderr、跳过它并继续能做的步骤（如生成 compose），不会卡死在同一动作。
 - 命令类动作的真机执行（`brew install` / `colima start` / `compose up`）会改用户机器：
   验收时只对已就绪环境跑只读动作；安装路径用单测 + 手动命令确认。

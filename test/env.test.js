@@ -11,7 +11,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -58,7 +58,8 @@ function goodProbe(overrides = {}) {
     platform: 'darwin',
     docker: { ok: true, version: 'Docker version 29.9.1', error: '' },
     compose: { ok: true, version: 'Docker Compose version 5.6.0', error: '' },
-    daemon: { ok: true, serverVersion: '29.9.1', provider: '', error: '' },
+    daemon: { ok: true, serverVersion: '29.9.1', provider: '', directError: '', error: '' },
+    colima: { running: true, error: '' },
     composeFile: { path: '/tmp/napcat/compose.yaml', tokenPresent: true, containerName: 'napcat', ports: [], error: '' },
     container: { name: 'napcat', state: 'running', running: true, error: '' },
     login: { uin: 10001, file: '/tmp/napcat/data/config/onebot11_10001.json' },
@@ -176,6 +177,11 @@ test('env：wsUrl 解析与动作 argv 白名单', () => {
   const up = buildActionArgv('compose-up', { platform: 'darwin', composePath: '/tmp/napcat/compose.yaml' })
   assert.deepEqual(up.args, ['compose', '-f', '/tmp/napcat/compose.yaml', 'up', '-d'])
 
+  assert.deepEqual(buildActionArgv('restart-daemon', { platform: 'darwin' }), {
+    bin: 'colima', args: ['restart'], cwd: '',
+  })
+  assert.equal(buildActionArgv('restart-daemon', { platform: 'linux' }).error, '只支持 macOS（colima restart）')
+
   const restart = buildActionArgv('restart-napcat', {
     platform: 'darwin',
     composePath: '/tmp/napcat/compose.yaml',
@@ -217,6 +223,7 @@ test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
   // 装好 CLI、引擎没起：容器步骤仍是 skip，序列里没有 compose-up（这是 v0.23.0 跳过 NapCat 的原因）。
   const engineDown = evaluateEnvSteps(goodProbe({
     daemon: { ok: false, serverVersion: '', error: 'daemon down' },
+    colima: { running: false, error: 'colima is not running' },
     composeFile: { path: null, tokenPresent: false, containerName: 'napcat', ports: [], error: '' },
     container: { name: 'napcat', state: '', running: false, error: '' },
     login: { uin: 0, file: '' },
@@ -224,6 +231,18 @@ test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
     relay: { started: true, connected: false, selfId: 10001, wsUrl: 'ws://127.0.0.1:3001', accessToken: 'secret-token-123', accessTokenConfigured: true },
   }), { ...DEFAULT_ENVIRONMENT, webuiToken: 'tok' })
   assert.deepEqual(computeFixSequence(engineDown.steps), ['start-daemon', 'write-compose'])
+
+  // Colima 在跑但 daemon 连不上：序列里换成「重启引擎」，而不是重复无效果的 colima start。
+  const daemonWedged = evaluateEnvSteps(goodProbe({
+    daemon: { ok: false, serverVersion: '', error: 'failed to connect to the docker API at unix:///var/run/docker.sock' },
+    colima: { running: true, error: '' },
+    composeFile: { path: null, tokenPresent: false, containerName: 'napcat', ports: [], error: '' },
+    container: { name: 'napcat', state: '', running: false, error: '' },
+    login: { uin: 0, file: '' },
+    onebot: null,
+    relay: { started: true, connected: false, selfId: 10001, wsUrl: 'ws://127.0.0.1:3001', accessToken: 'secret-token-123', accessTokenConfigured: true },
+  }), { ...DEFAULT_ENVIRONMENT, webuiToken: 'tok' })
+  assert.deepEqual(computeFixSequence(daemonWedged.steps), ['restart-daemon', 'write-compose'])
 
   // 引擎起来后重新求值：容器从 skip 变 error，compose-up 才进入序列（逐步补全的关键）。
   const engineUp = evaluateEnvSteps(goodProbe({
@@ -239,6 +258,38 @@ test('env：探测求值 / 一键修复序列按步骤逐步展开', () => {
   const windows = evaluateEnvSteps(goodProbe({ platform: 'win32' }), DEFAULT_ENVIRONMENT)
   assert.equal(windows.platformSupported, false)
   assert.equal(windows.steps.every((step) => step.status === 'skip'), true)
+})
+
+test('env：容器引擎失败区分「启动」与「重启」，错误可读', () => {
+  const daemonError = 'failed to connect to the docker API at unix:///var/run/docker.sock'
+  const failed = (colimaRunning) => evaluateEnvSteps(goodProbe({
+    daemon: { ok: false, serverVersion: '', provider: '', directError: '', error: daemonError },
+    colima: { running: colimaRunning, error: colimaRunning ? '' : 'colima is not running' },
+  }), DEFAULT_ENVIRONMENT)
+
+  // Colima 没起 → 启动引擎；错误显示 stderr 原文，而不是「退出码 1」。
+  const stoppedStep = failed(false).steps.find((step) => step.id === 'docker-daemon')
+  assert.equal(stoppedStep.status, 'error')
+  assert.deepEqual(stoppedStep.actions, ['start-daemon'])
+  assert.match(stoppedStep.detail, /failed to connect/u)
+  assert.ok(stoppedStep.evidence.some((line) => line.includes('failed to connect')))
+
+  // Colima 在跑但 daemon 连不上 → 重启引擎。
+  const runningStep = failed(true).steps.find((step) => step.id === 'docker-daemon')
+  assert.equal(runningStep.status, 'error')
+  assert.deepEqual(runningStep.actions, ['restart-daemon'])
+  assert.match(runningStep.detail, /重启容器引擎/u)
+  assert.match(runningStep.detail, /failed to connect/u)
+
+  // 直连失败、colima context 可用 → ok，并把原因写进证据。
+  const viaContext = evaluateEnvSteps(goodProbe({
+    daemon: { ok: true, serverVersion: '29.5.2', provider: 'colima context', directError: daemonError, error: '' },
+  }), DEFAULT_ENVIRONMENT)
+  const contextStep = viaContext.steps.find((step) => step.id === 'docker-daemon')
+  assert.equal(contextStep.status, 'ok')
+  assert.match(contextStep.detail, /colima context/u)
+  assert.ok(contextStep.evidence.some((line) => line.includes('直连失败')))
+  assert.ok(contextStep.evidence.some((line) => line.includes('--context colima')))
 })
 
 test('env：日志环形缓冲 + token 脱敏', () => {
@@ -416,6 +467,11 @@ test('env controller：一键修复逐步补全（确认后安装 → 启动引�
       state.installed = true
       return { ok: true, code: 0, stdout: '', stderr: '' }
     }
+    if (bin === 'colima' && args[0] === 'status') {
+      return state.daemon
+        ? { ok: true, code: 0, stdout: 'colima is running', stderr: '' }
+        : { ok: false, code: 1, stdout: '', stderr: 'colima is not running', error: 'colima is not running' }
+    }
     if (bin === 'colima') {
       state.daemon = true
       return { ok: true, code: 0, stdout: '', stderr: '' }
@@ -434,6 +490,11 @@ test('env controller：一键修复逐步补全（确认后安装 → 启动引�
       return state.daemon
         ? { ok: true, code: 0, stdout: '29.5.2', stderr: '' }
         : { ok: false, code: 1, stdout: '', stderr: 'Cannot connect', error: 'docker info 失败' }
+    }
+    if (bin === 'docker' && args[0] === '--context') {
+      return state.daemon
+        ? { ok: true, code: 0, stdout: '29.5.2', stderr: '' }
+        : { ok: false, code: 1, stdout: '', stderr: 'context "colima" does not exist' }
     }
     if (bin === 'docker' && args[0] === 'inspect') {
       return state.up
@@ -547,4 +608,128 @@ test('env controller：写 OneBot 时 token 双空自动生成并随后回填', 
   assert.equal(backfilled[0].accessToken, token)
   // 状态快照 / 日志里都不出现生成的 token 明文。
   assert.equal(JSON.stringify(controller.status()).includes(token), false)
+})
+
+test('env controller：docker 直连失败时自动改用 colima context', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-env-context-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const state = { up: false }
+  const calls = []
+  const run = async (bin, args) => {
+    calls.push([bin, ...args].join(' '))
+    if (bin === 'colima' && args[0] === 'status') return { ok: true, code: 0, stdout: 'colima is running', stderr: '' }
+    if (bin === 'docker' && args[0] === '--version') return { ok: true, code: 0, stdout: 'Docker version 29.9.1', stderr: '' }
+    if (bin === 'docker' && args[0] === 'compose' && args.includes('version')) {
+      return { ok: true, code: 0, stdout: 'Docker Compose version 5.6.0', stderr: '' }
+    }
+    if (bin === 'docker' && args[0] === 'info') {
+      return { ok: false, code: 1, stdout: '', stderr: 'failed to connect to the docker API at unix:///var/run/docker.sock' }
+    }
+    if (bin === 'docker' && args[0] === '--context' && args.includes('info')) {
+      return { ok: true, code: 0, stdout: '29.5.2', stderr: '' }
+    }
+    if (bin === 'docker' && args[0] === '--context' && args.includes('inspect')) {
+      return state.up
+        ? { ok: true, code: 0, stdout: 'running', stderr: '' }
+        : { ok: false, code: 1, stdout: '', stderr: '', error: 'no such container' }
+    }
+    if (bin === 'docker' && args[0] === '--context' && args.includes('up')) {
+      state.up = true
+      return { ok: true, code: 0, stdout: '', stderr: '' }
+    }
+    return { ok: true, code: 0, stdout: '', stderr: '' }
+  }
+
+  const controller = createEnvController({
+    getConfig: () => ({ enabled: true, dir, webuiToken: 'tok' }),
+    getRelayInfo: () => ({
+      started: true,
+      connected: false,
+      selfId: 0,
+      wsUrl: 'ws://127.0.0.1:3001',
+      accessToken: '',
+      accessTokenConfigured: false,
+    }),
+    backfill: () => ({ ok: true }),
+    run,
+    platform: 'darwin',
+  })
+  t.after(() => controller.dispose())
+
+  const status = await controller.refresh()
+  const daemon = status.steps.find((step) => step.id === 'docker-daemon')
+  assert.equal(daemon.status, 'ok')
+  assert.ok(daemon.evidence.some((line) => line.includes('直连失败')))
+  assert.ok(daemon.evidence.some((line) => line.includes('--context colima')))
+  assert.deepEqual(status.fixPlan.sequence, ['write-compose', 'compose-up'])
+
+  const started = await controller.action({ action: 'fix-all' })
+  assert.equal(started.ok, true)
+  for (let index = 0; index < 300; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    if (controller.status().running === null) break
+  }
+  // 后续 docker 命令都带上兜底 context。
+  assert.ok(calls.some((call) => call.includes('--context colima compose') && call.includes('up -d')))
+  assert.ok(calls.some((call) => call.includes('--context colima inspect')))
+  const steps = Object.fromEntries(controller.status().steps.map((step) => [step.id, step]))
+  assert.equal(steps.container.status, 'ok')
+})
+
+test('env controller：动作没有推进时跳过它，继续后面的步骤', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-relay-env-stall-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const calls = []
+  const run = async (bin, args) => {
+    calls.push([bin, ...args].join(' '))
+    if (bin === 'colima' && args[0] === 'status') return { ok: true, code: 0, stdout: 'colima is running', stderr: '' }
+    if (bin === 'colima') return { ok: true, code: 0, stdout: '', stderr: '' }
+    if (bin === 'docker' && args[0] === '--version') return { ok: true, code: 0, stdout: 'Docker version 29.9.1', stderr: '' }
+    if (bin === 'docker' && args[0] === 'compose' && args.includes('version')) {
+      return { ok: true, code: 0, stdout: 'Docker Compose version 5.6.0', stderr: '' }
+    }
+    if (bin === 'docker' && args[0] === 'info') {
+      return { ok: false, code: 1, stdout: '', stderr: 'failed to connect to the docker API at unix:///var/run/docker.sock' }
+    }
+    if (bin === 'docker' && args[0] === '--context') {
+      return { ok: false, code: 1, stdout: '', stderr: 'cannot connect with colima context' }
+    }
+    return { ok: true, code: 0, stdout: '', stderr: '' }
+  }
+
+  const controller = createEnvController({
+    getConfig: () => ({ enabled: true, dir, webuiToken: 'tok' }),
+    getRelayInfo: () => ({
+      started: true,
+      connected: false,
+      selfId: 0,
+      wsUrl: 'ws://127.0.0.1:3001',
+      accessToken: '',
+      accessTokenConfigured: false,
+    }),
+    backfill: () => ({ ok: true }),
+    run,
+    platform: 'darwin',
+  })
+  t.after(() => controller.dispose())
+
+  const status = await controller.refresh()
+  assert.deepEqual(status.fixPlan.sequence, ['restart-daemon', 'write-compose'])
+  assert.equal(status.fixPlan.needsConfirm, true)
+
+  const started = await controller.action({ action: 'fix-all', confirm: true })
+  assert.equal(started.ok, true)
+  for (let index = 0; index < 300; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    if (controller.status().running === null) break
+  }
+
+  assert.ok(calls.some((call) => call.startsWith('colima restart')))
+  // 引擎没救回来，但没有卡死：compose 文件仍然生成了。
+  assert.equal(existsSync(join(dir, 'compose.yaml')), true)
+  const logText = controller.status().log.entries.map((entry) => entry.text).join('\n')
+  assert.ok(logText.includes('没能自动完成'))
+  assert.ok(logText.includes('failed to connect'))
 })

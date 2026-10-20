@@ -18,7 +18,9 @@
 > 已实现，见 [comfy.md](./comfy.md)**；**v0.23.0 环境一键配置（7 步诊断 + 白名单动作 + 一键修复，
 > 见 [env.md](./env.md)）已实现**；**v0.24.0 jev API key 进配置页（`gate.jevApiKey` 只写不读 +
 > 分类器热切换，见 [gate.md §4](./gate.md)）已实现**；**v0.25.0 环境「一键修复」改为逐步补全
-> （按计划逐轮执行 + 每步重探 + 系统类动作先确认 + `fixPlan` 下发，见 [env.md §4.1](./env.md)）已实现**。
+> （按计划逐轮执行 + 每步重探 + 系统类动作先确认 + `fixPlan` 下发，见 [env.md §4.1](./env.md)）已实现**；
+> **v0.25.1 环境探测可读化与兜底（docker stderr 原文 / `--context colima` 兜底 / `restart-daemon` /
+> 不推进就跳过，见 [env.md §4.1](./env.md)）已实现**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
