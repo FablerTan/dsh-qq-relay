@@ -32,6 +32,9 @@ Docker / Colima / NapCat / 扫码登录 / OneBot 配置 / 插件回填收敛成 
 > `.agents/skills/openspec-*`；规格与设计随 README 与 `docs/` 走。
 > 空骨架唯一的可见副作用：host 半身加载时打一行日志，用于确认 link + bundle 组合生效。
 > 装完 / 改完需**重启对应 profile 的 GUI**（由用户执行，本插件不自行 kill / 重启 DSH）。
+>
+> **公开仓库说明**：README 与 `docs/` 里的 QQ 号、群号、昵称、会话 / 文件路径、内网 IP
+> 均为脱敏示例，不包含私有部署信息。
 
 ## 用途（P1 已实现；后续阶段见 [roadmap](./docs/roadmap.md)）
 
