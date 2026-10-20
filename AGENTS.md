@@ -134,3 +134,6 @@
 
 - 装入 profile（`dsh plugin --profile <name> add link:…`）与**重启该 profile 的 GUI** 由用户执行，
   本插件只交文档说明；链接现状同步上级 `PROFILES.md`。
+- **发布**：版本号写 `package.json`、版本说明写 `docs/changelog.md`；提交后打 `vX.Y.Z` tag 并 push，
+  GitHub Actions 的 `Release` 工作流会自动创建 Release（正文取自 changelog 对应段，附 `npm pack`
+  tarball）。发布前本地 `pnpm build` 并提交 `lib/client.js`，工作流会校验两者一致。

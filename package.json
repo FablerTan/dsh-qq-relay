@@ -32,6 +32,10 @@
     "README.md"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FablerTan/dsh-qq-relay.git"
+  },
   "scripts": {
     "build": "vite build",
     "watch": "vite build --watch",

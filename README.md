@@ -166,3 +166,23 @@ pnpm test        # host 纯逻辑单测（node:test，零依赖）
   已入库——clone 后不装依赖也能被宿主加载。只有改了 `src/` 才需要 `pnpm build` / `pnpm watch`。
 - **host / client 热载差异**：改 host 半身要重启 profile 的 GUI；client 半身由宿主的 client 热换
   机制在浏览器刷新后生效。
+
+## 发布（GitHub Release）
+
+1. 改 `package.json` 的 `version`，并在 [docs/changelog.md](./docs/changelog.md) 顶部加同版本段
+   （`## vX.Y.Z …`，这一段就是 Release 正文）；
+2. 本地 `pnpm build` 并提交 `lib/client.js`，然后提交、打 tag、推送：
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+3. GitHub Actions 的 [Release 工作流](.github/workflows/release.yml) 会跑 `pnpm check` /
+   `pnpm test` / `pnpm build`，校验 tag 与 `package.json` 一致、`lib/client.js` 已更新，
+   从 `docs/changelog.md` 取对应版本段作为 **Release 正文**，并附上 `npm pack` 的 `.tgz`。
+   也可以在 Actions 页手动触发并填 tag；版本号与 changelog 不一致会直接失败。
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

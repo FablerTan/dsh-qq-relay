@@ -2,6 +2,8 @@
 
 > 本文件由 README 迁出（v0.24.0）：按版本倒序记录每版的变更与验收结果；
 > 总览 / 用法见 [README.md](../README.md)，分期规划见 [roadmap.md](./roadmap.md)。
+> GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
+> `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
 ## v0.24.0 jev API key 进配置页：`gate.jevApiKey` 只写不读 + 分类器热切换（2026-10-20）
 
