@@ -134,7 +134,23 @@ export function BehaviorPanel({ model }: { model: RelaySettingsModel }): ReactEl
             ariaLabel="jev 接话阈值"
           />
         </Row>
-        <Row label="OpenRouter API key" hint="只写不读；留空表示不修改，保存后立即生效（不用重启）">
+        <Row label="jev 模型 id" hint="决策模型 id（默认 typesafe/jev-1.14）；指向兼容代理时填对方的模型名">
+          <TextInput
+            value={form.gateJevModel}
+            onChange={(value) => { updateField('gateJevModel', value) }}
+            placeholder="typesafe/jev-1.14"
+            ariaLabel="jev 模型 id"
+          />
+        </Row>
+        <Row label="jev 分类器地址" hint="Decisions API 地址，必须 https（默认 OpenRouter；可指向兼容代理）">
+          <TextInput
+            value={form.gateJevEndpoint}
+            onChange={(value) => { updateField('gateJevEndpoint', value) }}
+            placeholder="https://openrouter.ai/api/alpha/decisions"
+            ariaLabel="jev 分类器地址"
+          />
+        </Row>
+        <Row label="OpenRouter API key" hint="只写不读；留空表示不修改。地址 / 模型 / key / 阈值保存后都立即热切换（不用重启）">
           <TextInput
             value={form.gateJevApiKey}
             onChange={(value) => { updateField('gateJevApiKey', value) }}

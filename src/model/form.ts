@@ -23,6 +23,10 @@ export interface RelayFormState {
   gateDebounce: string
   gateFastMinReplyInterval: string
   gateJevThreshold: string
+  /** jev 决策模型 id（v0.25.6）：默认 typesafe/jev-1.14。 */
+  gateJevModel: string
+  /** jev 分类器地址（v0.25.6）：默认 OpenRouter Decisions API；host 只接受 https。 */
+  gateJevEndpoint: string
   /** OpenRouter API key（v0.24.0）：只写不读，留空表示不修改。 */
   gateJevApiKey: string
   sessionTitle: string
@@ -73,6 +77,8 @@ export function emptyForm(): RelayFormState {
     gateDebounce: '',
     gateFastMinReplyInterval: '',
     gateJevThreshold: '',
+    gateJevModel: '',
+    gateJevEndpoint: '',
     gateJevApiKey: '',
     sessionTitle: '',
     replyChunkSize: '',
@@ -105,6 +111,8 @@ export function formFromConfig(config: RelayConfigView): RelayFormState {
     gateDebounce: formatDurationMs(config.gate.debounceMs),
     gateFastMinReplyInterval: formatDurationMs(config.gate.fastMinReplyIntervalMs),
     gateJevThreshold: String(config.gate.jevThreshold),
+    gateJevModel: config.gate.model,
+    gateJevEndpoint: config.gate.jevEndpoint,
     // key 只写不读：表单永远从空开始，留空表示不修改。
     gateJevApiKey: '',
     sessionTitle: config.sessionTitle,
@@ -371,6 +379,25 @@ export function buildConfigPatch(form: RelayFormState): ParseResult<RelayConfigP
     problems.push('jev 阈值必须是 0..1 的数字（如 0.7）')
   } else {
     gate.jevThreshold = threshold
+  }
+  // jev 模型 id / 分类器地址（v0.25.6）：可读可改；地址必须是 https（host 同样校验）。
+  const jevModel = form.gateJevModel.trim()
+  if (jevModel === '') {
+    problems.push('jev 模型 id 必填（默认 typesafe/jev-1.14）')
+  } else if (jevModel.length > 200) {
+    problems.push('jev 模型 id 最多 200 字符')
+  } else {
+    gate.model = jevModel
+  }
+  const jevEndpoint = form.gateJevEndpoint.trim()
+  if (jevEndpoint === '') {
+    problems.push('jev 分类器地址必填（默认 https://openrouter.ai/api/alpha/decisions）')
+  } else if (!/^https:\/\//iu.test(jevEndpoint)) {
+    problems.push('jev 分类器地址必须是 https:// 地址')
+  } else if (jevEndpoint.length > 300) {
+    problems.push('jev 分类器地址最多 300 字符')
+  } else {
+    gate.jevEndpoint = jevEndpoint
   }
   const jevApiKey = form.gateJevApiKey.trim()
   if (jevApiKey.length > 256) {

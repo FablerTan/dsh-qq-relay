@@ -15,6 +15,10 @@ export interface RelayGateConfigView {
   debounceMs: number
   fastMinReplyIntervalMs: number
   jevThreshold: number
+  /** jev 决策模型 id（v0.25.6；默认 typesafe/jev-1.14，页面可改）。 */
+  model: string
+  /** jev 分类器地址（v0.25.6；默认 OpenRouter Decisions API，页面可改，host 只接受 https）。 */
+  jevEndpoint: string
   /** jev API key 是否已配置（v0.24.0；host **永不回显 key 本身**）。 */
   jevApiKeyConfigured: boolean
   /** key 来源：config = 设置页保存，env = 环境变量，none = 未配置。 */
@@ -439,6 +443,9 @@ export interface RelayConfigPatch {
     debounce?: string
     fastMinReplyInterval?: string
     jevThreshold?: number
+    /** v0.25.6：jev 模型 id / 分类器地址（可读可改）。 */
+    model?: string
+    jevEndpoint?: string
     /** v0.24.0：只写不读；留空 / 缺省表示不修改。 */
     jevApiKey?: string
   }
@@ -945,6 +952,12 @@ function asStatus(value: unknown): RelayStatusView | null {
               ? config.gate.fastMinReplyIntervalMs
               : 45000,
             jevThreshold: typeof config.gate.jevThreshold === 'number' ? config.gate.jevThreshold : 0.7,
+            model: typeof config.gate.model === 'string' && config.gate.model !== ''
+              ? config.gate.model
+              : 'typesafe/jev-1.14',
+            jevEndpoint: typeof config.gate.jevEndpoint === 'string' && config.gate.jevEndpoint !== ''
+              ? config.gate.jevEndpoint
+              : 'https://openrouter.ai/api/alpha/decisions',
             jevApiKeyConfigured: config.gate.jevApiKeyConfigured === true,
             jevApiKeySource: config.gate.jevApiKeySource === 'env'
               ? 'env'
@@ -957,6 +970,8 @@ function asStatus(value: unknown): RelayStatusView | null {
             debounceMs: 5000,
             fastMinReplyIntervalMs: 45000,
             jevThreshold: 0.7,
+            model: 'typesafe/jev-1.14',
+            jevEndpoint: 'https://openrouter.ai/api/alpha/decisions',
             jevApiKeyConfigured: false,
             jevApiKeySource: 'none',
             jevApiKeyEnv: 'OPENROUTER_API_KEY',

@@ -96,6 +96,9 @@ dispatch 成功 → lastBotSpeakAt = now；cooldownUntil = now + 2h；清空 pen
 - **模型**：TypeSafe 的 System One 决策模型 **jev**，经 OpenRouter Decisions API 调用
   （`POST https://openrouter.ai/api/alpha/decisions`），默认 `typesafe/jev-1.14`。
   jev 不是对话模型：它返回带概率的类型化答案（Noul = 是 / 否问题），不返回文本或推理。
+  **v0.25.6 起模型 id 与地址都能在配置页「行为」页改**（`gate.model` / `gate.jevEndpoint`）：
+  想换决策模型、或走兼容 Decisions 协议的代理时不用改 profile patch；地址必须是 `https://`，
+  保存后分类器立即换实现（不重建 relay）。
 - **输入（`state`）**：群名、触发来源（`fast` / `slow`）、bot 标签、聊天日志里最近 60 条消息
   `{ speaker, role, text }`（每条正文截到 500 字符；**包含 bot 自己的发言**，`role: "bot"`，
   由 relay 在发送成功后写回聊天日志）；`questions.reply` 是一个 Noul 问题：
@@ -182,10 +185,12 @@ proxyReply:
   silenceWindow: 10m         # 目标多久没在本群发言才代答；0 = 不检查沉默
 ~~~
 
-- **配置页可改（v0.10.0 起，v0.24.0 扩展）**：`debounce` / `fastMinReplyInterval` /
-  `jevThreshold` / `jevApiKey` 四个参数在插件面板 → dsh-qq-relay 组合包页 → 配置页「行为」里编辑，
-  保存后立即重建闸门（无需重启）；`jevThreshold` 由分类器每次判定时读取，`jevApiKey` 直接换
-  分类器实现，同样即时生效。其余 gate 字段仍只读（改 profile patch + 重启）。
+- **配置页可改（v0.10.0 起，v0.24.0 / v0.25.6 扩展）**：`debounce` / `fastMinReplyInterval` /
+  `jevThreshold` / `jevApiKey` / `model` / `jevEndpoint` 六个参数在插件面板 → dsh-qq-relay
+  组合包页 → 配置页「行为」里编辑，保存后立即生效（无需重启）：前三个重建闸门；`jevThreshold`
+  由分类器每次判定时读取；`jevApiKey` / `model` / `jevEndpoint` 直接换分类器实现——**不重建 relay
+  连接**（v0.25.6 起模型与地址也可改，页面回填当前生效值；地址只接受 `https://`）。
+  其余 gate 字段仍只读（改 profile patch + 重启）。
 - 时长可写 `500ms` / `3s` / `10m` / `2h`；配置页保存的值叠加在 patch 之上（同名字段覆盖）。
 
 ## 9. 测试要点

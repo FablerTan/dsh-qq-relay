@@ -6,7 +6,7 @@
 > [README.md](./README.md)，版本历史见 [docs/changelog.md](./docs/changelog.md)。
 >
 > 本插件是：**DSH ↔ QQ 机器人的桥插件**——host 半身连接 QQ 机器人协议端、在 QQ 与 DSH
-> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.5**：P1 @ 直通
+> 会话之间双向转发消息，client 半身在**插件面板的组合包页**里提供配置页。当前 **v0.25.6**：P1 @ 直通
 > 已真机验收、P1.5 基础配置页已落地、P2.1/P2.2 消息闸门骨架与收尾已落地、P2.3 jev 分类器
 > 已接（OpenRouter）、P3 `qq_send` 主动推送与 QQ 侧审批已落地、P4 群项目目录 + 聊天记录
 > `.qq-relay/` + prompt 拼接已落地、P5 QQ 侧命令层（`/new` / `/stop` / `/status` / `/help`）
@@ -47,6 +47,8 @@
 > v0.25.5 修 DSH 0.2.1-rc.2 下**预设注册失败**：组合表按新版 `standard` 对齐（`tool-subagent` 两行
 > 去掉已移除的 `toolFilter`，否则整份 preset 变「未注册」），注册时再按宿主报错自动剔除
 > 「no longer supported」字段重试（见 [docs/persona.md §2.2](./docs/persona.md)）；
+> v0.25.6 把 **jev 模型 id / 分类器地址**也搬进「行为」页（`gate.model` / `gate.jevEndpoint` 可读可改，
+> 保存即热切换分类器、不重建 relay；地址必须 `https://`，见 [docs/gate.md §4](./docs/gate.md)）；
 > 上级 §0 已仅对本插件解除。
 
 ## 0. 布局（快速地图）

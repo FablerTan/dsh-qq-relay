@@ -244,6 +244,8 @@ test('apply：配置页路由注册、状态快照、保存校验与重连', asy
     debounceMs: 3000,
     fastMinReplyIntervalMs: 10000,
     jevThreshold: 0.6,
+    model: 'typesafe/jev-1.14',
+    jevEndpoint: 'https://openrouter.ai/api/alpha/decisions',
     jevApiKeyConfigured: false,
     jevApiKeySource: 'none',
     jevApiKeyEnv: 'OPENROUTER_API_KEY',
@@ -723,6 +725,24 @@ test('apply：设置页保存 jev key 后分类器热启用（v0.24.0）', async
   assert.equal(saved.payload.value.gate.classifier, 'jev', '保存 key 后无需重启即启用分类器')
   assert.equal(saved.payload.value.config.gate.jevApiKeySource, 'config')
   assert.equal(JSON.stringify(saved.payload.value).includes('sk-or-live-key'), false)
+
+  // v0.25.6：模型 id / 分类器地址也可热改——保存后分类器立即换实现，不重建 relay。
+  const retargeted = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { model: 'proxy/jev-1.14', jevEndpoint: 'https://proxy.example.com/decisions' } }),
+  })
+  assert.equal(retargeted.status, 200)
+  assert.equal(retargeted.payload.value.config.gate.model, 'proxy/jev-1.14')
+  assert.equal(retargeted.payload.value.config.gate.jevEndpoint, 'https://proxy.example.com/decisions')
+  assert.equal(retargeted.payload.value.gate.classifier, 'jev', '改地址 / 模型后分类器仍在线')
+  assert.equal(retargeted.payload.value.config.gate.jevApiKeyConfigured, true, '改模型 / 地址不能冲掉已存 key')
+
+  const badTarget = await call(routes, '/dsh-qq-relay/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ gate: { jevEndpoint: 'http://proxy.example.com/decisions' } }),
+  })
+  assert.equal(badTarget.status, 400)
+  assert.ok(badTarget.payload.error.message.includes('jevEndpoint'))
 
   const cleared = await call(routes, '/dsh-qq-relay/api/config', {
     method: 'POST',

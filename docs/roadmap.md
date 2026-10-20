@@ -116,6 +116,7 @@
   不额外调 `get_group_member_info`（事件缺字段时才需要补查）。
 - ✅ **jev 分类器接模型（P2.3）**：OpenRouter Decisions API + `typesafe/jev-1.14`（Noul 概率 →
   阈值 0.7 判定），key 走 `OPENROUTER_API_KEY` 环境变量；超时 / 网络 / 格式错误一律 fail closed。
+  **v0.25.6 起模型 id / 分类器地址可在「行为」页改**（保存即热切换分类器，不重建 relay）。
   见 [gate.md §4](./gate.md)。
 - ✅ **闸门参数进设置页（v0.10.0）**：`debounce` / `fastMinReplyInterval` / `jevThreshold` 可在
   设置 →「QQ 机器人」→「闸门」里改，保存即重建闸门（无需重启）；阈值动态读取。
@@ -559,6 +560,19 @@
   「已保存（待补全）」与「已保存并重连」。
 - **测试**：`test/model.test.js` 的 fail-closed 用例改成「待补全 vs 无效」，`test/apply.test.js` 加
   端到端用例（没配 OneBot 也能保存 WebUI token 且 relay 不启动）；总数 **298**。
+
+### 已落地（v0.25.6，2026-10-20）：jev 模型 id / 分类器地址进配置页
+
+- 诉求：jev 换了部署（换决策模型、或经兼容 Decisions 协议的代理）时要改 profile patch 再重启，
+  而 key 早就能在页面改；把模型 id 与地址也收进「行为」页。
+- **host**：`gate.model` / `gate.jevEndpoint` 加入 `EDITABLE_GATE_KEYS`；`maskConfig` 回显当前生效值
+  （不是密钥，可读）；`refreshClassifier` 的签名带上模型 / 地址 / bot 标签，变化时换分类器实现；
+  `relaySignature` 忽略这两项，避免改模型时白重连 WebSocket。校验沿用 `normalizeGate`
+  （模型非空、地址必须 `https://`）。
+- **client**：`form.ts` 增加 `gateJevModel` / `gateJevEndpoint` 两个输入（从状态回填、必填、
+  地址必须 https），`BehaviorPanel` 在阈值下方新增两行。
+- **测试**：`test/settings.test.js` 覆盖可编辑 / 覆盖优先级 / 脱敏视图 / 非法值；`test/apply.test.js`
+  加端到端（改模型 + 地址后分类器仍在线、已存 key 不被冲掉、http 地址 400）；总数仍 **300**。
 
 ### 设计草案（原始，2026-10-19）
 

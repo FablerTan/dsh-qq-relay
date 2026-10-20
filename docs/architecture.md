@@ -23,7 +23,9 @@
 > 不推进就跳过，见 [env.md §4.1](./env.md)）已实现**；**v0.25.3 回滚 v0.25.2 的引擎识别
 > （环境页只认 Colima，不再提供 OrbStack / Docker Desktop 动作，见 [env.md §1](./env.md)）**；
 > **v0.25.4 配置「待补全」与「无效」分离（连接信息留空可先保存草稿、relay 不启动，
-> 见 [config.md §2.1](./config.md) 与 [client.md §4](./client.md)）**。
+> 见 [config.md §2.1](./config.md) 与 [client.md §4](./client.md)）**；
+> **v0.25.6 jev 模型 id / 分类器地址进配置页（`gate.model` / `gate.jevEndpoint` 可读可改，
+> 保存即热切换分类器，见 [gate.md §4](./gate.md)）已实现**。
 > 协议端事实见 [onebot-channel.md](./onebot-channel.md)，群聊闸门见 [gate.md](./gate.md)，
 > 分期见 [roadmap.md](./roadmap.md)。官方机器人通道已降为备选
 > （[official-bot-channel.md](./official-bot-channel.md)）。
@@ -79,7 +81,7 @@
 | `poke` | object | `{ enabled: true, react: true, cooldownMs: 10s }` | 戳一戳（v0.15.0）：是否识别 / 被戳是否接话 / 每群冷却（0 = 不限，上限 10m），详见 [poke.md](./poke.md) |
 | `files` | object | `{ enabled: true, react: true }` | 入向群文件（v0.16.0）：是否识别 `group_upload` / 落盘成功后是否直通起一轮；上限 20 MiB，详见 [media.md §5.2](./media.md) |
 | `proxyReply` | object | `{ enabled: false, targets: [], silenceWindow: 10m }` | 代答（v0.18.0）：@ 名单里的人且 TA 最近没说话时，直通起一轮并让 agent 代 TA 回应；名单可写 QQ 号 / 群名片 / 昵称，详见 [gate.md §2.6](./gate.md) |
-| `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevApiKey`（v0.24.0，只写不读）/ `jevThreshold`；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
+| `gate` | object | `{ enabled: false, ... }` | 消息闸门（P2.1/P2.3）：`enabled` / `mentionBypass` / `fastWindow` / `fastMinReplyInterval` / `debounce` / `slowTimer` / `slowWindow` / `maxBatchMessages` / `classifierTimeoutMs` / `model` / `jevEndpoint` / `jevApiKeyEnv` / `jevApiKey`（v0.24.0，只写不读）/ `jevThreshold`（v0.25.6 起 `model` / `jevEndpoint` 页面可改）；时长可写 `45s` / `10m` / `2h` 或毫秒数字，详见 [gate.md §8](./gate.md) |
 | `approval` | object | `{ enabled: true, timeoutMs: 120s, roles: ['owner','admin'] }` | QQ 侧审批（P3）：是否接管、等待时长、允许审批的群角色，详见 [approval.md](./approval.md) |
 | `agentPreset` | string | `''` | 群会话使用的 DSH agent preset id；空 = 宿主默认。插件自带 `qq-relay`（显示名「QQ 群聊」）。preset 在会话创建时固定，详见 [persona.md](./persona.md) |
 | `persona` | object | `{ enabled: false, text: '' }` | 轻量人设（v0.19.0）：每轮 prompt 头部 `[角色设定：…]`；≤4000 字符，默认关闭 |
@@ -116,12 +118,14 @@
 - **配置页覆盖（P1.5）**：插件面板 → dsh-qq-relay 组合包页保存的字段写入
   `~/.dsh/storages/dsh-qq-relay/settings.json`，叠加在 profile patch 之上——只有
   `wsUrl / accessToken / selfId / groups / workspace / groupWorkspaces / chatRetentionDays /
-  sessionTitle / replyChunkSize / commandPrefixes / gate.{debounce,fastMinReplyInterval,jevThreshold,jevApiKey} /
+  sessionTitle / replyChunkSize / commandPrefixes /
+  gate.{debounce,fastMinReplyInterval,jevThreshold,jevApiKey,model,jevEndpoint} /
   proxyReply.{enabled,targets,silenceWindow} / agentPreset / persona.{enabled,text} /
   comfy.{enabled,baseUrl,timeoutMs,skillEnabled} / environment.{enabled,dir,webuiToken}` 可覆盖，
   其余字段保持 patch 只读。保存后**立即重建连接**，不需要重启 GUI；仅 `comfy` / `environment`
-  变化时不重建 relay，只重新探测（画图 skill / 环境步骤）；`gate.jevApiKey` 只换分类器实现，
-  同样不重建连接（key 本身永不回显）。
+  变化时不重建 relay，只重新探测（画图 skill / 环境步骤）；`gate.jevApiKey` / `gate.model` /
+  `gate.jevEndpoint` 只换分类器实现（v0.25.6 起模型与地址页面可改），同样不重建连接
+  （key 本身永不回显）。
   `groupWorkspaces` 是整表替换；已映射群改项目后需在配置页点「重新绑定」才会换会话（旧项目聊天记录不搬）。
   契约、HTTP 面与安全边界见 [client.md](./client.md)。
 
@@ -282,6 +286,8 @@ ctx.on('agent/error', ...)          # 失败提示
   WebUI token 只写不读，动作日志写入前脱敏；详见 [env.md](./env.md) §8。
 - **jev API key（v0.24.0）**：配置页保存的 `gate.jevApiKey` 只写不读（`status` 只给是否配置 /
   来源 / 兜底环境变量名），落盘在 `settings.json`；优先于环境变量，日志里不回显。
+  v0.25.6 起 `gate.model` / `gate.jevEndpoint` 也可在页面改——它们不是密钥，`status` 直接回显
+  当前生效值（页面回填用），只有 key 保持只写不读。
 - **画图 / 视频服务（v0.21.0 / v0.22.0）**：ComfyUI **无鉴权**，任何能访问 `comfy.baseUrl` 的人都能提交任务；
   `POST /prompt` 可提交任意节点图、自定义节点里能跑任意 Python，等于**远端执行权**。
   只放可信网络、不暴露公网；skill 运行器只允许 schema 白名单参数，不要绕过它直连。

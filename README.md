@@ -1,7 +1,7 @@
 # dsh-qq-relay
 
 把 **DeepSeek Harness（DSH）** 接入 **QQ 机器人**的自研插件（bundle 包，host + client 双半身）。
-当前 **v0.25.5**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
+当前 **v0.25.6**：P1「@ 直通」已真机验收（2026-10-19）；P1.5 基础配置页已落地（v0.17.0 起
 搬到**插件面板里 dsh-qq-relay 组合包自己的页面**，拆成「连接 / 环境 / 项目 / 行为 / 画图·视频 / 预设 / 记录」二级页面）；
 P2.1/P2.2 消息闸门已落地（去抖 / 最小间隔 / 慢路 / 决策日志 / 发送队列，
 P2.3 jev 分类器已接（OpenRouter `typesafe/jev-1.14`），`gate.enabled` 默认关）；P3 已落地 `qq_send`
@@ -35,7 +35,9 @@ Colima 在跑但 daemon 连不上时给「重启容器引擎」，动作没推�
 token」——wsUrl / accessToken / selfId 留空只算「待补全」，配置照常保存（relay 暂不启动），
 新机器可以先存环境页 token 再一键修复；v0.25.5 修 **DSH 0.2.1-rc.2 下预设注册失败**——组合表按新版
 `standard` 去掉已移除的 `toolFilter`（旧模板会让整份 preset 变「未注册」），并加「宿主移除字段
-自动剔除重试」的兜底（见 [docs/persona.md](./docs/persona.md) §2.2）。设计见
+自动剔除重试」的兜底（见 [docs/persona.md](./docs/persona.md) §2.2）；v0.25.6 把 **jev 的模型 id
+与分类器地址**也搬进「行为」页（`gate.model` / `gate.jevEndpoint`，可指向兼容 Decisions 协议的代理，
+保存即热切换分类器、不重建 relay）。设计见
 [docs/architecture.md](./docs/architecture.md)，协议端选型与部署见
 [docs/onebot-channel.md](./docs/onebot-channel.md)，配置页契约见 [docs/client.md](./docs/client.md)。
 
@@ -66,7 +68,7 @@ DSH 与 QQ 之间的**双向桥**：
 
 **已交付**：OneBot 接入与 @ 直通（P1）、基础配置页（P1.5：连接状态 / 配置编辑 / 群映射）、
 消息闸门骨架与收尾（P2.1/P2.2：去抖 / 最小间隔 / 慢路 / 状态持久化 / 决策日志 / 发送队列）、
-jev 分类器（P2.3：OpenRouter `typesafe/jev-1.14`，阈值判定 + fail closed）、
+jev 分类器（P2.3：OpenRouter `typesafe/jev-1.14`，阈值判定 + fail closed；v0.25.6 起模型 id / 地址 / key 可在「行为」页改）、
 DSH → QQ 主动推送工具 `qq_send`（P3）、QQ 侧文本审批（P3：群里回复「同意 / 拒绝」）、
 群项目目录与聊天记录 `.qq-relay/` + prompt 拼接（P4，见 [chat-context.md](./docs/chat-context.md)）、
 入向图片 / 表情落盘与路径引用（P4.1，见 [media.md](./docs/media.md)）、

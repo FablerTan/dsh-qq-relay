@@ -189,24 +189,41 @@ test('settings：gate 参数与 jev key 可编辑、与 patch 合并、校验与
     { gate: { jevApiKey: 'sk-or-page' } },
     'jev key 是设置页可写字段',
   )
+  // v0.25.6：jev 模型 id / 分类器地址也可在设置页改（可读可写）。
+  assert.deepEqual(
+    pickEditable({ gate: { model: 'typesafe/jev-1.14', jevEndpoint: 'https://proxy.example.com/decisions' } }),
+    { gate: { model: 'typesafe/jev-1.14', jevEndpoint: 'https://proxy.example.com/decisions' } },
+    'jev 模型 / 地址是设置页可写字段',
+  )
 
   const merged = mergeConfig(
     { ...PATCH_CONFIG, gate: { enabled: true, slowTimer: '2h', model: 'typesafe/jev-1.14' } },
-    { gate: { debounce: 3000 } },
+    { gate: { debounce: 3000, model: 'proxy/jev-1.14', jevEndpoint: 'https://proxy.example.com/decisions' } },
   )
   assert.equal(merged.gate.enabled, true)
   assert.equal(merged.gate.slowTimer, '2h')
-  assert.equal(merged.gate.model, 'typesafe/jev-1.14')
+  assert.equal(merged.gate.model, 'proxy/jev-1.14', '页面覆盖优先于 patch')
+  assert.equal(merged.gate.jevEndpoint, 'https://proxy.example.com/decisions')
   assert.equal(merged.gate.debounce, 3000)
 
   const resolved = resolveConfig(
     { ...PATCH_CONFIG, gate: { enabled: true } },
-    { gate: { debounce: '3s', fastMinReplyInterval: '10s', jevThreshold: 0.6 } },
+    {
+      gate: {
+        debounce: '3s',
+        fastMinReplyInterval: '10s',
+        jevThreshold: 0.6,
+        model: 'proxy/jev-1.14',
+        jevEndpoint: 'https://proxy.example.com/decisions',
+      },
+    },
   )
   assert.equal(resolved.ok, true)
   assert.equal(resolved.config.gate.debounce, 3000)
   assert.equal(resolved.config.gate.fastMinReplyInterval, 10000)
   assert.equal(resolved.config.gate.jevThreshold, 0.6)
+  assert.equal(resolved.config.gate.model, 'proxy/jev-1.14')
+  assert.equal(resolved.config.gate.jevEndpoint, 'https://proxy.example.com/decisions')
   assert.equal(resolved.config.gate.enabled, true)
 
   const view = maskConfig(resolved.config, {})
@@ -214,10 +231,16 @@ test('settings：gate 参数与 jev key 可编辑、与 patch 合并、校验与
     debounceMs: 3000,
     fastMinReplyIntervalMs: 10000,
     jevThreshold: 0.6,
+    model: 'proxy/jev-1.14',
+    jevEndpoint: 'https://proxy.example.com/decisions',
     jevApiKeyConfigured: false,
     jevApiKeySource: 'none',
     jevApiKeyEnv: 'OPENROUTER_API_KEY',
   })
+  // 默认值回填：patch 没写 gate.model / jevEndpoint 时视图给 DSH 默认值，页面输入框不会空着。
+  const defaultView = maskConfig({ ...resolved.config, gate: { ...resolved.config.gate, model: '', jevEndpoint: '' } }, {})
+  assert.equal(defaultView.gate.model, 'typesafe/jev-1.14')
+  assert.equal(defaultView.gate.jevEndpoint, 'https://openrouter.ai/api/alpha/decisions')
 
   // jev key 只写不读：视图只给 configured / source / 环境变量名，绝不回显 key。
   const withKey = maskConfig(
@@ -237,6 +260,12 @@ test('settings：gate 参数与 jev key 可编辑、与 patch 合并、校验与
   assert.equal(bad.ok, false)
   assert.ok(bad.problems.some((problem) => problem.includes('gate.debounce')))
   assert.ok(bad.problems.some((problem) => problem.includes('gate.jevThreshold')))
+
+  // v0.25.6：模型 id 不能空、地址必须是 https。
+  const badTarget = resolveConfig(PATCH_CONFIG, { gate: { model: '', jevEndpoint: 'http://proxy.example.com/decisions' } })
+  assert.equal(badTarget.ok, false)
+  assert.ok(badTarget.problems.some((problem) => problem.includes('gate.model')))
+  assert.ok(badTarget.problems.some((problem) => problem.includes('gate.jevEndpoint')))
 })
 
 test('settings：proxyReply 可编辑、与 patch 合并、校验与脱敏视图（v0.18.0）', () => {

@@ -5,6 +5,25 @@
 > GitHub Release 由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 在 tag
 > `vX.Y.Z` 时自动生成，**正文取自本文件对应版本段**（`scripts/release-notes.mjs`）。
 
+## v0.25.6 jev 模型 id / 分类器地址进配置页（2026-10-20）
+
+- **诉求**：jev 换了部署（换决策模型、或走兼容 Decisions 协议的代理）时，模型 id 与地址只能写 profile
+  patch 再重启；而 API key 早在 v0.24.0 就能在页面改。这次把 `gate.model` 与 `gate.jevEndpoint`
+  也收进「行为」页。
+- **host**：`EDITABLE_GATE_KEYS` 增加 `model` / `jevEndpoint`；`maskConfig` 回显当前生效值
+  （它们不是密钥，可以读，页面据此回填）；`refreshClassifier` 的签名带上模型 / 地址 / bot 标签，
+  变化时替换分类器实现；`relaySignature` 忽略这两项——**改模型 / 地址不重建 relay 连接**。
+  校验沿用 `normalizeGate`：模型 id 非空，地址必须是 `https://`（http 代理会被 400 拒绝）。
+- **client**：`form.ts` 新增 `gateJevModel` / `gateJevEndpoint` 两个必填输入（从状态回填），
+  「行为」页在阈值下方新增「jev 模型 id」「jev 分类器地址」两行；地址写错当场提示。
+- **默认值不变**：`typesafe/jev-1.14` + `https://openrouter.ai/api/alpha/decisions`，不配就是原行为；
+  只改 key 的老用户升级后表单会回填默认值，保存不会额外写入除非确实改过。
+- 单测仍 **300**（扩展现有用例：可编辑 / 覆盖优先级 / 脱敏视图 / 非法值 / 端到端热切换 + key 不被冲掉）；
+  `pnpm check` 全绿。
+- 文档同步：gate / config / client / architecture / roadmap / README / AGENTS / 本文件；client 半身改了
+  `src/model/{api,form}.ts` 与 `src/view/panels/BehaviorPanel.tsx`，`lib/client.js` 已重建。
+- **需要重启 dwdev GUI** 才能生效（host / client 都改了）。
+
 ## v0.25.5 修 DSH 0.2.1-rc.2 下预设注册失败：组合表不再带 `toolFilter`（2026-10-20）
 
 - **问题**：另一台 Mac mini 升级到 DSH **0.2.1-rc.2** 后，「QQ 群聊」预设（id `qq-relay`）在配置页显示
